@@ -11,9 +11,9 @@ export default function Navbar() {
     // Lista delle pagine del menu
     const navItems = [
         { name: 'Home', path: '/', icon: Home },
-        { name: 'Transazioni', path: '/transactions', icon: List },
-        { name: 'Portafoglio', path: '/portfolio-valuation', icon: PieChart },
-        { name: 'Info Titoli', path: '/securities-info', icon: Info },
+        { name: 'Transactions', path: '/transactions', icon: List },
+        { name: 'Portfolio', path: '/portfolio_valuation', icon: PieChart },
+        { name: 'Securities info', path: '/securities_info', icon: Info },
     ];
 
     return (
