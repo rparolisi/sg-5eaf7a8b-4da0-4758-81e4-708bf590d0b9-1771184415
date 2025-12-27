@@ -1,11 +1,11 @@
 import { useEffect, useState, useMemo, useRef } from 'react';
-import { createClient } from 'https://esm.sh/@supabase/supabase-js';
+// Rimosso import statico che causava problemi in anteprima
 import { Filter, ArrowUp, ArrowDown, Search, Check, Plus, X, Calendar, TrendingUp, TrendingDown, Settings } from 'lucide-react';
 
 // --- CONFIGURAZIONE ---
 const supabaseUrl = (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_SUPABASE_URL) || '';
 const supabaseKey = (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_SUPABASE_ANON_KEY) || '';
-const supabase = createClient(supabaseUrl, supabaseKey);
+// Il client supabase sarà inizializzato dinamicamente
 
 // --- API CONFIGURATION ---
 const PYTHON_API_URL = "https://invest-monitor-api.onrender.com";
@@ -45,6 +45,9 @@ type SortConfig = {
 };
 
 export default function Transactions() {
+    // Stato per il client Supabase caricato dinamicamente
+    const [supabase, setSupabase] = useState < any > (null);
+
     const [transactions, setTransactions] = useState < Transaction[] > ([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState < string | null > (null);
@@ -81,9 +84,36 @@ export default function Transactions() {
         taxes: '0',
     });
 
+    // Effetto per caricare Supabase via CDN (risolve errori di importazione in preview)
     useEffect(() => {
-        fetchTransactions();
+        const loadSupabase = () => {
+            if ((window as any).supabase) {
+                const client = (window as any).supabase.createClient(supabaseUrl, supabaseKey);
+                setSupabase(client);
+            } else {
+                const script = document.createElement('script');
+                script.src = "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2";
+                script.async = true;
+                script.onload = () => {
+                    if ((window as any).supabase) {
+                        const client = (window as any).supabase.createClient(supabaseUrl, supabaseKey);
+                        setSupabase(client);
+                    }
+                };
+                document.body.appendChild(script);
+            }
+        };
+        loadSupabase();
+    }, []);
 
+    // Fetch data quando supabase è pronto
+    useEffect(() => {
+        if (supabase) {
+            fetchTransactions();
+        }
+    }, [supabase]);
+
+    useEffect(() => {
         // Chiudi il menu colonne se si clicca fuori
         const handleClickOutside = (event: MouseEvent) => {
             if (columnMenuRef.current && !columnMenuRef.current.contains(event.target as Node)) {
@@ -101,6 +131,8 @@ export default function Transactions() {
     }, [formData.currency]);
 
     async function fetchTransactions() {
+        if (!supabase) return; // Attendi caricamento libreria
+
         try {
             setLoading(true);
             const { data, error } = await supabase
