@@ -1,39 +1,24 @@
 import React, { useState, useEffect } from 'react';
 import { createClient } from '@supabase/supabase-js';
-import {
-    Mail,
-    Lock,
-    Globe,
-    CreditCard,
-    Clock,
-    Calendar,
-    Fingerprint,
-    Shield,
-    CheckCircle,
-    XCircle,
-    Settings,
-    Save,
-    X,
-    Edit3,
-    Eye,
-    EyeOff,
-    LogOut
-} from 'lucide-react';
 import { useRouter } from 'next/router';
+import {
+    Mail, Lock, Globe, CreditCard, Clock, Calendar, Fingerprint,
+    Shield, CheckCircle, XCircle, Settings, Save, X, Edit3, Eye, EyeOff, LogOut, User as UserIcon
+} from 'lucide-react';
 
-// --- CONFIGURAZIONE SUPABASE ---
+// --- CONFIGURAZIONE ---
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
 const SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-// --- Tipi di dati ---
+// --- INTERFACCIA ---
 interface UserData {
     id: number;
-    user_id: string;
+    user_id: string; // Questo deve corrispondere all'UUID di Auth
     alias: string;
     full_name: string;
     email: string;
-    password: string; // Nota: In produzione non dovresti mai recuperare la password in chiaro dal DB
+    // password: string; // RIMOSSO: Non gestiamo la password qui per sicurezza!
     creation_date: string;
     sharing_availability: boolean;
     country: string;
@@ -43,40 +28,39 @@ interface UserData {
 }
 
 export default function UserPage() {
-    // 1. Hook dichiarati all'inizio
     const router = useRouter();
 
-    // Non serve più la lista di tutti gli utenti, ma solo i dati dell'utente corrente
+    // Stati
     const [userData, setUserData] = useState < UserData | null > (null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState < string | null > (null);
 
-    // Stati per la modifica
+    // Editing
     const [isEditing, setIsEditing] = useState(false);
     const [formData, setFormData] = useState < UserData | null > (null);
     const [saveLoading, setSaveLoading] = useState(false);
 
-    // 2. Fetch del SOLO utente loggato
+    // --- FETCH LOGICA CHIAVE ---
     useEffect(() => {
         const fetchUserProfile = async () => {
             try {
                 setLoading(true);
 
-                // A. Controlliamo chi è loggato nella sessione
-                const { data: { user }, error: authError } = await supabase.auth.getUser();
+                // 1. Ottieni la sessione corrente da Supabase Auth
+                const { data: { session }, error: authError } = await supabase.auth.getSession();
 
-                if (authError || !user) {
-                    // Se non è loggato, rimandiamo al login
+                if (authError || !session) {
+                    // Nessuna sessione -> Rimanda al login
                     router.push('/login');
                     return;
                 }
 
-                // B. Recuperiamo i dati dal DB solo per questo user_id
+                // 2. Usa l'ID dell'utente autenticato per cercare i dati nel DB
                 const { data, error: dbError } = await supabase
                     .from('users')
                     .select('*')
-                    .eq('user_id', user.id) // Filtra per l'UUID di Supabase Auth
-                    .single(); // Ci aspettiamo un solo risultato
+                    .eq('user_id', session.user.id) // La colonna user_id deve combaciare con auth.uid()
+                    .single();
 
                 if (dbError) throw dbError;
 
@@ -84,12 +68,12 @@ export default function UserPage() {
                     setUserData(data as UserData);
                     setFormData(data as UserData);
                 } else {
-                    setError("User profile not found.");
+                    setError("Profilo utente non trovato nel database. Assicurati che user_id coincida.");
                 }
 
             } catch (err: any) {
-                console.error("Supabase fetch error:", err);
-                setError(err.message || "Error loading data.");
+                console.error("Errore fetch:", err);
+                setError(err.message);
             } finally {
                 setLoading(false);
             }
@@ -98,7 +82,13 @@ export default function UserPage() {
         fetchUserProfile();
     }, [router]);
 
-    // Gestore modifiche input
+    // --- HANDLERS ---
+
+    const handleLogout = async () => {
+        await supabase.auth.signOut();
+        router.push('/login');
+    };
+
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (!formData) return;
         const { name, value, type } = e.target;
@@ -108,336 +98,98 @@ export default function UserPage() {
         });
     };
 
-    // Gestore toggle sharing
     const toggleSharing = () => {
         if (!formData || !isEditing) return;
-        setFormData({
-            ...formData,
-            sharing_availability: !formData.sharing_availability
-        });
+        setFormData({ ...formData, sharing_availability: !formData.sharing_availability });
     };
 
-    // Funzione di Salvataggio su Supabase
     const handleSave = async () => {
         if (!formData || !userData) return;
-
         try {
             setSaveLoading(true);
-
-            // Aggiorna su Supabase usando l'ID univoco
+            // Aggiorniamo solo i dati del profilo, NON la password (quella si fa via Auth API)
             const { error } = await supabase
                 .from('users')
                 .update({
                     full_name: formData.full_name,
-                    email: formData.email,
-                    password: formData.password,
                     country: formData.country,
                     language: formData.language,
                     currency: formData.currency,
                     timeout_time: formData.timeout_time,
                     sharing_availability: formData.sharing_availability
                 })
-                .eq('id', userData.id); // Usa l'ID del record caricato
+                .eq('id', userData.id);
 
             if (error) throw error;
 
-            // Aggiorna lo stato locale
             setUserData(formData);
             setIsEditing(false);
-            alert("Profile updated successfully!");
-
+            alert("Profilo aggiornato!");
         } catch (err: any) {
-            console.error("Error saving data:", err);
-            alert("Error saving data: " + err.message);
+            alert("Errore salvataggio: " + err.message);
         } finally {
             setSaveLoading(false);
         }
     };
 
-    const handleLogout = async () => {
-        await supabase.auth.signOut();
-        router.push('/login');
-    };
+    // --- UI HELPERS ---
+    const getInitials = (name: string) => name ? name.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2) : 'U';
 
-    const handleCancel = () => {
-        setFormData(userData);
-        setIsEditing(false);
-    };
+    if (loading) return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
+    if (error) return <div className="min-h-screen flex items-center justify-center text-red-500">{error}</div>;
+    if (!userData) return null;
 
-    const getInitials = (name: string) => {
-        return name
-            ? name.split(' ').map((n) => n[0]).join('').toUpperCase().substring(0, 2)
-            : 'U';
-    };
-
-    const formatDate = (dateString: string) => {
-        if (!dateString) return '-';
-        return new Date(dateString).toLocaleDateString('en-US', {
-            year: 'numeric',
-            month: 'long',
-            day: 'numeric'
-        });
-    };
-
-    if (loading) {
-        return (
-            <div className="min-h-screen flex items-center justify-center bg-gray-50">
-                <div className="flex flex-col items-center gap-4">
-                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-                    <p className="text-gray-500 font-medium">Loading profile...</p>
-                </div>
-            </div>
-        );
-    }
-
-    if (error) {
-        return (
-            <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
-                <div className="bg-white p-6 rounded-lg shadow-md border border-red-200 max-w-md w-full text-center">
-                    <XCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
-                    <h3 className="text-lg font-bold text-gray-900 mb-2">Loading Error</h3>
-                    <p className="text-gray-600">{error}</p>
-                    <button onClick={handleLogout} className="mt-6 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors">
-                        Go to Login
-                    </button>
-                </div>
-            </div>
-        );
-    }
-
-    // Usiamo userData invece di selectedUser
-    const displayUser = isEditing ? formData : userData;
-    if (!displayUser) return null;
+    const displayUser = isEditing ? formData! : userData;
 
     return (
-        <div className="min-h-screen bg-slate-50 font-sans text-slate-900 pb-12">
-
-            {/* Navbar Interna (Opzionale: puoi rimuoverla se usi quella globale) */}
-            <nav className="bg-white border-b border-gray-200 px-6 py-4 flex justify-between items-center sticky top-0 z-10 shadow-sm">
-                <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold">IM</div>
-                    <span className="text-xl font-bold tracking-tight text-slate-800">InvestMonitor</span>
-                </div>
+        <div className="min-h-screen bg-slate-50 pb-12 font-sans text-slate-900">
+            {/* Navbar Semplificata per contesto */}
+            <nav className="bg-white border-b px-6 py-4 flex justify-between items-center sticky top-0 z-10">
+                <div className="font-bold text-xl text-blue-600">InvestMonitor</div>
                 <div className="flex items-center gap-4">
-                    <div className="flex items-center gap-3 bg-slate-100 rounded-full pl-4 pr-2 py-1.5 border border-slate-200">
-                        <span className="text-sm font-bold text-slate-700 mr-2">
-                            {displayUser.alias}
-                        </span>
-                        <div className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center text-sm font-bold shadow-sm">
-                            {getInitials(displayUser.full_name)}
-                        </div>
-                    </div>
+                    <span className="text-sm font-semibold">{displayUser.alias}</span>
+                    <button onClick={handleLogout} className="text-sm text-red-600 hover:underline">Esci</button>
                 </div>
             </nav>
 
-            <main className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
-                {/* Header */}
-                <div className="mb-10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                    <div>
-                        <h1 className="text-3xl font-bold text-slate-900">User Profile</h1>
-                        <p className="mt-1 text-slate-500">
-                            Manage your account settings and preferences.
-                        </p>
-                    </div>
-
-                    <div className="flex items-center gap-3">
-                        {isEditing ? (
-                            <>
-                                <button
-                                    onClick={handleCancel}
-                                    className="inline-flex items-center justify-center px-4 py-2 border border-slate-300 text-sm font-medium rounded-md shadow-sm text-slate-700 bg-white hover:bg-slate-50 focus:outline-none transition-colors"
-                                    disabled={saveLoading}
-                                >
-                                    <X className="w-4 h-4 mr-2" />
-                                    Cancel
-                                </button>
-                                <button
-                                    onClick={handleSave}
-                                    className="inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none transition-colors"
-                                    disabled={saveLoading}
-                                >
-                                    {saveLoading ? (
-                                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                                    ) : (
-                                        <Save className="w-4 h-4 mr-2" />
-                                    )}
-                                    Save Changes
-                                </button>
-                            </>
-                        ) : (
-                            <button
-                                onClick={() => setIsEditing(true)}
-                                className="inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none transition-colors"
-                            >
-                                <Settings className="w-4 h-4 mr-2" />
-                                Edit Profile
+            <main className="max-w-5xl mx-auto px-4 py-10">
+                <div className="flex justify-between items-center mb-8">
+                    <h1 className="text-3xl font-bold">Il mio Profilo</h1>
+                    {!isEditing ? (
+                        <button onClick={() => setIsEditing(true)} className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 flex items-center gap-2">
+                            <Settings size={16} /> Modifica
+                        </button>
+                    ) : (
+                        <div className="flex gap-2">
+                            <button onClick={() => { setIsEditing(false); setFormData(userData) }} className="bg-white border border-slate-300 text-slate-700 px-4 py-2 rounded">Annulla</button>
+                            <button onClick={handleSave} disabled={saveLoading} className="bg-green-600 text-white px-4 py-2 rounded flex items-center gap-2">
+                                <Save size={16} /> Salva
                             </button>
-                        )}
-
-                        {!isEditing && (
-                            <button
-                                onClick={handleLogout}
-                                className="inline-flex items-center justify-center px-4 py-2 border border-slate-300 text-sm font-medium rounded-md shadow-sm text-slate-700 bg-white hover:bg-red-50 hover:text-red-600 hover:border-red-200 focus:outline-none transition-colors"
-                            >
-                                <LogOut className="w-4 h-4 mr-2" />
-                                Logout
-                            </button>
-                        )}
-                    </div>
+                        </div>
+                    )}
                 </div>
 
-                {/* Grid Layout (Identico a prima) */}
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                    {/* Left Column */}
-                    <div className="lg:col-span-1 space-y-6">
-                        <div className={`bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden transition-all duration-300 ${isEditing ? 'ring-2 ring-blue-100' : 'hover:shadow-md'}`}>
-                            <div className="h-24 bg-gradient-to-r from-blue-500 to-indigo-600"></div>
-                            <div className="px-6 pb-6 relative">
-                                <div className="relative -mt-12 mb-4">
-                                    <div className="w-24 h-24 rounded-full border-4 border-white bg-white shadow-md flex items-center justify-center overflow-hidden">
-                                        <div className="w-full h-full bg-slate-100 flex items-center justify-center text-3xl font-bold text-slate-700 uppercase">
-                                            {getInitials(displayUser.full_name)}
-                                        </div>
-                                    </div>
-                                    {isEditing && <div className="absolute bottom-0 right-0 bg-white p-1 rounded-full shadow border border-slate-200 text-slate-400"><Edit3 size={14} /></div>}
-                                </div>
-
-                                {/* Full Name Edit */}
-                                {isEditing ? (
-                                    <div className="mb-2">
-                                        <label className="text-xs text-slate-400 uppercase font-bold">Full Name</label>
-                                        <input
-                                            type="text"
-                                            name="full_name"
-                                            value={displayUser.full_name}
-                                            onChange={handleInputChange}
-                                            className="w-full text-xl font-bold text-slate-900 border-b-2 border-blue-200 focus:border-blue-500 focus:outline-none bg-transparent px-1 py-0.5"
-                                        />
-                                    </div>
-                                ) : (
-                                    <h2 className="text-xl font-bold text-slate-900">{displayUser.full_name}</h2>
-                                )}
-
-                                <p className="text-sm font-medium text-blue-600 mb-4 flex items-center gap-1">
-                                    @{displayUser.alias}
-                                </p>
-
-                                <div className="flex items-center gap-2 text-sm text-slate-500 mb-2">
-                                    <Mail className="w-4 h-4 flex-shrink-0" />
-                                    {isEditing ? (
-                                        <input
-                                            type="email"
-                                            name="email"
-                                            value={displayUser.email}
-                                            onChange={handleInputChange}
-                                            className="w-full border-b border-slate-200 focus:border-blue-500 focus:outline-none bg-transparent"
-                                        />
-                                    ) : (
-                                        <span className="truncate">{displayUser.email}</span>
-                                    )}
-                                </div>
-
-                                <div className="flex items-center gap-2 text-sm text-slate-500">
-                                    <Calendar className="w-4 h-4 flex-shrink-0" />
-                                    <span>Member since {formatDate(displayUser.creation_date)}</span>
-                                </div>
-                            </div>
+                {/* Esempio Layout Dati */}
+                <div className="bg-white rounded-2xl shadow p-6 mb-6">
+                    <div className="flex items-center gap-4 mb-6">
+                        <div className="w-20 h-20 rounded-full bg-slate-200 flex items-center justify-center text-2xl font-bold text-slate-600">
+                            {getInitials(displayUser.full_name)}
                         </div>
-
-                        {/* Sharing Status */}
-                        <div className={`bg-white rounded-2xl shadow-sm border border-slate-200 p-6 flex items-center justify-between transition-all duration-300 ${isEditing ? 'ring-2 ring-blue-100' : 'hover:shadow-md'}`}>
-                            <div className="flex items-center gap-3">
-                                <div
-                                    onClick={toggleSharing}
-                                    className={`p-2 rounded-lg transition-colors cursor-pointer ${displayUser.sharing_availability ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'} ${!isEditing && 'cursor-default'}`}
-                                >
-                                    {displayUser.sharing_availability ? <CheckCircle className="w-5 h-5" /> : <XCircle className="w-5 h-5" />}
-                                </div>
-                                <div>
-                                    <p className="text-sm font-medium text-slate-900">Sharing Status</p>
-                                    <p className="text-xs text-slate-500">
-                                        {displayUser.sharing_availability ? 'Profile visible' : 'Profile hidden'}
-                                    </p>
-                                </div>
-                            </div>
+                        <div>
                             {isEditing ? (
-                                <div
-                                    onClick={toggleSharing}
-                                    className={`w-12 h-6 flex items-center rounded-full p-1 cursor-pointer transition-colors ${displayUser.sharing_availability ? 'bg-green-500' : 'bg-gray-300'}`}
-                                >
-                                    <div className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform ${displayUser.sharing_availability ? 'translate-x-6' : 'translate-x-0'}`}></div>
-                                </div>
+                                <input name="full_name" value={displayUser.full_name} onChange={handleInputChange} className="text-xl font-bold border-b border-blue-300 focus:outline-none" />
                             ) : (
-                                <div className={`h-8 w-1 rounded-full ${displayUser.sharing_availability ? 'bg-green-500' : 'bg-gray-300'}`}></div>
+                                <h2 className="text-xl font-bold">{displayUser.full_name}</h2>
                             )}
+                            <p className="text-slate-500">@{displayUser.alias}</p>
                         </div>
                     </div>
 
-                    {/* Right Column */}
-                    <div className="lg:col-span-2 space-y-6">
-                        {/* Regional Settings */}
-                        <section className={`bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden transition-all ${isEditing ? 'ring-2 ring-blue-100' : ''}`}>
-                            <div className="px-6 py-4 border-b border-slate-100 flex items-center gap-2 bg-slate-50/50">
-                                <Globe className="w-5 h-5 text-blue-500" />
-                                <h3 className="font-semibold text-slate-800">Regional Settings</h3>
-                            </div>
-                            <div className="p-6 grid grid-cols-1 sm:grid-cols-2 gap-y-6 gap-x-8">
-                                <InfoItem label="Country" value={displayUser.country} name="country" isEditing={isEditing} onChange={handleInputChange} />
-                                <InfoItem label="Language" value={displayUser.language} name="language" isEditing={isEditing} onChange={handleInputChange} />
-                                <InfoItem label="Currency" value={displayUser.currency} name="currency" icon={<CreditCard className="w-3.5 h-3.5 text-slate-400" />} isEditing={isEditing} onChange={handleInputChange} />
-                            </div>
-                        </section>
-
-                        {/* Security */}
-                        <section className={`bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden transition-all ${isEditing ? 'ring-2 ring-blue-100' : ''}`}>
-                            <div className="px-6 py-4 border-b border-slate-100 flex items-center gap-2 bg-slate-50/50">
-                                <Shield className="w-5 h-5 text-blue-500" />
-                                <h3 className="font-semibold text-slate-800">Security & Session</h3>
-                            </div>
-                            <div className="p-6 grid grid-cols-1 sm:grid-cols-2 gap-y-6 gap-x-8">
-                                <div className="col-span-1 sm:col-span-2">
-                                    <InfoItem
-                                        label="Password"
-                                        value={displayUser.password}
-                                        name="password"
-                                        isPassword={true}
-                                        icon={<Lock className="w-3.5 h-3.5 text-slate-400" />}
-                                        isEditing={isEditing}
-                                        onChange={handleInputChange}
-                                    />
-                                </div>
-                                <InfoItem
-                                    label="Timeout Time (min)"
-                                    value={displayUser.timeout_time}
-                                    name="timeout_time"
-                                    type="number"
-                                    icon={<Clock className="w-3.5 h-3.5 text-slate-400" />}
-                                    isEditing={isEditing}
-                                    onChange={handleInputChange}
-                                />
-                            </div>
-                        </section>
-
-                        {/* System Data */}
-                        <section className="bg-slate-50 rounded-xl border border-slate-200 overflow-hidden mt-8 opacity-80">
-                            <div className="px-6 py-3 border-b border-slate-200 flex items-center justify-between cursor-help group">
-                                <div className="flex items-center gap-2">
-                                    <Fingerprint className="w-4 h-4 text-slate-400" />
-                                    <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">System Data (Read Only)</span>
-                                </div>
-                                {isEditing && <Lock size={12} className="text-slate-400" />}
-                            </div>
-                            <div className="px-6 py-4 grid grid-cols-1 gap-4">
-                                <div className="flex flex-col sm:flex-row sm:items-center justify-between text-sm gap-1">
-                                    <span className="text-slate-500">Internal ID</span>
-                                    <code className="bg-slate-200 px-2 py-1 rounded text-slate-700 font-mono text-xs select-all">{displayUser.id}</code>
-                                </div>
-                                <div className="flex flex-col sm:flex-row sm:items-center justify-between text-sm gap-1 border-t border-slate-200 pt-3">
-                                    <span className="text-slate-500">User UUID</span>
-                                    <code className="bg-slate-200 px-2 py-1 rounded text-slate-700 font-mono text-xs select-all">{displayUser.user_id}</code>
-                                </div>
-                            </div>
-                        </section>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <InfoField label="Email (Auth)" value={displayUser.email} readOnly={true} icon={<Mail size={16} />} />
+                        <InfoField label="Paese" name="country" value={displayUser.country} isEditing={isEditing} onChange={handleInputChange} icon={<Globe size={16} />} />
+                        <InfoField label="Lingua" name="language" value={displayUser.language} isEditing={isEditing} onChange={handleInputChange} />
+                        <InfoField label="Valuta" name="currency" value={displayUser.currency} isEditing={isEditing} onChange={handleInputChange} icon={<CreditCard size={16} />} />
                     </div>
                 </div>
             </main>
@@ -445,64 +197,14 @@ export default function UserPage() {
     );
 }
 
-// InfoItem Helper
-const InfoItem = ({
-    label,
-    value,
-    name,
-    icon,
-    isPassword = false,
-    isEditing = false,
-    onChange,
-    type = 'text'
-}: {
-    label: string;
-    value: string | number;
-    name?: string;
-    icon?: React.ReactNode;
-    isPassword?: boolean;
-    isEditing?: boolean;
-    onChange?: (e: React.ChangeEvent<HTMLInputElement>) => void;
-    type?: string;
-}) => {
-    const [showPassword, setShowPassword] = useState(false);
-    const inputType = isPassword && !showPassword ? 'password' : type;
-
-    return (
-        <div className="flex flex-col group">
-            <label className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-1.5 flex items-center gap-1.5">
-                {icon}
-                {label}
-            </label>
-            <div className={`
-                relative flex items-center w-full px-3 py-2.5 rounded-lg border bg-slate-50 text-slate-700 transition-all duration-200
-                ${isEditing ? 'bg-white border-blue-200 shadow-sm focus-within:ring-2 focus-within:ring-blue-100 focus-within:border-blue-400' : 'border-slate-200 hover:border-blue-300 hover:bg-white'}
-            `}>
-                {isEditing && name ? (
-                    <>
-                        <input
-                            type={inputType}
-                            name={name}
-                            value={value}
-                            onChange={onChange}
-                            className={`w-full text-sm font-medium bg-transparent border-none focus:ring-0 p-0 text-slate-900 ${isPassword && !showPassword ? 'tracking-widest' : ''}`}
-                        />
-                        {isPassword && (
-                            <button
-                                type="button"
-                                onClick={() => setShowPassword(!showPassword)}
-                                className="absolute right-3 text-slate-400 hover:text-blue-600 focus:outline-none transition-colors"
-                            >
-                                {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                            </button>
-                        )}
-                    </>
-                ) : (
-                    <span className={`text-sm w-full truncate ${isPassword ? 'font-mono tracking-widest text-slate-500' : 'font-medium'}`}>
-                        {isPassword ? '••••••••••••' : value}
-                    </span>
-                )}
-            </div>
-        </div>
-    );
-};
+// Helper componente per i campi
+const InfoField = ({ label, value, name, isEditing, onChange, readOnly, icon }: any) => (
+    <div>
+        <label className="text-xs font-bold text-slate-400 uppercase mb-1 flex items-center gap-1">{icon} {label}</label>
+        {isEditing && !readOnly ? (
+            <input type="text" name={name} value={value} onChange={onChange} className="w-full border rounded p-2 text-sm" />
+        ) : (
+            <div className="text-slate-800 font-medium text-sm">{value}</div>
+        )}
+    </div>
+);
