@@ -284,7 +284,7 @@ export default function Transactions() {
                                             className={`px-6 py-2 rounded-md text-sm font-medium transition-all flex items-center gap-2 ${formData.type === 'Acquisto' ? 'bg-white text-green-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
                                             onClick={() => setFormData(prev => ({ ...prev, type: 'Acquisto' }))}
                                         >
-                                            <TrendingUp size={16} /> Purchase
+                                            <TrendingUp size={16} /> Buy
                                         </button>
                                         <button
                                             className={`px-6 py-2 rounded-md text-sm font-medium transition-all flex items-center gap-2 ${formData.type === 'Vendita' ? 'bg-white text-red-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
