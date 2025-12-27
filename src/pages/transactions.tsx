@@ -3,9 +3,9 @@ import { useEffect, useState, useMemo, useRef } from 'react';
 import { Filter, ArrowUp, ArrowDown, Search, Check, Plus, X, Calendar, TrendingUp, TrendingDown, Settings } from 'lucide-react';
 
 // --- CONFIGURAZIONE ---
+// Tenta di recuperare le variabili d'ambiente, altrimenti usa stringhe vuote
 const supabaseUrl = (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_SUPABASE_URL) || '';
 const supabaseKey = (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_SUPABASE_ANON_KEY) || '';
-// Il client supabase sarà inizializzato dinamicamente
 
 // --- API CONFIGURATION ---
 const PYTHON_API_URL = "https://invest-monitor-api.onrender.com";
@@ -87,18 +87,43 @@ export default function Transactions() {
     // Effetto per caricare Supabase via CDN (risolve errori di importazione in preview)
     useEffect(() => {
         const loadSupabase = () => {
+            // Controllo preliminare per evitare il caricamento se le chiavi non ci sono
+            if (!supabaseUrl || !supabaseKey) {
+                console.warn("Supabase keys are missing");
+                setError("Missing Supabase configuration (API Keys). Please check your .env file.");
+                setLoading(false);
+                return;
+            }
+
             if ((window as any).supabase) {
-                const client = (window as any).supabase.createClient(supabaseUrl, supabaseKey);
-                setSupabase(client);
+                try {
+                    const client = (window as any).supabase.createClient(supabaseUrl, supabaseKey);
+                    setSupabase(client);
+                } catch (err: any) {
+                    setError("Error initializing Supabase: " + err.message);
+                    setLoading(false);
+                }
             } else {
                 const script = document.createElement('script');
-                script.src = "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2";
+                script.src = "https://unpkg.com/@supabase/supabase-js@2"; // URL più affidabile per UMD
                 script.async = true;
                 script.onload = () => {
-                    if ((window as any).supabase) {
-                        const client = (window as any).supabase.createClient(supabaseUrl, supabaseKey);
-                        setSupabase(client);
+                    try {
+                        if ((window as any).supabase) {
+                            const client = (window as any).supabase.createClient(supabaseUrl, supabaseKey);
+                            setSupabase(client);
+                        } else {
+                            throw new Error("Supabase library not found in window object");
+                        }
+                    } catch (err: any) {
+                        console.error("Supabase Init Error:", err);
+                        setError("Failed to initialize Supabase client: " + err.message);
+                        setLoading(false);
                     }
+                };
+                script.onerror = () => {
+                    setError("Failed to load Supabase script from CDN.");
+                    setLoading(false);
                 };
                 document.body.appendChild(script);
             }
@@ -131,7 +156,7 @@ export default function Transactions() {
     }, [formData.currency]);
 
     async function fetchTransactions() {
-        if (!supabase) return; // Attendi caricamento libreria
+        if (!supabase) return;
 
         try {
             setLoading(true);
@@ -142,9 +167,10 @@ export default function Transactions() {
 
             if (error) throw error;
             setTransactions(data || []);
+            setError(null);
         } catch (err: any) {
             console.error("Fetch error:", err);
-            setError(err.message);
+            setError("Error fetching data: " + err.message);
         } finally {
             setLoading(false);
         }
@@ -293,8 +319,6 @@ export default function Transactions() {
     };
 
     // --- RENDERING CELLE TABELLA ---
-    // Questa funzione serve a mantenere la formattazione specifica per colonna
-    // anche se stiamo ciclando dinamicamente
     const renderCellContent = (t: Transaction, colKey: string) => {
         switch (colKey) {
             case 'operation_date':
@@ -368,8 +392,22 @@ export default function Transactions() {
                     </div>
                 </div>
 
-                {loading && !isModalOpen && <p className="text-gray-600">Loading data...</p>}
-                {error && <p className="text-red-500 bg-red-50 p-4 rounded">Error: {error}</p>}
+                {loading && !isModalOpen && (
+                    <div className="flex flex-col items-center justify-center p-8 text-gray-500">
+                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mb-2"></div>
+                        <p>Loading data...</p>
+                    </div>
+                )}
+
+                {error && (
+                    <div className="bg-red-50 border border-red-200 text-red-600 p-4 rounded-lg mb-4 flex items-start gap-3">
+                        <div className="mt-0.5"><X size={18} /></div>
+                        <div>
+                            <p className="font-semibold">Error</p>
+                            <p className="text-sm">{error}</p>
+                        </div>
+                    </div>
+                )}
 
                 {!loading && !error && (
                     <div className="bg-white shadow-lg rounded-xl overflow-visible border border-gray-200">
