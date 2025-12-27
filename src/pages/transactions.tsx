@@ -24,15 +24,21 @@ const PYTHON_API_URL = "https://invest-monitor-api.onrender.com";
 const PEOPLE_OPTIONS = ["Ale", "Peppe", "Raff"];
 
 // Definizione completa di tutte le colonne possibili
-// Aggiornata con tutti i campi presenti nel form e nel DB
+// Aggiornata per includere ~28 colonne potenziali del DB
 const ALL_COLUMNS = [
+    { key: 'id', label: 'ID', type: 'text' },
+    { key: 'created_at', label: 'Created At', type: 'datetime' },
     { key: 'operation_date', label: 'Date', type: 'date' },
     { key: 'ticker', label: 'Ticker', type: 'text' },
+    { key: 'security_name', label: 'Security Name', type: 'text' },
+    { key: 'isin', label: 'ISIN', type: 'text' },
     { key: 'buy_or_sell', label: 'Type', type: 'text' },
+    { key: 'asset_class', label: 'Asset Class', type: 'text' },
     { key: 'total_shares_num', label: 'Shares', type: 'number' },
     { key: 'price', label: 'Price', type: 'number' },
     { key: 'currency', label: 'Currency', type: 'text' },
     { key: 'exchange_rate', label: 'Ex. Rate', type: 'number' },
+    { key: 'total_outlay_local', label: 'Total (Local)', type: 'number' },
     { key: 'total_outlay_eur', label: 'Total (€)', type: 'number' },
     { key: 'person', label: 'Person', type: 'text' },
     { key: 'platform', label: 'Platform', type: 'text' },
@@ -40,6 +46,14 @@ const ALL_COLUMNS = [
     { key: 'regulated', label: 'Regulated', type: 'text' },
     { key: 'expenses', label: 'Expenses (€)', type: 'number' },
     { key: 'taxes', label: 'Taxes (€)', type: 'number' },
+    { key: 'current_price', label: 'Cur. Price', type: 'number' },
+    { key: 'market_value_eur', label: 'Mkt Value (€)', type: 'number' },
+    { key: 'gain_loss_eur', label: 'P&L (€)', type: 'number' },
+    { key: 'gain_loss_pct', label: 'P&L (%)', type: 'number' },
+    { key: 'sector', label: 'Sector', type: 'text' },
+    { key: 'region', label: 'Region', type: 'text' },
+    { key: 'notes', label: 'Notes', type: 'text' },
+    { key: 'updated_at', label: 'Updated At', type: 'datetime' }
 ];
 
 const DEFAULT_VISIBLE_COLUMNS = ['operation_date', 'ticker', 'buy_or_sell', 'person'];
@@ -270,7 +284,9 @@ export default function Transactions() {
     // --- HELPER TABELLA ---
     const formatValue = (key: string, value: any): string => {
         if (!value && value !== 0) return '';
-        if (key === 'operation_date') return new Date(value).toLocaleDateString('it-IT');
+        if (key === 'operation_date' || key === 'created_at' || key === 'updated_at') {
+            return new Date(value).toLocaleDateString('it-IT');
+        }
         if (typeof value === 'number') return value.toString();
         return String(value);
     };
@@ -327,10 +343,18 @@ export default function Transactions() {
     // --- RENDERING CELLE TABELLA ---
     const renderCellContent = (t: Transaction, colKey: string) => {
         switch (colKey) {
+            case 'id':
+                return <span className="text-gray-400 text-xs font-mono">{t.id.substring(0, 8)}...</span>;
+            case 'created_at':
+            case 'updated_at':
+                return <span className="text-gray-500 text-xs">{t[colKey] ? new Date(t[colKey]).toLocaleString('it-IT') : '-'}</span>;
             case 'operation_date':
                 return new Date(t.operation_date).toLocaleDateString('it-IT');
             case 'ticker':
                 return <span className="font-bold">{t.ticker}</span>;
+            case 'security_name':
+            case 'isin':
+                return <span className="text-gray-600">{t[colKey] || '-'}</span>;
             case 'buy_or_sell':
                 return (
                     <span className={`px-2 py-1 rounded-full text-xs font-medium
@@ -343,16 +367,28 @@ export default function Transactions() {
             case 'total_shares_num':
                 return <div className="text-right">{t.total_shares_num}</div>;
             case 'price':
-                return <div className="text-right">{t.price ? Number(t.price).toFixed(2) : '-'}</div>;
+            case 'current_price':
+                return <div className="text-right">{t[colKey] ? Number(t[colKey]).toFixed(2) : '-'}</div>;
             case 'exchange_rate':
                 return <div className="text-right text-gray-500">{t.exchange_rate ? Number(t.exchange_rate).toFixed(4) : '-'}</div>;
+            case 'total_outlay_local':
+                return <div className="text-right font-mono text-gray-600">{t.total_outlay_local ? Number(t.total_outlay_local).toFixed(2) : '-'}</div>;
             case 'total_outlay_eur':
-                return <div className="text-right font-mono">{t.total_outlay_eur?.toFixed(2)} €</div>;
+            case 'market_value_eur':
+                return <div className="text-right font-mono font-medium">{t[colKey] ? Number(t[colKey]).toFixed(2) : '-'} €</div>;
+            case 'gain_loss_eur':
+                const val = Number(t.gain_loss_eur || 0);
+                return <div className={`text-right font-bold ${val >= 0 ? 'text-green-600' : 'text-red-600'}`}>{val.toFixed(2)} €</div>;
+            case 'gain_loss_pct':
+                const pct = Number(t.gain_loss_pct || 0);
+                return <div className={`text-right text-xs ${pct >= 0 ? 'text-green-600' : 'text-red-600'}`}>{pct.toFixed(2)}%</div>;
             case 'expenses':
             case 'taxes':
                 return <div className="text-right text-red-500">{t[colKey] ? Number(t[colKey]).toFixed(2) : '0.00'} €</div>;
             case 'person':
                 return t.person;
+            case 'notes':
+                return <span className="text-gray-500 italic truncate max-w-[150px] block" title={t.notes}>{t.notes || '-'}</span>;
             default:
                 return t[colKey];
         }
