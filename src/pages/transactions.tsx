@@ -7,8 +7,11 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 const supabase = createClient(supabaseUrl, supabaseKey);
 
+// --- API CONFIGURATION ---
+// Sostituisci questo URL con quello esatto che ti ha dato Render se diverso
+const PYTHON_API_URL = "https://invest-monitor-api.onrender.com";
+
 // --- COSTANTI ---
-// In futuro questi potrebbero arrivare da una tabella 'people' del DB
 const PEOPLE_OPTIONS = ["Ale", "Peppe", "Raff"];
 
 // --- TIPI ---
@@ -19,7 +22,7 @@ type Transaction = {
     buy_or_sell: string;
     total_shares_num: number;
     total_outlay_eur: number;
-    person: string; // Assicuriamoci che esista nel DB o nella query
+    person: string;
     [key: string]: any;
 };
 
@@ -61,7 +64,7 @@ export default function Transactions() {
         currency: 'EUR',
         exchange_rate: '1',
         shares_single: '', // Usato se 1 persona
-        shares_multi: {} as Record<string, string>, // Usato se >1 persona: { "Ale": "10", "Peppe": "10" }
+        shares_multi: {} as Record<string, string>, // Usato se >1 persona
         platform: '',
         account_owner: '',
         regulated: 'Yes',
@@ -84,7 +87,12 @@ export default function Transactions() {
     async function fetchTransactions() {
         try {
             setLoading(true);
-            const { data, error } = await supabase.from('transactions').select('*');
+            const { data, error } = await supabase
+                .from('transactions')
+                .select('*')
+                // Ordiniamo per data di default per vedere le ultime inserite
+                .order('operation_date', { ascending: false });
+
             if (error) throw error;
             setTransactions(data || []);
         } catch (err: any) {
@@ -124,7 +132,7 @@ export default function Transactions() {
         }));
     };
 
-    // --- STEP DI PREPARAZIONE DATI (NO DB INSERT) ---
+    // --- INVIO DATI A PYTHON (RENDER) ---
     const handleSubmit = async () => {
         // 1. Validazione base dell'interfaccia
         if (formData.people.length === 0 || !formData.security || !formData.price) {
@@ -132,25 +140,48 @@ export default function Transactions() {
             return;
         }
 
-        // 2. Simulazione preparazione pacchetto dati
-        // Qui è dove, in futuro, chiameremo la tua funzione Python
-        const payload = {
-            meta: {
-                timestamp: new Date().toISOString(),
-                action: "ADD_TRANSACTION"
-            },
-            data: formData
-        };
+        setLoading(true);
 
-        console.log("--------------------------------------------------");
-        console.log("✅ INPUT DATA READY FOR PYTHON FUNCTION:");
-        console.log(payload);
-        console.log("--------------------------------------------------");
+        try {
+            // 2. Chiamata reale al server Python su Render
+            console.log("⏳ Sending data to Python API...");
 
-        alert("Input captured! Check the browser console (F12) to see the JSON payload.");
+            const response = await fetch(`${PYTHON_API_URL}/process_transaction`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(formData)
+            });
 
-        // Chiudiamo la modale (opzionale: potremmo resettare il form)
-        setIsModalOpen(false);
+            const result = await response.json();
+
+            if (!response.ok) {
+                throw new Error(result.detail || "Error connecting to Python server");
+            }
+
+            // 3. Successo
+            console.log("✅ Success:", result);
+            alert(`Transaction successfully processed! ${result.inserted_rows} rows added to DB.`);
+
+            // Chiudiamo la modale e resettiamo il form
+            setIsModalOpen(false);
+            setFormData({
+                people: [], security: '', date: new Date().toISOString().split('T')[0],
+                price: '', currency: 'EUR', exchange_rate: '1', shares_single: '',
+                shares_multi: {}, platform: '', account_owner: '', regulated: 'Yes',
+                expenses: '0', taxes: '0', type: 'Acquisto'
+            });
+
+            // Ricarichiamo la tabella per mostrare i nuovi dati
+            fetchTransactions();
+
+        } catch (err: any) {
+            console.error("API Error:", err);
+            alert(`❌ Error processing transaction: ${err.message}\n\nCheck if the Render server is running.`);
+        } finally {
+            setLoading(false);
+        }
     };
 
 
@@ -303,7 +334,7 @@ export default function Transactions() {
                     </div>
                 )}
 
-                {/* --- MODAL ADD TRANSACTION (PREDISPOSIZIONE UI) --- */}
+                {/* --- MODAL ADD TRANSACTION --- */}
                 {isModalOpen && (
                     <div className="fixed inset-0 z-[100] bg-black/50 flex items-center justify-center p-4 backdrop-blur-sm">
                         <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
@@ -330,8 +361,8 @@ export default function Transactions() {
                                                     key={person}
                                                     onClick={() => togglePerson(person)}
                                                     className={`px-4 py-2 rounded-full text-sm font-medium transition-all border ${isSelected
-                                                            ? 'bg-blue-600 text-white border-blue-600 shadow-md'
-                                                            : 'bg-white text-gray-600 border-gray-300 hover:border-blue-400'
+                                                        ? 'bg-blue-600 text-white border-blue-600 shadow-md'
+                                                        : 'bg-white text-gray-600 border-gray-300 hover:border-blue-400'
                                                         }`}
                                                 >
                                                     {isSelected && <Check size={14} className="inline mr-1" />}
@@ -363,160 +394,4 @@ export default function Transactions() {
                                             name="date"
                                             value={formData.date}
                                             onChange={handleInputChange}
-                                            className="w-full border border-gray-300 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 outline-none"
-                                        />
-                                        <Calendar className="absolute right-3 top-2.5 text-gray-400 pointer-events-none" size={20} />
-                                    </div>
-                                </div>
-
-                                {/* 4. PRICE */}
-                                <div>
-                                    <label className="block text-sm font-semibold text-gray-700 mb-1">4. Price (Inv. Currency)</label>
-                                    <input
-                                        type="number"
-                                        step="0.01"
-                                        name="price"
-                                        value={formData.price}
-                                        onChange={handleInputChange}
-                                        className="w-full border border-gray-300 rounded-lg p-2.5 outline-none focus:border-blue-500"
-                                        placeholder="0.00"
-                                    />
-                                </div>
-
-                                {/* 5. CURRENCY */}
-                                <div>
-                                    <label className="block text-sm font-semibold text-gray-700 mb-1">5. Currency</label>
-                                    <select
-                                        name="currency"
-                                        value={formData.currency}
-                                        onChange={handleInputChange}
-                                        className="w-full border border-gray-300 rounded-lg p-2.5 outline-none focus:border-blue-500 bg-white"
-                                    >
-                                        <option value="EUR">EUR</option>
-                                        <option value="USD">USD</option>
-                                        <option value="GBP">GBP</option>
-                                    </select>
-                                </div>
-
-                                {/* 6. EXCHANGE RATE */}
-                                <div>
-                                    <label className="block text-sm font-semibold text-gray-700 mb-1">6. Exchange Rate (to EUR)</label>
-                                    <input
-                                        type="number"
-                                        step="0.0001"
-                                        name="exchange_rate"
-                                        value={formData.exchange_rate}
-                                        onChange={handleInputChange}
-                                        disabled={formData.currency === 'EUR'}
-                                        className={`w-full border border-gray-300 rounded-lg p-2.5 outline-none ${formData.currency === 'EUR' ? 'bg-gray-100 text-gray-400' : 'focus:border-blue-500'}`}
-                                    />
-                                </div>
-
-                                {/* 7. NUMBER OF SHARES (Dynamic) */}
-                                <div className="md:col-span-2 bg-gray-50 p-4 rounded-xl border border-gray-200">
-                                    <label className="block text-sm font-semibold text-gray-700 mb-2">7. Number of Shares</label>
-
-                                    {formData.people.length <= 1 ? (
-                                        // CASO 1: Singolo Input
-                                        <input
-                                            type="number"
-                                            name="shares_single"
-                                            value={formData.shares_single}
-                                            onChange={handleInputChange}
-                                            placeholder="Total shares"
-                                            className="w-full border border-gray-300 rounded-lg p-2.5 outline-none focus:border-blue-500"
-                                        />
-                                    ) : (
-                                        // CASO 2: Multi Input (Uno per persona)
-                                        <div className="grid grid-cols-2 gap-4">
-                                            {formData.people.map(person => (
-                                                <div key={person}>
-                                                    <label className="text-xs font-bold text-gray-500 uppercase">{person}'s Shares</label>
-                                                    <input
-                                                        type="number"
-                                                        value={formData.shares_multi[person] || ''}
-                                                        onChange={(e) => handleMultiShareChange(person, e.target.value)}
-                                                        className="w-full border border-gray-300 rounded-lg p-2 outline-none focus:border-blue-500 mt-1"
-                                                        placeholder={`Shares for ${person}`}
-                                                    />
-                                                </div>
-                                            ))}
-                                        </div>
-                                    )}
-                                    {formData.people.length === 0 && <p className="text-xs text-red-500 mt-1">Select at least one person first.</p>}
-                                </div>
-
-                                {/* 8. PLATFORM */}
-                                <div>
-                                    <label className="block text-sm font-semibold text-gray-700 mb-1">8. Platform</label>
-                                    <input
-                                        name="platform"
-                                        value={formData.platform}
-                                        onChange={handleInputChange}
-                                        className="w-full border border-gray-300 rounded-lg p-2.5 outline-none focus:border-blue-500"
-                                        placeholder="e.g. Fineco"
-                                    />
-                                </div>
-
-                                {/* 9. ACCOUNT OWNER */}
-                                <div>
-                                    <label className="block text-sm font-semibold text-gray-700 mb-1">9. Account Owner</label>
-                                    <select
-                                        name="account_owner"
-                                        value={formData.account_owner}
-                                        onChange={handleInputChange}
-                                        className="w-full border border-gray-300 rounded-lg p-2.5 outline-none focus:border-blue-500 bg-white"
-                                    >
-                                        <option value="">Select owner...</option>
-                                        {PEOPLE_OPTIONS.map(p => <option key={p} value={p}>{p}</option>)}
-                                    </select>
-                                </div>
-
-                                {/* 10. REGULATED MARKET */}
-                                <div className="flex flex-col justify-center">
-                                    <label className="block text-sm font-semibold text-gray-700 mb-2">10. Regulated Market?</label>
-                                    <div className="flex gap-4">
-                                        <label className="flex items-center gap-2 cursor-pointer">
-                                            <input type="radio" name="regulated" value="Yes" checked={formData.regulated === 'Yes'} onChange={handleInputChange} className="text-blue-600" />
-                                            <span>Yes</span>
-                                        </label>
-                                        <label className="flex items-center gap-2 cursor-pointer">
-                                            <input type="radio" name="regulated" value="No" checked={formData.regulated === 'No'} onChange={handleInputChange} className="text-blue-600" />
-                                            <span>No</span>
-                                        </label>
-                                    </div>
-                                </div>
-
-                                {/* 11 & 12 EXPENSES & TAXES */}
-                                <div>
-                                    <label className="block text-sm font-semibold text-gray-700 mb-1">11. Expenses (€)</label>
-                                    <input type="number" name="expenses" value={formData.expenses} onChange={handleInputChange} className="w-full border border-gray-300 rounded-lg p-2.5 outline-none" />
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-semibold text-gray-700 mb-1">12. Taxes (€)</label>
-                                    <input type="number" name="taxes" value={formData.taxes} onChange={handleInputChange} className="w-full border border-gray-300 rounded-lg p-2.5 outline-none" />
-                                </div>
-
-                            </div>
-
-                            {/* Modal Footer */}
-                            <div className="p-6 border-t border-gray-100 flex justify-end gap-3 bg-gray-50 rounded-b-2xl">
-                                <button onClick={() => setIsModalOpen(false)} className="px-5 py-2.5 text-gray-600 font-medium hover:bg-gray-200 rounded-lg transition">
-                                    Cancel
-                                </button>
-                                <button
-                                    onClick={handleSubmit}
-                                    className="px-5 py-2.5 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition shadow-lg flex items-center gap-2"
-                                >
-                                    Confirm & Check Input
-                                </button>
-                            </div>
-
-                        </div>
-                    </div>
-                )}
-
-            </div>
-        </main>
-    );
-}
+                                            className="w-full border border-gray-300 rounded-lg p-2.
