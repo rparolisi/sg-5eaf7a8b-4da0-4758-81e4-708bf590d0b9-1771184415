@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import {
-    User,
     Mail,
     Lock,
     Globe,
@@ -13,21 +12,18 @@ import {
     CheckCircle,
     XCircle,
     Settings,
-    ChevronDown,
     Save,
     X,
     Edit3,
-    Eye,     
+    Eye,
     EyeOff,
-    LogOut    
+    LogOut
 } from 'lucide-react';
-import { useRouter } from 'next/router'; // Assicurati di avere router
+import { useRouter } from 'next/router';
 
 // --- CONFIGURAZIONE SUPABASE ---
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
 const SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
-
-// Inizializzazione Client
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // --- Tipi di dati ---
@@ -37,7 +33,7 @@ interface UserData {
     alias: string;
     full_name: string;
     email: string;
-    password: string;
+    password: string; // Nota: In produzione non dovresti mai recuperare la password in chiaro dal DB
     creation_date: string;
     sharing_availability: boolean;
     country: string;
@@ -47,8 +43,11 @@ interface UserData {
 }
 
 export default function UserPage() {
-    const [usersList, setUsersList] = useState < UserData[] > ([]);
-    const [selectedUser, setSelectedUser] = useState < UserData | null > (null);
+    // 1. Hook dichiarati all'inizio
+    const router = useRouter();
+
+    // Non serve più la lista di tutti gli utenti, ma solo i dati dell'utente corrente
+    const [userData, setUserData] = useState < UserData | null > (null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState < string | null > (null);
 
@@ -57,27 +56,35 @@ export default function UserPage() {
     const [formData, setFormData] = useState < UserData | null > (null);
     const [saveLoading, setSaveLoading] = useState(false);
 
+    // 2. Fetch del SOLO utente loggato
     useEffect(() => {
-        const fetchUsers = async () => {
+        const fetchUserProfile = async () => {
             try {
                 setLoading(true);
 
-                const { data, error } = await supabase
+                // A. Controlliamo chi è loggato nella sessione
+                const { data: { user }, error: authError } = await supabase.auth.getUser();
+
+                if (authError || !user) {
+                    // Se non è loggato, rimandiamo al login
+                    router.push('/login');
+                    return;
+                }
+
+                // B. Recuperiamo i dati dal DB solo per questo user_id
+                const { data, error: dbError } = await supabase
                     .from('users')
                     .select('*')
-                    .order('alias', { ascending: true });
+                    .eq('user_id', user.id) // Filtra per l'UUID di Supabase Auth
+                    .single(); // Ci aspettiamo un solo risultato
 
-                if (error) throw error;
+                if (dbError) throw dbError;
 
-                if (data && data.length > 0) {
-                    setUsersList(data as UserData[]);
-                    if (!selectedUser) {
-                        const initialUser = data[0] as UserData;
-                        setSelectedUser(initialUser);
-                        setFormData(initialUser);
-                    }
+                if (data) {
+                    setUserData(data as UserData);
+                    setFormData(data as UserData);
                 } else {
-                    setError("No user found in the database.");
+                    setError("User profile not found.");
                 }
 
             } catch (err: any) {
@@ -88,27 +95,8 @@ export default function UserPage() {
             }
         };
 
-        fetchUsers();
-    }, []);
-
-    // Sincronizza il form quando cambia l'utente selezionato
-    useEffect(() => {
-        if (selectedUser) {
-            setFormData(selectedUser);
-            setIsEditing(false); // Resetta edit mode se cambio utente
-        }
-    }, [selectedUser]);
-
-    // Gestore cambio dropdown (cambio utente)
-    const handleUserChange = (alias: string) => {
-        // Se stiamo modificando, chiediamo conferma o salviamo? Per ora resettiamo.
-        if (isEditing) {
-            if (!window.confirm("You have unsaved changes. Discard them?")) return;
-            setIsEditing(false);
-        }
-        const user = usersList.find(u => u.alias === alias);
-        if (user) setSelectedUser(user);
-    };
+        fetchUserProfile();
+    }, [router]);
 
     // Gestore modifiche input
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -131,13 +119,12 @@ export default function UserPage() {
 
     // Funzione di Salvataggio su Supabase
     const handleSave = async () => {
-        if (!formData || !selectedUser) return;
+        if (!formData || !userData) return;
 
         try {
             setSaveLoading(true);
 
-            // Aggiorna su Supabase
-            // Nota: Non aggiorniamo 'alias', 'id', 'user_id' o 'creation_date' perché non modificabili o chiave
+            // Aggiorna su Supabase usando l'ID univoco
             const { error } = await supabase
                 .from('users')
                 .update({
@@ -150,18 +137,12 @@ export default function UserPage() {
                     timeout_time: formData.timeout_time,
                     sharing_availability: formData.sharing_availability
                 })
-                .eq('id', selectedUser.id);
+                .eq('id', userData.id); // Usa l'ID del record caricato
 
             if (error) throw error;
 
             // Aggiorna lo stato locale
-            setSelectedUser(formData);
-
-            // Aggiorna la lista utenti locale per riflettere le modifiche nel dropdown o altrove
-            setUsersList(prevList =>
-                prevList.map(u => u.id === formData.id ? formData : u)
-            );
-
+            setUserData(formData);
             setIsEditing(false);
             alert("Profile updated successfully!");
 
@@ -173,15 +154,13 @@ export default function UserPage() {
         }
     };
 
-    const router = useRouter();
-
     const handleLogout = async () => {
         await supabase.auth.signOut();
-        router.push('/login'); // Ti rimanda al login dopo essere uscito
+        router.push('/login');
     };
-    // Annulla modifiche
+
     const handleCancel = () => {
-        setFormData(selectedUser);
+        setFormData(userData);
         setIsEditing(false);
     };
 
@@ -205,7 +184,7 @@ export default function UserPage() {
             <div className="min-h-screen flex items-center justify-center bg-gray-50">
                 <div className="flex flex-col items-center gap-4">
                     <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-                    <p className="text-gray-500 font-medium">Loading data...</p>
+                    <p className="text-gray-500 font-medium">Loading profile...</p>
                 </div>
             </div>
         );
@@ -218,47 +197,34 @@ export default function UserPage() {
                     <XCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
                     <h3 className="text-lg font-bold text-gray-900 mb-2">Loading Error</h3>
                     <p className="text-gray-600">{error}</p>
-                    <button onClick={() => window.location.reload()} className="mt-6 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors">
-                        Retry
+                    <button onClick={handleLogout} className="mt-6 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors">
+                        Go to Login
                     </button>
                 </div>
             </div>
         );
     }
 
-    const displayUser = isEditing ? formData : selectedUser;
+    // Usiamo userData invece di selectedUser
+    const displayUser = isEditing ? formData : userData;
     if (!displayUser) return null;
 
     return (
         <div className="min-h-screen bg-slate-50 font-sans text-slate-900 pb-12">
 
-            {/* Navbar */}
+            {/* Navbar Interna (Opzionale: puoi rimuoverla se usi quella globale) */}
             <nav className="bg-white border-b border-gray-200 px-6 py-4 flex justify-between items-center sticky top-0 z-10 shadow-sm">
                 <div className="flex items-center gap-2">
                     <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold">IM</div>
                     <span className="text-xl font-bold tracking-tight text-slate-800">InvestMonitor</span>
                 </div>
                 <div className="flex items-center gap-4">
-                    <div className="relative group">
-                        <div className={`flex items-center gap-3 bg-slate-100 hover:bg-slate-200 transition-colors rounded-full pl-4 pr-2 py-1.5 cursor-pointer border border-slate-200 ${isEditing ? 'opacity-50 pointer-events-none' : ''}`}>
-                            <div className="flex flex-col items-end mr-2">
-                                <span className="text-xs text-slate-500 font-semibold uppercase tracking-wider">Select User</span>
-                                <select
-                                    value={selectedUser?.alias || ''} // Usa sempre selectedUser per il dropdown
-                                    onChange={(e) => handleUserChange(e.target.value)}
-                                    className="bg-transparent border-none p-0 text-sm font-bold text-slate-700 focus:ring-0 cursor-pointer text-right appearance-none pr-4 focus:outline-none"
-                                    style={{ backgroundImage: 'none' }}
-                                    disabled={isEditing}
-                                >
-                                    {usersList.map((u) => (
-                                        <option key={u.id} value={u.alias}>{u.alias}</option>
-                                    ))}
-                                </select>
-                                <ChevronDown className="w-3 h-3 text-slate-500 absolute right-12 bottom-2.5 pointer-events-none" />
-                            </div>
-                            <div className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center text-sm font-bold shadow-sm">
-                                {getInitials(displayUser.full_name)}
-                            </div>
+                    <div className="flex items-center gap-3 bg-slate-100 rounded-full pl-4 pr-2 py-1.5 border border-slate-200">
+                        <span className="text-sm font-bold text-slate-700 mr-2">
+                            {displayUser.alias}
+                        </span>
+                        <div className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center text-sm font-bold shadow-sm">
+                            {getInitials(displayUser.full_name)}
                         </div>
                     </div>
                 </div>
@@ -270,7 +236,7 @@ export default function UserPage() {
                     <div>
                         <h1 className="text-3xl font-bold text-slate-900">User Profile</h1>
                         <p className="mt-1 text-slate-500">
-                            Viewing data for: <span className="font-semibold text-blue-600">{selectedUser?.alias}</span>
+                            Manage your account settings and preferences.
                         </p>
                     </div>
 
@@ -279,7 +245,7 @@ export default function UserPage() {
                             <>
                                 <button
                                     onClick={handleCancel}
-                                    className="inline-flex items-center justify-center px-4 py-2 border border-slate-300 text-sm font-medium rounded-md shadow-sm text-slate-700 bg-white hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-500 transition-colors"
+                                    className="inline-flex items-center justify-center px-4 py-2 border border-slate-300 text-sm font-medium rounded-md shadow-sm text-slate-700 bg-white hover:bg-slate-50 focus:outline-none transition-colors"
                                     disabled={saveLoading}
                                 >
                                     <X className="w-4 h-4 mr-2" />
@@ -287,7 +253,7 @@ export default function UserPage() {
                                 </button>
                                 <button
                                     onClick={handleSave}
-                                    className="inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition-colors"
+                                    className="inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none transition-colors"
                                     disabled={saveLoading}
                                 >
                                     {saveLoading ? (
@@ -301,16 +267,13 @@ export default function UserPage() {
                         ) : (
                             <button
                                 onClick={() => setIsEditing(true)}
-                                className="inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
+                                className="inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none transition-colors"
                             >
                                 <Settings className="w-4 h-4 mr-2" />
                                 Edit Profile
                             </button>
                         )}
-                    </div>
-                    <div className="flex items-center gap-3">
 
-                        {/* Tasto Logout - visibile solo se NON si sta editando */}
                         {!isEditing && (
                             <button
                                 onClick={handleLogout}
@@ -320,15 +283,10 @@ export default function UserPage() {
                                 Logout
                             </button>
                         )}
-
-                        {isEditing ? (
-                            // ... i tuoi bottoni Cancel/Save ...
-                        ): (
-                                // ... il tuo bottone Edit Profile ...
-                            )}
                     </div>
                 </div>
 
+                {/* Grid Layout (Identico a prima) */}
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                     {/* Left Column */}
                     <div className="lg:col-span-1 space-y-6">
@@ -362,10 +320,8 @@ export default function UserPage() {
 
                                 <p className="text-sm font-medium text-blue-600 mb-4 flex items-center gap-1">
                                     @{displayUser.alias}
-                                    {isEditing && <span className="text-xs text-slate-400 bg-slate-100 px-1 rounded border border-slate-200 ml-2 font-normal">Read Only</span>}
                                 </p>
 
-                                {/* Email Edit */}
                                 <div className="flex items-center gap-2 text-sm text-slate-500 mb-2">
                                     <Mail className="w-4 h-4 flex-shrink-0" />
                                     {isEditing ? (
@@ -388,7 +344,7 @@ export default function UserPage() {
                             </div>
                         </div>
 
-                        {/* Sharing Status - Editable */}
+                        {/* Sharing Status */}
                         <div className={`bg-white rounded-2xl shadow-sm border border-slate-200 p-6 flex items-center justify-between transition-all duration-300 ${isEditing ? 'ring-2 ring-blue-100' : 'hover:shadow-md'}`}>
                             <div className="flex items-center gap-3">
                                 <div
@@ -404,8 +360,6 @@ export default function UserPage() {
                                     </p>
                                 </div>
                             </div>
-
-                            {/* Visual Toggle for Editing */}
                             {isEditing ? (
                                 <div
                                     onClick={toggleSharing}
@@ -421,40 +375,20 @@ export default function UserPage() {
 
                     {/* Right Column */}
                     <div className="lg:col-span-2 space-y-6">
-
-                        {/* Regional Settings - Editable */}
+                        {/* Regional Settings */}
                         <section className={`bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden transition-all ${isEditing ? 'ring-2 ring-blue-100' : ''}`}>
                             <div className="px-6 py-4 border-b border-slate-100 flex items-center gap-2 bg-slate-50/50">
                                 <Globe className="w-5 h-5 text-blue-500" />
                                 <h3 className="font-semibold text-slate-800">Regional Settings</h3>
                             </div>
                             <div className="p-6 grid grid-cols-1 sm:grid-cols-2 gap-y-6 gap-x-8">
-                                <InfoItem
-                                    label="Country"
-                                    value={displayUser.country}
-                                    name="country"
-                                    isEditing={isEditing}
-                                    onChange={handleInputChange}
-                                />
-                                <InfoItem
-                                    label="Language"
-                                    value={displayUser.language}
-                                    name="language"
-                                    isEditing={isEditing}
-                                    onChange={handleInputChange}
-                                />
-                                <InfoItem
-                                    label="Currency"
-                                    value={displayUser.currency}
-                                    name="currency"
-                                    icon={<CreditCard className="w-3.5 h-3.5 text-slate-400" />}
-                                    isEditing={isEditing}
-                                    onChange={handleInputChange}
-                                />
+                                <InfoItem label="Country" value={displayUser.country} name="country" isEditing={isEditing} onChange={handleInputChange} />
+                                <InfoItem label="Language" value={displayUser.language} name="language" isEditing={isEditing} onChange={handleInputChange} />
+                                <InfoItem label="Currency" value={displayUser.currency} name="currency" icon={<CreditCard className="w-3.5 h-3.5 text-slate-400" />} isEditing={isEditing} onChange={handleInputChange} />
                             </div>
                         </section>
 
-                        {/* Security & Session - Editable */}
+                        {/* Security */}
                         <section className={`bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden transition-all ${isEditing ? 'ring-2 ring-blue-100' : ''}`}>
                             <div className="px-6 py-4 border-b border-slate-100 flex items-center gap-2 bg-slate-50/50">
                                 <Shield className="w-5 h-5 text-blue-500" />
@@ -484,7 +418,7 @@ export default function UserPage() {
                             </div>
                         </section>
 
-                        {/* System Data - Read Only (Always) */}
+                        {/* System Data */}
                         <section className="bg-slate-50 rounded-xl border border-slate-200 overflow-hidden mt-8 opacity-80">
                             <div className="px-6 py-3 border-b border-slate-200 flex items-center justify-between cursor-help group">
                                 <div className="flex items-center gap-2">
@@ -504,7 +438,6 @@ export default function UserPage() {
                                 </div>
                             </div>
                         </section>
-
                     </div>
                 </div>
             </main>
@@ -512,7 +445,7 @@ export default function UserPage() {
     );
 }
 
-// Componente Helper Aggiornato
+// InfoItem Helper
 const InfoItem = ({
     label,
     value,
@@ -532,12 +465,7 @@ const InfoItem = ({
     onChange?: (e: React.ChangeEvent<HTMLInputElement>) => void;
     type?: string;
 }) => {
-    // Stato locale per gestire la visibilità della password
     const [showPassword, setShowPassword] = useState(false);
-
-    // Determina il tipo di input:
-    // Se è una password e NON stiamo mostrando il testo -> 'password'
-    // Altrimenti usa il tipo passato (o 'text')
     const inputType = isPassword && !showPassword ? 'password' : type;
 
     return (
@@ -559,7 +487,6 @@ const InfoItem = ({
                             onChange={onChange}
                             className={`w-full text-sm font-medium bg-transparent border-none focus:ring-0 p-0 text-slate-900 ${isPassword && !showPassword ? 'tracking-widest' : ''}`}
                         />
-                        {/* Tasto Occhio per mostrare/nascondere la password in Edit Mode */}
                         {isPassword && (
                             <button
                                 type="button"
@@ -571,7 +498,6 @@ const InfoItem = ({
                         )}
                     </>
                 ) : (
-                    // View Mode: Nessun tasto "Change", solo pallini o testo
                     <span className={`text-sm w-full truncate ${isPassword ? 'font-mono tracking-widest text-slate-500' : 'font-medium'}`}>
                         {isPassword ? '••••••••••••' : value}
                     </span>
