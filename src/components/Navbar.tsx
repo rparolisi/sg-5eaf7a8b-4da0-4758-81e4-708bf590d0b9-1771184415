@@ -4,16 +4,14 @@ import { TrendingUp, List, PieChart, Info, Home } from 'lucide-react';
 
 export default function Navbar() {
     const router = useRouter();
-
-    // Funzione per capire se un link è attivo
     const isActive = (path: string) => router.pathname === path;
 
-    // Lista delle pagine del menu
+    // Updated paths with underscores (_)
     const navItems = [
         { name: 'Home', path: '/', icon: Home },
         { name: 'Transactions', path: '/transactions', icon: List },
         { name: 'Portfolio', path: '/portfolio_valuation', icon: PieChart },
-        { name: 'Securities info', path: '/securities_info', icon: Info },
+        { name: 'Securities', path: '/securities_info', icon: Info },
     ];
 
     return (
@@ -21,7 +19,7 @@ export default function Navbar() {
             <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
                 <div className="flex justify-between items-center h-16">
 
-                    {/* LOGO A SINISTRA */}
+                    {/* LOGO */}
                     <div className="flex-shrink-0 flex items-center cursor-pointer" onClick={() => router.push('/')}>
                         <div className="bg-blue-600 p-1.5 rounded-lg mr-2">
                             <TrendingUp size={20} className="text-white" />
@@ -31,7 +29,7 @@ export default function Navbar() {
                         </span>
                     </div>
 
-                    {/* LINK A DESTRA (Desktop) */}
+                    {/* DESKTOP LINKS */}
                     <div className="hidden md:flex space-x-8">
                         {navItems.map((item) => {
                             const active = isActive(item.path);
@@ -52,7 +50,7 @@ export default function Navbar() {
                         })}
                     </div>
 
-                    {/* MENU MOBILE (Icone Semplificate per schermi piccoli) */}
+                    {/* MOBILE MENU */}
                     <div className="flex md:hidden justify-around w-full fixed bottom-0 left-0 bg-white border-t border-gray-200 p-3 pb-5 z-50 shadow-inner">
                         {navItems.map((item) => {
                             const active = isActive(item.path);
