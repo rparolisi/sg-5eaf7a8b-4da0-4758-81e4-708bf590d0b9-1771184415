@@ -485,7 +485,7 @@ export default function UserPage() {
     );
 }
 
-// Componente Helper Aggiornato per supportare l'editing
+// Componente Helper Aggiornato
 const InfoItem = ({
     label,
     value,
@@ -504,35 +504,52 @@ const InfoItem = ({
     isEditing?: boolean;
     onChange?: (e: React.ChangeEvent<HTMLInputElement>) => void;
     type?: string;
-}) => (
-    <div className="flex flex-col group">
-        <label className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-1.5 flex items-center gap-1.5">
-            {icon}
-            {label}
-        </label>
-        <div className={`
-      relative flex items-center w-full px-3 py-2.5 rounded-lg border bg-slate-50 text-slate-700 transition-all duration-200
-      ${isEditing ? 'bg-white border-blue-200 shadow-sm focus-within:ring-2 focus-within:ring-blue-100 focus-within:border-blue-400' : 'border-slate-200 hover:border-blue-300 hover:bg-white'}
-    `}>
-            {isEditing && name ? (
-                <input
-                    type={isPassword ? 'text' : type} // Mostra password in chiaro durante l'edit se richiesto, o mantieni 'text'
-                    name={name}
-                    value={value}
-                    onChange={onChange}
-                    className="w-full text-sm font-medium bg-transparent border-none focus:ring-0 p-0 text-slate-900"
-                />
-            ) : (
-                <span className={`text-sm w-full truncate ${isPassword ? 'font-mono tracking-widest text-slate-500' : 'font-medium'}`}>
-                    {isPassword ? '••••••••••••' : value}
-                </span>
-            )}
+}) => {
+    // Stato locale per gestire la visibilità della password
+    const [showPassword, setShowPassword] = useState(false);
 
-            {isPassword && !isEditing && (
-                <span className="absolute right-3 text-xs text-blue-600 font-medium cursor-pointer hover:underline">
-                    Change
-                </span>
-            )}
+    // Determina il tipo di input:
+    // Se è una password e NON stiamo mostrando il testo -> 'password'
+    // Altrimenti usa il tipo passato (o 'text')
+    const inputType = isPassword && !showPassword ? 'password' : type;
+
+    return (
+        <div className="flex flex-col group">
+            <label className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-1.5 flex items-center gap-1.5">
+                {icon}
+                {label}
+            </label>
+            <div className={`
+                relative flex items-center w-full px-3 py-2.5 rounded-lg border bg-slate-50 text-slate-700 transition-all duration-200
+                ${isEditing ? 'bg-white border-blue-200 shadow-sm focus-within:ring-2 focus-within:ring-blue-100 focus-within:border-blue-400' : 'border-slate-200 hover:border-blue-300 hover:bg-white'}
+            `}>
+                {isEditing && name ? (
+                    <>
+                        <input
+                            type={inputType}
+                            name={name}
+                            value={value}
+                            onChange={onChange}
+                            className={`w-full text-sm font-medium bg-transparent border-none focus:ring-0 p-0 text-slate-900 ${isPassword && !showPassword ? 'tracking-widest' : ''}`}
+                        />
+                        {/* Tasto Occhio per mostrare/nascondere la password in Edit Mode */}
+                        {isPassword && (
+                            <button
+                                type="button"
+                                onClick={() => setShowPassword(!showPassword)}
+                                className="absolute right-3 text-slate-400 hover:text-blue-600 focus:outline-none transition-colors"
+                            >
+                                {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                            </button>
+                        )}
+                    </>
+                ) : (
+                    // View Mode: Nessun tasto "Change", solo pallini o testo
+                    <span className={`text-sm w-full truncate ${isPassword ? 'font-mono tracking-widest text-slate-500' : 'font-medium'}`}>
+                        {isPassword ? '••••••••••••' : value}
+                    </span>
+                )}
+            </div>
         </div>
-    </div>
-);
+    );
+};
