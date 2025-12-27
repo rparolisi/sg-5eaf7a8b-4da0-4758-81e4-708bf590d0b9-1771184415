@@ -23,44 +23,42 @@ const PYTHON_API_URL = "https://invest-monitor-api.onrender.com";
 // --- COSTANTI ---
 const PEOPLE_OPTIONS = ["Ale", "Peppe", "Raff"];
 
-// Definizione completa di tutte le colonne possibili
-// Aggiornata per includere ~28 colonne potenziali del DB
+// Definizione completa di tutte le colonne (Mappatura fornita dall'utente)
 const ALL_COLUMNS = [
-    { key: 'id', label: 'ID', type: 'text' },
-    { key: 'created_at', label: 'Created At', type: 'datetime' },
-    { key: 'operation_date', label: 'Date', type: 'date' },
+    { key: 'transaction_id', label: 'Transaction ID', type: 'text' },
     { key: 'ticker', label: 'Ticker', type: 'text' },
-    { key: 'security_name', label: 'Security Name', type: 'text' },
-    { key: 'isin', label: 'ISIN', type: 'text' },
-    { key: 'buy_or_sell', label: 'Type', type: 'text' },
-    { key: 'asset_class', label: 'Asset Class', type: 'text' },
-    { key: 'total_shares_num', label: 'Shares', type: 'number' },
-    { key: 'price', label: 'Price', type: 'number' },
-    { key: 'currency', label: 'Currency', type: 'text' },
-    { key: 'exchange_rate', label: 'Ex. Rate', type: 'number' },
-    { key: 'total_outlay_local', label: 'Total (Local)', type: 'number' },
-    { key: 'total_outlay_eur', label: 'Total (€)', type: 'number' },
-    { key: 'person', label: 'Person', type: 'text' },
+    { key: 'sector', label: 'Sector', type: 'text' },
+    { key: 'operation_date', label: 'Date', type: 'date' },
+    { key: 'asset_currency', label: 'Currency', type: 'text' },
+    { key: 'purchase_price_per_share_curr', label: 'Price (Trans. Curr.)', type: 'number' },
+    { key: 'category', label: 'Category', type: 'text' },
+    { key: 'exchange_rate_at_purchase', label: 'Exchange Rate', type: 'number' },
+    { key: 'purchase_price_per_share_eur', label: 'Price (EUR)', type: 'number' },
+    { key: 'total_shares_num', label: 'Total Shares (Trans)', type: 'number' },
+    { key: 'operation_sign', label: 'Op. Sign', type: 'number' },
+    { key: 'buy_or_sell', label: 'Buy/Sell', type: 'text' },
     { key: 'platform', label: 'Platform', type: 'text' },
     { key: 'account_owner', label: 'Account Owner', type: 'text' },
-    { key: 'regulated', label: 'Regulated', type: 'text' },
-    { key: 'expenses', label: 'Expenses (€)', type: 'number' },
-    { key: 'taxes', label: 'Taxes (€)', type: 'number' },
-    { key: 'current_price', label: 'Cur. Price', type: 'number' },
-    { key: 'market_value_eur', label: 'Mkt Value (€)', type: 'number' },
-    { key: 'gain_loss_eur', label: 'P&L (€)', type: 'number' },
-    { key: 'gain_loss_pct', label: 'P&L (%)', type: 'number' },
-    { key: 'sector', label: 'Sector', type: 'text' },
-    { key: 'region', label: 'Region', type: 'text' },
-    { key: 'notes', label: 'Notes', type: 'text' },
-    { key: 'updated_at', label: 'Updated At', type: 'datetime' }
+    { key: 'regulated_market_or_mtf', label: 'Market Type', type: 'text' },
+    { key: 'transaction_fees_eur', label: 'Fees (EUR)', type: 'number' },
+    { key: 'transaction_taxes_eur', label: 'Taxes (EUR)', type: 'number' },
+    { key: 'total_outlay_eur', label: 'Total Amount (EUR)', type: 'number' },
+    { key: 'effective_purchase_price_per_share', label: 'Effective Price (EUR)', type: 'number' },
+    { key: 'person', label: 'Person', type: 'text' },
+    { key: 'shares_count', label: 'Shares', type: 'number' },
+    { key: 'ratio', label: 'Ratio', type: 'number' },
+    { key: 'cumulative_shares_count', label: 'Cumul. Shares', type: 'number' },
+    { key: 'average_price', label: 'Avg Price', type: 'number' },
+    { key: 'historical_fifo_avg_date', label: 'Avg Date (FIFO)', type: 'date' },
+    { key: 'effective_average_price', label: 'Eff. Avg Price', type: 'number' },
+    { key: 'created_at', label: 'Creation Date', type: 'datetime' }
 ];
 
-const DEFAULT_VISIBLE_COLUMNS = ['operation_date', 'ticker', 'buy_or_sell', 'person'];
+const DEFAULT_VISIBLE_COLUMNS = ['operation_date', 'ticker', 'buy_or_sell', 'person', 'total_outlay_eur'];
 
 // --- TIPI ---
 type Transaction = {
-    id: string;
+    transaction_id: string;
     ticker: string;
     operation_date: string;
     buy_or_sell: string;
@@ -284,7 +282,7 @@ export default function Transactions() {
     // --- HELPER TABELLA ---
     const formatValue = (key: string, value: any): string => {
         if (!value && value !== 0) return '';
-        if (key === 'operation_date' || key === 'created_at' || key === 'updated_at') {
+        if (['operation_date', 'created_at', 'historical_fifo_avg_date'].includes(key)) {
             return new Date(value).toLocaleDateString('it-IT');
         }
         if (typeof value === 'number') return value.toString();
@@ -342,55 +340,72 @@ export default function Transactions() {
 
     // --- RENDERING CELLE TABELLA ---
     const renderCellContent = (t: Transaction, colKey: string) => {
+        // Formattazione specifica per tipo di dato
+        const val = t[colKey];
+
         switch (colKey) {
-            case 'id':
-                return <span className="text-gray-400 text-xs font-mono">{t.id.substring(0, 8)}...</span>;
-            case 'created_at':
-            case 'updated_at':
-                return <span className="text-gray-500 text-xs">{t[colKey] ? new Date(t[colKey]).toLocaleString('it-IT') : '-'}</span>;
+            case 'transaction_id':
+                return <span className="text-gray-400 text-xs font-mono" title={val}>{val ? String(val).substring(0, 8) + '...' : '-'}</span>;
+
+            // DATE
             case 'operation_date':
-                return new Date(t.operation_date).toLocaleDateString('it-IT');
+            case 'created_at':
+            case 'historical_fifo_avg_date':
+                return val ? new Date(val).toLocaleDateString('it-IT') : '-';
+
+            // TESTO IN GRASSETTO
             case 'ticker':
-                return <span className="font-bold">{t.ticker}</span>;
-            case 'security_name':
-            case 'isin':
-                return <span className="text-gray-600">{t[colKey] || '-'}</span>;
+                return <span className="font-bold">{val}</span>;
+
+            // ETICHETTE / TAGS
             case 'buy_or_sell':
                 return (
                     <span className={`px-2 py-1 rounded-full text-xs font-medium
-                        ${t.buy_or_sell === 'Acquisto' ? 'bg-green-100 text-green-800' :
-                            t.buy_or_sell === 'Vendita' ? 'bg-red-100 text-red-800' :
+                        ${val === 'Acquisto' ? 'bg-green-100 text-green-800' :
+                            val === 'Vendita' ? 'bg-red-100 text-red-800' :
                                 'bg-gray-100 text-gray-800'}`}>
-                        {t.category || t.buy_or_sell}
+                        {t.category || val}
                     </span>
                 );
-            case 'total_shares_num':
-                return <div className="text-right">{t.total_shares_num}</div>;
-            case 'price':
-            case 'current_price':
-                return <div className="text-right">{t[colKey] ? Number(t[colKey]).toFixed(2) : '-'}</div>;
-            case 'exchange_rate':
-                return <div className="text-right text-gray-500">{t.exchange_rate ? Number(t.exchange_rate).toFixed(4) : '-'}</div>;
-            case 'total_outlay_local':
-                return <div className="text-right font-mono text-gray-600">{t.total_outlay_local ? Number(t.total_outlay_local).toFixed(2) : '-'}</div>;
+            case 'operation_sign':
+                return <span className={`font-mono font-bold ${val > 0 ? 'text-green-600' : 'text-red-600'}`}>{val > 0 ? '+' : ''}{val}</span>;
+
+            // VALUTA (EUR)
+            case 'purchase_price_per_share_eur':
+            case 'transaction_fees_eur':
+            case 'transaction_taxes_eur':
             case 'total_outlay_eur':
-            case 'market_value_eur':
-                return <div className="text-right font-mono font-medium">{t[colKey] ? Number(t[colKey]).toFixed(2) : '-'} €</div>;
-            case 'gain_loss_eur':
-                const val = Number(t.gain_loss_eur || 0);
-                return <div className={`text-right font-bold ${val >= 0 ? 'text-green-600' : 'text-red-600'}`}>{val.toFixed(2)} €</div>;
-            case 'gain_loss_pct':
-                const pct = Number(t.gain_loss_pct || 0);
-                return <div className={`text-right text-xs ${pct >= 0 ? 'text-green-600' : 'text-red-600'}`}>{pct.toFixed(2)}%</div>;
-            case 'expenses':
-            case 'taxes':
-                return <div className="text-right text-red-500">{t[colKey] ? Number(t[colKey]).toFixed(2) : '0.00'} €</div>;
+            case 'effective_purchase_price_per_share':
+            case 'average_price':
+            case 'effective_average_price':
+                return <div className="text-right font-mono text-gray-700">{val ? Number(val).toFixed(2) : '-'} €</div>;
+
+            // VALUTA (TRANSACTION CURRENCY)
+            case 'purchase_price_per_share_curr':
+                return <div className="text-right font-mono">{val ? Number(val).toFixed(2) : '-'} <span className="text-xs text-gray-400">{t.asset_currency}</span></div>;
+
+            // NUMERI / QUANTITÀ
+            case 'total_shares_num':
+            case 'shares_count':
+            case 'cumulative_shares_count':
+                return <div className="text-right">{val ? Number(val).toLocaleString('it-IT') : '-'}</div>;
+
+            case 'exchange_rate_at_purchase':
+            case 'ratio':
+                return <div className="text-right text-gray-500 text-xs">{val ? Number(val).toFixed(4) : '-'}</div>;
+
+            // TESTO GENERALE (Fallback)
+            case 'sector':
+            case 'asset_currency':
+            case 'category':
+            case 'platform':
+            case 'account_owner':
+            case 'regulated_market_or_mtf':
             case 'person':
-                return t.person;
-            case 'notes':
-                return <span className="text-gray-500 italic truncate max-w-[150px] block" title={t.notes}>{t.notes || '-'}</span>;
+                return val || '-';
+
             default:
-                return t[colKey];
+                return val || '-';
         }
     };
 
@@ -412,12 +427,15 @@ export default function Transactions() {
                             </button>
 
                             {isColumnMenuOpen && (
-                                <div className="absolute right-0 top-12 w-56 bg-white rounded-xl shadow-xl border border-gray-200 z-50 p-3 animate-in fade-in slide-in-from-top-2">
-                                    <h3 className="text-sm font-semibold text-gray-700 mb-2 px-1">Show Columns</h3>
-                                    <div className="max-h-60 overflow-y-auto space-y-1">
+                                <div className="absolute right-0 top-12 w-64 bg-white rounded-xl shadow-xl border border-gray-200 z-50 p-3 animate-in fade-in slide-in-from-top-2">
+                                    <div className="flex justify-between items-center mb-2 px-1">
+                                        <h3 className="text-sm font-semibold text-gray-700">Show Columns</h3>
+                                        <span className="text-xs text-gray-400">{visibleColumns.length} selected</span>
+                                    </div>
+                                    <div className="max-h-60 overflow-y-auto space-y-1 pr-1 custom-scrollbar">
                                         {ALL_COLUMNS.map(col => (
                                             <label key={col.key} className="flex items-center gap-2 p-2 hover:bg-gray-50 rounded-lg cursor-pointer text-sm text-gray-700 select-none">
-                                                <div className={`w-4 h-4 border rounded flex items-center justify-center transition-colors ${visibleColumns.includes(col.key) ? 'bg-blue-600 border-blue-600' : 'border-gray-300'}`}>
+                                                <div className={`w-4 h-4 border rounded flex items-center justify-center transition-colors flex-shrink-0 ${visibleColumns.includes(col.key) ? 'bg-blue-600 border-blue-600' : 'border-gray-300'}`}>
                                                     {visibleColumns.includes(col.key) && <Check size={12} className="text-white" />}
                                                 </div>
                                                 <input
@@ -426,7 +444,7 @@ export default function Transactions() {
                                                     checked={visibleColumns.includes(col.key)}
                                                     onChange={() => toggleColumnVisibility(col.key)}
                                                 />
-                                                {col.label}
+                                                <span className="truncate">{col.label}</span>
                                             </label>
                                         ))}
                                     </div>
@@ -521,7 +539,7 @@ export default function Transactions() {
                             </thead>
                             <tbody className="bg-white divide-y divide-gray-200">
                                 {processedData.map((t) => (
-                                    <tr key={t.id} className="hover:bg-gray-50 transition-colors">
+                                    <tr key={t.transaction_id || t.id} className="hover:bg-gray-50 transition-colors">
                                         {ALL_COLUMNS.filter(col => visibleColumns.includes(col.key)).map(col => (
                                             <td key={col.key} className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                                                 {renderCellContent(t, col.key)}
