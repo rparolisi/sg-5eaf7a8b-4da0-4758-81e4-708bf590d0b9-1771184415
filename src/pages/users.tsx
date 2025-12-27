@@ -3,11 +3,10 @@ import { createClient } from '@supabase/supabase-js';
 import { useRouter } from 'next/router';
 import {
     Mail, Globe, CreditCard, Clock, Calendar,
-    Shield, CheckCircle, XCircle, Settings, Save, X,
+    Shield, XCircle, Settings, Save,
     LogOut, User as UserIcon, MapPin, Hash, Activity,
-    Fingerprint, Lock, Key
+    Fingerprint, Lock, Key, Trash2, AlertTriangle
 } from 'lucide-react';
-import { LogOut, Trash2 } from 'lucide-react'; // Aggiungi Trash2
 
 // --- CONFIGURATION ---
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
@@ -62,11 +61,12 @@ export default function UserPage() {
                 }
 
                 // 2. Fetch user details from DB
+                // Usiamo maybeSingle() invece di single() per gestire meglio il caso "profilo mancante"
                 const { data, error: dbError } = await supabase
                     .from('users')
                     .select('*')
                     .eq('user_id', session.user.id)
-                    .single();
+                    .maybeSingle();
 
                 if (dbError) throw dbError;
 
@@ -74,7 +74,7 @@ export default function UserPage() {
                     setUserData(data as UserData);
                     setFormData(data as UserData);
                 } else {
-                    setError("User profile not found in database.");
+                    setError("Profile not found. Please contact support.");
                 }
 
             } catch (err: any) {
@@ -93,6 +93,29 @@ export default function UserPage() {
     const handleLogout = async () => {
         await supabase.auth.signOut();
         router.push('/login');
+    };
+
+    const handleDeleteAccount = async () => {
+        const confirmed = window.confirm(
+            "⚠️ ATTENZIONE: Sei sicuro di voler cancellare il tuo account?\n\nQuesta azione eliminerà permanentemente tutti i tuoi dati e il tuo accesso. Non si può tornare indietro."
+        );
+        if (!confirmed) return;
+
+        try {
+            setLoading(true);
+            // Chiama la funzione RPC SQL 'delete_my_account'
+            const { error } = await supabase.rpc('delete_my_account');
+
+            if (error) throw error;
+
+            // Logout locale e redirect
+            await supabase.auth.signOut();
+            router.push('/');
+        } catch (error: any) {
+            console.error("Delete error:", error.message);
+            alert("Errore durante la cancellazione: " + error.message);
+            setLoading(false);
+        }
     };
 
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
@@ -116,7 +139,6 @@ export default function UserPage() {
         setFormData({ ...formData, sharing_availability: !formData.sharing_availability });
     };
 
-    // Save Profile Data (Auth + Public Table)
     const handleSaveProfile = async () => {
         if (!formData || !userData) return;
         try {
@@ -134,7 +156,7 @@ export default function UserPage() {
                 .from('users')
                 .update({
                     full_name: formData.full_name,
-                    email: formData.email, // <--- Now updating email in DB too
+                    email: formData.email,
                     country: formData.country,
                     language: formData.language,
                     currency: formData.currency,
@@ -147,7 +169,7 @@ export default function UserPage() {
 
             setUserData(formData);
             setIsEditing(false);
-            alert("Profile updated successfully!");
+            // alert("Profile updated successfully!"); 
         } catch (err: any) {
             alert("Error saving profile: " + err.message);
         } finally {
@@ -155,7 +177,6 @@ export default function UserPage() {
         }
     };
 
-    // Update Password (Supabase Auth)
     const handleUpdatePassword = async () => {
         if (passwordForm.newPassword !== passwordForm.confirmPassword) {
             alert("New passwords do not match.");
@@ -219,33 +240,6 @@ export default function UserPage() {
 
     const displayUser = isEditing ? formData! : userData;
 
-    const handleDeleteAccount = async () => {
-        // 1. Chiedi conferma per evitare click accidentali
-        const confirmed = window.confirm(
-            "Sei sicuro di voler cancellare il tuo account?\nQuesta azione è irreversibile e perderai tutti i dati."
-        );
-        if (!confirmed) return;
-
-        try {
-            setLoading(true); // Se hai uno stato di loading
-
-            // 2. Chiama la funzione SQL che abbiamo creato
-            const { error } = await supabase.rpc('delete_my_account');
-
-            if (error) throw error;
-
-            // 3. Se tutto va bene, fai il logout locale e rimanda al login
-            await supabase.auth.signOut();
-            router.push('/'); // O alla pagina di login
-
-        } catch (error: any) {
-            console.error("Errore cancellazione:", error.message);
-            alert("Errore durante la cancellazione dell'account.");
-        } finally {
-            setLoading(false);
-        }
-    };
-
     return (
         <div className="min-h-screen bg-slate-50/50 pb-12 font-sans text-slate-900">
 
@@ -262,7 +256,7 @@ export default function UserPage() {
                     className="text-sm font-medium text-slate-500 hover:text-red-600 hover:bg-red-50 px-3 py-2 rounded-lg transition-colors flex items-center gap-2"
                 >
                     <LogOut size={16} />
-                    Logout
+                    <span className="hidden sm:inline">Logout</span>
                 </button>
             </nav>
 
@@ -355,7 +349,6 @@ export default function UserPage() {
                                     </div>
                                 </div>
 
-                                {/* Toggle Switch */}
                                 <button
                                     onClick={toggleSharing}
                                     disabled={!isEditing}
@@ -377,7 +370,6 @@ export default function UserPage() {
                                 <h3 className="font-semibold text-slate-800">General Information</h3>
                             </div>
                             <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
-                                {/* EMAIL: Now editable with warning */}
                                 <InfoField
                                     label="Email Address"
                                     name="email"
@@ -515,29 +507,24 @@ export default function UserPage() {
                                     </div>
                                 </div>
 
-                                {/* Explicit Logout Button in Body */}
-                                <div className="pt-4 border-t border-slate-100">
+                                {/* FOOTER: Logout & Delete Account Area */}
+                                <div className="pt-6 mt-6 border-t border-slate-100 flex items-center justify-between">
+
+                                    {/* Sign Out Button */}
                                     <button
                                         onClick={handleLogout}
-                                        className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 text-sm text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors border border-red-100 font-medium"
+                                        className="flex items-center gap-2 text-slate-600 hover:text-slate-900 transition-colors text-sm font-medium"
                                     >
                                         <LogOut size={16} />
-                                        Sign out of current session
-                                    </button>
-                                    <button
-                                        onClick={handleLogout} // La tua funzione di logout esistente
-                                        className="flex items-center gap-2 text-slate-600 hover:text-slate-900 transition-colors"
-                                    >
-                                        <LogOut size={18} />
-                                        <span>Sign out of current session</span>
+                                        <span>Sign out</span>
                                     </button>
 
-                                    {/* NUOVO Tasto Delete Account */}
+                                    {/* Delete Account Button */}
                                     <button
                                         onClick={handleDeleteAccount}
                                         className="flex items-center gap-2 text-red-500 hover:text-red-700 hover:bg-red-50 px-3 py-2 rounded-lg transition-colors text-sm font-medium"
                                     >
-                                        <Trash2 size={18} />
+                                        <Trash2 size={16} />
                                         <span>Delete Account</span>
                                     </button>
                                 </div>
