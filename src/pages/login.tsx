@@ -93,7 +93,7 @@ export default function LoginPage() {
             <div className="w-full max-w-md bg-white py-8 px-6 shadow-xl rounded-2xl border border-slate-100">
                 <div className="text-center mb-6">
                     <h2 className="text-2xl font-bold text-slate-900">
-                        {isSignUp ? "Create Account" : "Welcome Back"}
+                        {isSignUp ? "Create Account" : "Welcome back"}
                     </h2>
                     <p className="text-slate-500 text-sm mt-1">
                         {isSignUp ? "Sign up to get started" : "Please enter your details to sign in"}
