@@ -16,7 +16,7 @@ export default function LoginPage() {
     // Form fields
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
-    const [fullName, setFullName] = useState(''); // Extra field for public.users
+    const [fullName, setFullName] = useState('');
 
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState < string | null > (null);
@@ -32,39 +32,48 @@ export default function LoginPage() {
             if (isSignUp) {
                 // --- SIGN UP FLOW ---
 
-                // 1. Create user in Supabase Auth (auth.users)
+                // 1. Create user in Supabase Auth
                 const { data: authData, error: authError } = await supabase.auth.signUp({
                     email,
                     password,
                     options: {
-                        data: { full_name: fullName } // Saves metadata in auth.users too
+                        data: { full_name: fullName }
                     }
                 });
 
                 if (authError) throw authError;
 
-                // 2. Insert user into public.users table manually
+                // 2. Insert user into public.users table manually WITH FULL DATA
                 if (authData.user) {
                     const { error: profileError } = await supabase
-                        .from('users') // Assumes your public table is named 'users'
+                        .from('users')
                         .insert([
                             {
-                                id: authData.user.id, // Links auth.users id with public.users id
+                                // --- CORREZIONE QUI SOTTO ---
+                                // Usiamo user_id invece di id per il collegamento
+                                user_id: authData.user.id,
                                 email: email,
-                                full_name: fullName
-                                // Add other default columns here if needed
+                                full_name: fullName,
+                                // Aggiungiamo i campi mancanti per evitare crash
+                                alias: fullName,
+                                password: "MANAGED_BY_SUPABASE", // Placeholder di sicurezza
+                                creation_date: new Date().toISOString(),
+                                sharing_availability: true,
+                                country: 'IT',
+                                language: 'it',
+                                currency: 'EUR',
+                                timeout_time: 30
                             }
                         ]);
 
                     if (profileError) {
-                        // Optional: Consider if you want to rollback auth user creation here
                         console.error("Error creating public profile:", profileError);
-                        throw new Error("Account created, but profile setup failed.");
+                        // Importante: lanciamo errore se il profilo pubblico fallisce
+                        throw new Error("Account auth created, but public profile failed. Check DB permissions.");
                     }
                 }
 
                 setMessage("Account created successfully! Please check your email to confirm.");
-                // Optionally switch to login mode or wait for verification
                 setIsSignUp(false);
 
             } else {
