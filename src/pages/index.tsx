@@ -15,7 +15,7 @@ type Transaction = {
     buy_or_sell: string;
     total_shares_num: number;
     total_outlay_eur: number;
-    [key: string]: any; // Permette accesso dinamico con stringhe
+    [key: string]: any;
 };
 
 type SortConfig = {
@@ -23,7 +23,7 @@ type SortConfig = {
     direction: 'asc' | 'desc';
 };
 
-// Configurazione delle colonne per evitare ripetizioni nel codice
+// Configurazione colonne
 const COLUMNS = [
     { key: 'operation_date', label: 'Data', type: 'date' },
     { key: 'ticker', label: 'Ticker', type: 'text' },
@@ -37,14 +37,9 @@ export default function Home() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState < string | null > (null);
 
-    // --- STATI PER I FILTRI E ORDINAMENTO ---
-    // Quale colonna ha il menu aperto? (es. 'ticker' o null)
+    // Stati interfaccia
     const [activeColumn, setActiveColumn] = useState < string | null > (null);
-
-    // Filtri attivi per ogni colonna: { ticker: "APPL", buy_or_sell: "Acq" }
     const [filters, setFilters] = useState < Record < string, string>> ({});
-
-    // Ordinamento attuale
     const [sortConfig, setSortConfig] = useState < SortConfig > ({ key: 'operation_date', direction: 'desc' });
 
     useEffect(() => {
@@ -68,23 +63,33 @@ export default function Home() {
         }
     }
 
-    // --- LOGICA DI FILTRO E ORDINAMENTO COMBINATA ---
+    // --- LOGICA FILTRO E ORDINAMENTO AGGIORNATA ---
     const processedData = useMemo(() => {
         let data = [...transactions];
 
-        // 1. Applica TUTTI i filtri attivi
+        // 1. Applica Filtri
         Object.keys(filters).forEach((key) => {
-            const value = filters[key].toLowerCase();
-            if (value) {
+            const searchValue = filters[key].toLowerCase();
+
+            if (searchValue) {
                 data = data.filter((item) => {
-                    const itemValue = String(item[key] || '').toLowerCase();
-                    // Gestione speciale per le date (per cercare "2023" dentro una data ISO)
-                    return itemValue.includes(value);
+                    let itemValue = '';
+
+                    // MODIFICA CRUCIALE QUI:
+                    // Se stiamo filtrando la colonna 'operation_date', la trasformiamo in formato IT prima del controllo
+                    if (key === 'operation_date' && item[key]) {
+                        itemValue = new Date(item[key]).toLocaleDateString('it-IT'); // Diventa "15/11/2025"
+                    } else {
+                        // Per tutte le altre colonne, prendiamo il valore grezzo
+                        itemValue = String(item[key] || '');
+                    }
+
+                    return itemValue.toLowerCase().includes(searchValue);
                 });
             }
         });
 
-        // 2. Applica l'ordinamento
+        // 2. Applica Ordinamento
         if (sortConfig.key) {
             data.sort((a, b) => {
                 const aVal = a[sortConfig.key!];
@@ -99,26 +104,18 @@ export default function Home() {
         return data;
     }, [transactions, filters, sortConfig]);
 
-    // Gestori eventi
+    // Gestori
     const toggleColumnMenu = (key: string) => {
-        if (activeColumn === key) {
-            setActiveColumn(null); // Chiudi se è già aperto
-        } else {
-            setActiveColumn(key); // Apri il nuovo
-        }
+        if (activeColumn === key) setActiveColumn(null);
+        else setActiveColumn(key);
     };
 
     const handleSort = (key: string, direction: 'asc' | 'desc') => {
         setSortConfig({ key, direction });
-        // Non chiudiamo il menu subito per dare feedback, o possiamo chiuderlo:
-        // setActiveColumn(null); 
     };
 
     const handleFilterChange = (key: string, value: string) => {
-        setFilters(prev => ({
-            ...prev,
-            [key]: value
-        }));
+        setFilters(prev => ({ ...prev, [key]: value }));
     };
 
     const clearFilter = (key: string) => {
@@ -143,13 +140,12 @@ export default function Home() {
                                     {COLUMNS.map((col) => (
                                         <th key={col.key} className="px-6 py-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider relative group">
 
-                                            {/* HEADER CLICCABILE */}
+                                            {/* HEADER */}
                                             <div
                                                 className="flex items-center cursor-pointer hover:text-blue-600 space-x-2"
                                                 onClick={() => toggleColumnMenu(col.key)}
                                             >
                                                 <span>{col.label}</span>
-                                                {/* Mostra icona se c'è un filtro attivo o ordinamento su questa colonna */}
                                                 {filters[col.key] || sortConfig.key === col.key ? (
                                                     <Filter size={14} className="text-blue-500" />
                                                 ) : (
@@ -157,11 +153,11 @@ export default function Home() {
                                                 )}
                                             </div>
 
-                                            {/* POPOVER (La "Finestrina") */}
+                                            {/* POPOVER MENU */}
                                             {activeColumn === col.key && (
                                                 <div className="absolute z-50 top-full left-0 mt-2 w-56 bg-white rounded-lg shadow-xl border border-gray-100 p-3">
 
-                                                    {/* 1. Opzioni Ordinamento */}
+                                                    {/* Ordinamento */}
                                                     <div className="flex flex-col gap-1 mb-3">
                                                         <button
                                                             onClick={() => handleSort(col.key, 'asc')}
@@ -179,7 +175,7 @@ export default function Home() {
 
                                                     <hr className="border-gray-100 mb-3" />
 
-                                                    {/* 2. Input Ricerca */}
+                                                    {/* Ricerca */}
                                                     <div className="mb-1">
                                                         <label className="text-[10px] uppercase text-gray-400 font-bold mb-1 block">Filtra {col.label}</label>
                                                         <div className="relative">
@@ -187,7 +183,7 @@ export default function Home() {
                                                                 autoFocus
                                                                 type="text"
                                                                 className="w-full text-sm border border-gray-300 rounded px-2 py-1.5 focus:outline-none focus:border-blue-500"
-                                                                placeholder={`Cerca in ${col.label}...`}
+                                                                placeholder={col.key === 'operation_date' ? "es. 15/11/2025" : "Cerca..."}
                                                                 value={filters[col.key] || ''}
                                                                 onChange={(e) => handleFilterChange(col.key, e.target.value)}
                                                             />
@@ -232,7 +228,7 @@ export default function Home() {
                                 ) : (
                                     <tr>
                                         <td colSpan={5} className="px-6 py-12 text-center text-gray-400 italic">
-                                            Nessun risultato con questi filtri.
+                                            Nessun risultato trovato.
                                         </td>
                                     </tr>
                                 )}
