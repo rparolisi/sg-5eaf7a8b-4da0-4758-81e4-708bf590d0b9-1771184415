@@ -4,7 +4,8 @@ import { useRouter } from 'next/router';
 import {
     Mail, Globe, CreditCard, Clock, Calendar,
     Shield, CheckCircle, XCircle, Settings, Save, X,
-    LogOut, User as UserIcon, MapPin, Hash, Activity
+    LogOut, User as UserIcon, MapPin, Hash, Activity,
+    Fingerprint, Lock // <--- Aggiunti questi due import mancanti
 } from 'lucide-react';
 
 // --- CONFIGURATION ---
