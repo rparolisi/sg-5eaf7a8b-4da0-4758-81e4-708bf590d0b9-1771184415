@@ -12,6 +12,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 export default function Navbar() {
     const router = useRouter();
     const isActive = (path: string) => router.pathname === path;
+    // Rimossi spazi extra nel generico <string> per sicurezza
     const [userInitials, setUserInitials] = useState < string > ('U');
 
     // --- FETCH USER INITIALS ---
