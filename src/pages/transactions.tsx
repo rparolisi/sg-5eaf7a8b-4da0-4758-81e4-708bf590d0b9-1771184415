@@ -1,19 +1,18 @@
 import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 // ICONE
-import { Filter, ArrowUp, ArrowDown, Search, Check, Plus, X, Calendar, TrendingUp, TrendingDown, Settings, AlertTriangle, GripVertical, List } from 'lucide-react';
+import { Filter, ArrowUp, ArrowDown, Search, Check, Plus, X, Calendar, TrendingUp, TrendingDown, Settings, AlertTriangle, GripVertical, List, Download, FileText, FileSpreadsheet } from 'lucide-react';
 
 /* NOTA PER L'USO LOCALE (Next.js / React):
-   1. Installa la libreria: npm install @supabase/supabase-js
+   1. Installa la libreria: npm install @supabase/supabase-js xlsx
    2. Decommenta la riga qui sotto:
    import { createClient } from '@supabase/supabase-js';
-   3. Rimuovi o commenta la logica "useEffect" che carica lo script da CDN e la variabile di stato "supabase".
-   4. Inizializza il client normalmente fuori dal componente:
+   import * as XLSX from 'xlsx';
+   3. Rimuovi le parti relative al caricamento CDN di Supabase e XLSX.
+   4. Inizializza il client normalmente:
       const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!);
 */
 
 // --- CONFIGURAZIONE ---
-// Se vuoi testare la connessione QUI nell'anteprima, inserisci le tue chiavi tra le virgolette.
-// Altrimenti, lascia process.env per il tuo ambiente locale.
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
 const SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
 
@@ -30,10 +29,10 @@ const ALL_COLUMNS = [
     { key: 'sector', label: 'Sector', type: 'text' },
     { key: 'operation_date', label: 'Date', type: 'date' },
     { key: 'asset_currency', label: 'Currency', type: 'text' },
-    { key: 'price_per_share_curr', label: 'Price (Trans. Curr.)', type: 'number' },
+    { key: 'purchase_price_per_share_curr', label: 'Price (Trans. Curr.)', type: 'number' },
     { key: 'category', label: 'Category', type: 'text' },
     { key: 'exchange_rate_at_purchase', label: 'Exchange Rate', type: 'number' },
-    { key: 'price_per_share_eur', label: 'Price (EUR)', type: 'number' },
+    { key: 'purchase_price_per_share_eur', label: 'Price (EUR)', type: 'number' },
     { key: 'total_shares_num', label: 'Total Shares (Trans)', type: 'number' },
     { key: 'operation_sign', label: 'Op. Sign', type: 'number' },
     { key: 'buy_or_sell', label: 'Buy/Sell', type: 'text' },
@@ -43,7 +42,7 @@ const ALL_COLUMNS = [
     { key: 'transaction_fees_eur', label: 'Fees (EUR)', type: 'number' },
     { key: 'transaction_taxes_eur', label: 'Taxes (EUR)', type: 'number' },
     { key: 'total_outlay_eur', label: 'Total Amount (EUR)', type: 'number' },
-    { key: 'effective_price_per_share', label: 'Effective Price (EUR)', type: 'number' },
+    { key: 'effective_purchase_price_per_share', label: 'Effective Price (EUR)', type: 'number' },
     { key: 'person', label: 'Person', type: 'text' },
     { key: 'shares_count', label: 'Shares', type: 'number' },
     { key: 'ratio', label: 'Ratio', type: 'number' },
@@ -103,6 +102,10 @@ export default function Transactions() {
     // --- STATI MODALE ---
     const [isModalOpen, setIsModalOpen] = useState(false);
 
+    // --- STATI DOWNLOAD ---
+    const [isDownloadMenuOpen, setIsDownloadMenuOpen] = useState(false);
+    const downloadMenuRef = useRef < HTMLDivElement > (null);
+
     // Stato del Form
     const [formData, setFormData] = useState({
         type: 'Acquisto',
@@ -121,17 +124,14 @@ export default function Transactions() {
         taxes: '0',
     });
 
-    // --- INIZIALIZZAZIONE SUPABASE (CDN per Anteprima) ---
+    // --- INIZIALIZZAZIONE SUPABASE & XLSX (CDN per Anteprima) ---
     useEffect(() => {
-        const initSupabase = () => {
-            // Se le chiavi mancano, mostriamo l'errore ma non blocchiamo la UI
+        const loadScripts = () => {
+            // 1. Supabase Init
             if (!SUPABASE_URL || !SUPABASE_KEY) {
                 setError("Supabase URL or Key missing. Check configuration.");
                 setLoading(false);
-                return;
-            }
-
-            if ((window as any).supabase) {
+            } else if ((window as any).supabase) {
                 try {
                     const client = (window as any).supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
                     setSupabase(client);
@@ -140,7 +140,6 @@ export default function Transactions() {
                     setLoading(false);
                 }
             } else {
-                // Carica lo script da CDN se non presente (solo per anteprima)
                 const script = document.createElement('script');
                 script.src = "https://unpkg.com/@supabase/supabase-js@2";
                 script.async = true;
@@ -156,8 +155,16 @@ export default function Transactions() {
                 };
                 document.body.appendChild(script);
             }
+
+            // 2. XLSX Init (SheetJS)
+            if (!(window as any).XLSX) {
+                const xlsxScript = document.createElement('script');
+                xlsxScript.src = "https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js";
+                xlsxScript.async = true;
+                document.body.appendChild(xlsxScript);
+            }
         };
-        initSupabase();
+        loadScripts();
     }, []);
 
     // Fetch data appena il client è pronto
@@ -172,6 +179,9 @@ export default function Transactions() {
             if (columnMenuRef.current && !columnMenuRef.current.contains(event.target as Node)) {
                 setIsColumnMenuOpen(false);
             }
+            if (downloadMenuRef.current && !downloadMenuRef.current.contains(event.target as Node)) {
+                setIsDownloadMenuOpen(false);
+            }
         };
         document.addEventListener('mousedown', handleClickOutside);
         return () => document.removeEventListener('mousedown', handleClickOutside);
@@ -182,6 +192,64 @@ export default function Transactions() {
             setFormData(prev => ({ ...prev, exchange_rate: '1' }));
         }
     }, [formData.currency]);
+
+    // --- EXPORT LOGIC ---
+    const exportToCSV = () => {
+        // Usa visibleColumns per esportare solo ciò che si vede, o ALL_COLUMNS per tutto
+        // Solitamente si preferisce esportare ciò che l'utente vede, ma con tutte le colonne disponibili è meglio
+        // Usiamo i dati filtrati (processedData)
+
+        if (processedData.length === 0) return;
+
+        // Genera headers usando i label
+        const headers = ALL_COLUMNS.map(c => c.label).join(',');
+
+        const rows = processedData.map(t => {
+            return ALL_COLUMNS.map(col => {
+                let val = t[col.key];
+                // Gestione escape per CSV (virgolette e virgole)
+                if (val === null || val === undefined) return '';
+                val = String(val);
+                if (val.includes(',') || val.includes('"') || val.includes('\n')) {
+                    return `"${val.replace(/"/g, '""')}"`;
+                }
+                return val;
+            }).join(',');
+        }).join('\n');
+
+        const csvContent = "data:text/csv;charset=utf-8," + headers + '\n' + rows;
+        const encodedUri = encodeURI(csvContent);
+        const link = document.createElement("a");
+        link.setAttribute("href", encodedUri);
+        link.setAttribute("download", `transactions_${new Date().toISOString().split('T')[0]}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        setIsDownloadMenuOpen(false);
+    };
+
+    const exportToXLSX = () => {
+        if (!(window as any).XLSX) {
+            alert("XLSX library not loaded yet. Please wait or reload.");
+            return;
+        }
+        if (processedData.length === 0) return;
+
+        // Mappa i dati usando le etichette delle colonne
+        const dataForExport = processedData.map(t => {
+            const row: any = {};
+            ALL_COLUMNS.forEach(col => {
+                row[col.label] = t[col.key];
+            });
+            return row;
+        });
+
+        const worksheet = (window as any).XLSX.utils.json_to_sheet(dataForExport);
+        const workbook = (window as any).XLSX.utils.book_new();
+        (window as any).XLSX.utils.book_append_sheet(workbook, worksheet, "Transactions");
+        (window as any).XLSX.writeFile(workbook, `transactions_${new Date().toISOString().split('T')[0]}.xlsx`);
+        setIsDownloadMenuOpen(false);
+    };
 
     // --- GESTIONE EVENTI RESIZING ---
     const startResize = (e: React.MouseEvent, colKey: string) => {
@@ -225,17 +293,15 @@ export default function Transactions() {
     // --- GESTIONE EVENTI DRAG & DROP (COLONNE) ---
     const handleDragStart = (e: React.DragEvent, colKey: string) => {
         setDraggedColKey(colKey);
-        // Effetto trasparenza per il 'ghost'
         if (e.dataTransfer) {
             e.dataTransfer.effectAllowed = "move";
-            // Opzionale: impostare immagine custom
         }
     };
 
     const handleDragOver = (e: React.DragEvent, colKey: string) => {
-        e.preventDefault(); // Necessario per permettere il drop
+        e.preventDefault();
         if (draggedColKey !== colKey) {
-            // Qui potresti aggiungere un feedback visivo (es. bordo)
+            // Placeholder per feedback visivo
         }
     };
 
@@ -243,15 +309,12 @@ export default function Transactions() {
         e.preventDefault();
         if (!draggedColKey || draggedColKey === targetColKey) return;
 
-        // Riordina l'array visibleColumns
         const newOrder = [...visibleColumns];
         const dragIndex = newOrder.indexOf(draggedColKey);
         const hoverIndex = newOrder.indexOf(targetColKey);
 
         if (dragIndex > -1 && hoverIndex > -1) {
-            // Rimuovi dall'indice originale
             newOrder.splice(dragIndex, 1);
-            // Inserisci nel nuovo indice
             newOrder.splice(hoverIndex, 0, draggedColKey);
             setVisibleColumns(newOrder);
         }
@@ -286,8 +349,6 @@ export default function Transactions() {
             if (prev.includes(columnKey)) {
                 return prev.filter(key => key !== columnKey);
             } else {
-                // AGGIUNTA: Appendiamo la nuova colonna alla fine invece di resettare l'ordine
-                // questo preserva il riordinamento manuale fatto dall'utente
                 return [...prev, columnKey];
             }
         });
@@ -405,7 +466,6 @@ export default function Transactions() {
         return data;
     }, [transactions, filters, sortConfig]);
 
-    // DATI VISUALIZZATI (CON LIMITAZIONE RIGHE)
     const displayData = useMemo(() => {
         return processedData.slice(0, rowsLimit);
     }, [processedData, rowsLimit]);
@@ -428,7 +488,6 @@ export default function Transactions() {
         }));
     };
 
-    // --- RENDERING CELLE TABELLA ---
     const renderCellContent = (t: Transaction, colKey: string) => {
         const val = t[colKey];
         switch (colKey) {
@@ -484,14 +543,28 @@ export default function Transactions() {
     return (
         <main className="min-h-screen p-8 bg-gray-50 font-sans" onClick={() => setActiveColumn(null)}>
             <div className="max-w-6xl mx-auto" onClick={(e) => e.stopPropagation()}>
-                <div className="flex justify-between items-center mb-6">
-                    <h1 className="text-3xl font-bold text-gray-800">Transactions</h1>
 
-                    <div className="flex items-center gap-3">
-                        {/* --- ROW LIMITER --- */}
+                {/* --- HEADER GRID LAYOUT (Modificato) --- */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-center mb-6">
+                    {/* LEFT: Title */}
+                    <div className="justify-self-start">
+                        <h1 className="text-3xl font-bold text-gray-800">Transactions</h1>
+                    </div>
+
+                    {/* CENTER: Add Transaction Button */}
+                    <div className="justify-self-center w-full md:w-auto">
+                        <button onClick={() => setIsModalOpen(true)} className="w-full md:w-auto flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-full font-medium shadow-md hover:shadow-lg transition-all transform hover:-translate-y-0.5">
+                            <Plus size={20} /> Add Transaction
+                        </button>
+                    </div>
+
+                    {/* RIGHT: Controls (Row Limit, Settings, Download) */}
+                    <div className="flex items-center gap-3 justify-self-end">
+
+                        {/* Row Limiter */}
                         <div className="flex items-center gap-2 bg-white border border-gray-300 rounded-lg px-3 py-1.5 shadow-sm">
                             <List size={16} className="text-gray-400" />
-                            <span className="text-sm text-gray-500 font-medium whitespace-nowrap hidden sm:inline">Rows:</span>
+                            <span className="text-sm text-gray-500 font-medium whitespace-nowrap hidden lg:inline">Rows:</span>
                             <input
                                 type="number"
                                 min="1"
@@ -499,11 +572,7 @@ export default function Transactions() {
                                 value={rowsLimit}
                                 onChange={(e) => {
                                     const val = parseInt(e.target.value);
-                                    if (!isNaN(val)) {
-                                        // Allow any number, slice handles bounds, but nice to clamp for UI logic if needed
-                                        // For now, let user type, default to 1 if < 1
-                                        setRowsLimit(val > 0 ? val : 1);
-                                    }
+                                    if (!isNaN(val)) setRowsLimit(val > 0 ? val : 1);
                                 }}
                                 className="w-14 text-sm outline-none font-semibold text-gray-700 text-right"
                             />
@@ -512,7 +581,7 @@ export default function Transactions() {
                             </span>
                         </div>
 
-                        {/* --- GEAR ICON & COLUMN MENU --- */}
+                        {/* Settings (Columns) */}
                         <div className="relative" ref={columnMenuRef}>
                             <button
                                 onClick={() => setIsColumnMenuOpen(!isColumnMenuOpen)}
@@ -548,10 +617,26 @@ export default function Transactions() {
                             )}
                         </div>
 
-                        {/* ADD BUTTON */}
-                        <button onClick={() => setIsModalOpen(true)} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium shadow-sm transition-colors whitespace-nowrap">
-                            <Plus size={20} /> <span className="hidden sm:inline">Add Transaction</span><span className="sm:hidden">Add</span>
-                        </button>
+                        {/* Download Button (Replacing Add Button position) */}
+                        <div className="relative" ref={downloadMenuRef}>
+                            <button
+                                onClick={() => setIsDownloadMenuOpen(!isDownloadMenuOpen)}
+                                className="flex items-center gap-2 bg-white hover:bg-gray-50 border border-gray-300 text-gray-700 px-4 py-2 rounded-lg font-medium shadow-sm transition-colors"
+                            >
+                                <Download size={18} /> <span className="hidden sm:inline">Export</span>
+                            </button>
+
+                            {isDownloadMenuOpen && (
+                                <div className="absolute right-0 top-12 w-48 bg-white rounded-xl shadow-xl border border-gray-200 z-50 p-1 animate-in fade-in slide-in-from-top-2">
+                                    <button onClick={exportToCSV} className="w-full flex items-center gap-2 px-3 py-2 hover:bg-gray-50 rounded-lg text-sm text-gray-700 text-left">
+                                        <FileText size={16} className="text-green-600" /> Download CSV
+                                    </button>
+                                    <button onClick={exportToXLSX} className="w-full flex items-center gap-2 px-3 py-2 hover:bg-gray-50 rounded-lg text-sm text-gray-700 text-left">
+                                        <FileSpreadsheet size={16} className="text-blue-600" /> Download XLSX
+                                    </button>
+                                </div>
+                            )}
+                        </div>
                     </div>
                 </div>
 
@@ -578,7 +663,6 @@ export default function Transactions() {
                         <table className="min-w-full divide-y divide-gray-200" style={{ tableLayout: 'fixed' }}>
                             <thead className="bg-gray-50">
                                 <tr>
-                                    {/* MAPPING DI VISIBLE COLUMNS (Fondamentale per il riordinamento) */}
                                     {visibleColumns.map((colKey) => {
                                         const col = ALL_COLUMNS.find(c => c.key === colKey);
                                         if (!col) return null;
@@ -586,12 +670,10 @@ export default function Transactions() {
                                         return (
                                             <th
                                                 key={col.key}
-                                                // DRAG & DROP ATTRIBUTES
                                                 draggable
                                                 onDragStart={(e) => handleDragStart(e, col.key)}
                                                 onDragOver={(e) => handleDragOver(e, col.key)}
                                                 onDrop={(e) => handleDrop(e, col.key)}
-
                                                 className={`px-6 py-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider relative group cursor-grab active:cursor-grabbing transition-colors ${draggedColKey === col.key ? 'opacity-50 bg-gray-100' : ''}`}
                                                 style={{
                                                     width: colWidths[col.key] || 'auto',
@@ -599,16 +681,13 @@ export default function Transactions() {
                                                 }}
                                             >
                                                 <div className="flex items-center gap-2 truncate" onClick={() => handleSort(col.key)}>
-                                                    {/* Icona Grip opzionale per indicare draggabilità */}
                                                     <GripVertical size={14} className="text-gray-300 group-hover:text-gray-500 flex-shrink-0" />
-
                                                     {col.label}
                                                     {sortConfig.key === col.key && (
                                                         sortConfig.direction === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />
                                                     )}
                                                 </div>
 
-                                                {/* Pulsante Filtro (Appare on Hover) */}
                                                 <button
                                                     onClick={(e) => { e.stopPropagation(); setActiveColumn(activeColumn === col.key ? null : col.key); setMenuSearchTerm(''); }}
                                                     className={`absolute right-3 top-1/2 -translate-y-1/2 p-1.5 rounded hover:bg-gray-200 transition-opacity ${activeColumn === col.key || filters[col.key]?.length ? 'opacity-100 bg-blue-50 text-blue-600' : 'opacity-0 group-hover:opacity-100 text-gray-400'}`}
@@ -616,15 +695,13 @@ export default function Transactions() {
                                                     <Filter size={14} />
                                                 </button>
 
-                                                {/* RESIZER HANDLE */}
                                                 <div
                                                     className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-400 group-hover:bg-gray-300 transition-colors z-10"
                                                     onMouseDown={(e) => startResize(e, col.key)}
                                                     onClick={(e) => e.stopPropagation()}
-                                                    draggable={false} // Impedisce il drag della colonna quando si usa il resizer
+                                                    draggable={false}
                                                 />
 
-                                                {/* MENU FILTRO (Dropdown) */}
                                                 {activeColumn === col.key && (
                                                     <div className="absolute top-full left-0 mt-2 w-64 bg-white rounded-lg shadow-xl border border-gray-200 z-50 p-2 cursor-default" onClick={(e) => e.stopPropagation()}>
                                                         <div className="relative mb-2">
@@ -668,7 +745,6 @@ export default function Transactions() {
                             <tbody className="bg-white divide-y divide-gray-200">
                                 {displayData.map((t) => (
                                     <tr key={t.transaction_id || t.id} className="hover:bg-gray-50 transition-colors">
-                                        {/* MAPPING VISIBLE COLUMNS ANCHE QUI */}
                                         {visibleColumns.map(colKey => (
                                             <td
                                                 key={colKey}
@@ -685,7 +761,7 @@ export default function Transactions() {
                     </div>
                 )}
 
-                {/* --- MODAL ADD TRANSACTION (INVARIATO) --- */}
+                {/* --- MODAL ADD TRANSACTION --- */}
                 {isModalOpen && (
                     <div className="fixed inset-0 z-[100] bg-black/50 flex items-center justify-center p-4 backdrop-blur-sm">
                         <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
