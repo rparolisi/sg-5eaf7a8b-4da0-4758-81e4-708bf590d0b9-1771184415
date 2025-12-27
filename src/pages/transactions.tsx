@@ -1,12 +1,15 @@
 import { useEffect, useState, useMemo } from 'react';
 import { createClient } from '@supabase/supabase-js';
-import { Filter, ArrowUp, ArrowDown, Search, Check } from 'lucide-react';
-import Link from 'next/link';
+import { Filter, ArrowUp, ArrowDown, Search, Check, Plus, X, Calendar } from 'lucide-react';
 
 // --- CONFIGURAZIONE ---
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 const supabase = createClient(supabaseUrl, supabaseKey);
+
+// --- COSTANTI ---
+// In futuro questi potrebbero arrivare da una tabella 'people' del DB
+const PEOPLE_OPTIONS = ["Ale", "Peppe", "Raff"];
 
 // --- TIPI ---
 type Transaction = {
@@ -16,6 +19,7 @@ type Transaction = {
     buy_or_sell: string;
     total_shares_num: number;
     total_outlay_eur: number;
+    person: string; // Assicuriamoci che esista nel DB o nella query
     [key: string]: any;
 };
 
@@ -24,35 +28,58 @@ type SortConfig = {
     direction: 'asc' | 'desc';
 };
 
-// Configurazione colonne
+// Configurazione colonne tabella
 const COLUMNS = [
-    { key: 'operation_date', label: 'Data', type: 'date' },
+    { key: 'operation_date', label: 'Date', type: 'date' },
     { key: 'ticker', label: 'Ticker', type: 'text' },
-    { key: 'buy_or_sell', label: 'Tipo', type: 'text' },
-    { key: 'total_shares_num', label: 'Azioni', type: 'number' },
-    { key: 'total_outlay_eur', label: 'Totale (€)', type: 'number' },
+    { key: 'buy_or_sell', label: 'Type', type: 'text' },
+    { key: 'total_shares_num', label: 'Shares', type: 'number' },
+    { key: 'total_outlay_eur', label: 'Total (€)', type: 'number' },
+    { key: 'person', label: 'Person', type: 'text' },
 ];
 
-export default function Home() {
+export default function Transactions() {
     const [transactions, setTransactions] = useState < Transaction[] > ([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState < string | null > (null);
 
-    // --- STATI ---
+    // --- STATI TABELLA ---
     const [activeColumn, setActiveColumn] = useState < string | null > (null);
-
-    // filters ora mappa la colonna a un ARRAY di stringhe selezionate
-    // Es: { ticker: ['AAPL', 'MSFT'], buy_or_sell: ['Acquisto'] }
     const [filters, setFilters] = useState < Record < string, string[]>> ({});
-
-    // Stato per la barra di ricerca interna al menu (per filtrare la lista di checkbox)
     const [menuSearchTerm, setMenuSearchTerm] = useState('');
-
     const [sortConfig, setSortConfig] = useState < SortConfig > ({ key: 'operation_date', direction: 'desc' });
+
+    // --- STATI MODALE (ADD TRANSACTION) ---
+    const [isModalOpen, setIsModalOpen] = useState(false);
+
+    // Stato del Form
+    const [formData, setFormData] = useState({
+        people: [] as string[],
+        security: '',
+        date: new Date().toISOString().split('T')[0], // Default Oggi
+        price: '',
+        currency: 'EUR',
+        exchange_rate: '1',
+        shares_single: '', // Usato se 1 persona
+        shares_multi: {} as Record<string, string>, // Usato se >1 persona: { "Ale": "10", "Peppe": "10" }
+        platform: '',
+        account_owner: '',
+        regulated: 'Yes',
+        expenses: '0',
+        taxes: '0',
+        type: 'Acquisto' // Default
+    });
 
     useEffect(() => {
         fetchTransactions();
     }, []);
+
+    // Gestione cambio valuta -> resetta cambio a 1 se EUR
+    useEffect(() => {
+        if (formData.currency === 'EUR') {
+            setFormData(prev => ({ ...prev, exchange_rate: '1' }));
+        }
+    }, [formData.currency]);
 
     async function fetchTransactions() {
         try {
@@ -61,48 +88,94 @@ export default function Home() {
             if (error) throw error;
             setTransactions(data || []);
         } catch (err: any) {
-            console.error("Errore fetch:", err);
+            console.error("Fetch error:", err);
             setError(err.message);
         } finally {
             setLoading(false);
         }
     }
 
-    // --- HELPER: FORMATTAZIONE VALORI ---
-    // Trasforma qualsiasi valore (data ISO, numero) in stringa leggibile per l'utente
+    // --- LOGICA MODALE (UI HANDLING) ---
+    const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+        const { name, value } = e.target;
+        setFormData(prev => ({ ...prev, [name]: value }));
+    };
+
+    const togglePerson = (person: string) => {
+        setFormData(prev => {
+            const current = prev.people;
+            if (current.includes(person)) {
+                // Rimuovi persona e le sue quote
+                const newPeople = current.filter(p => p !== person);
+                const newSharesMulti = { ...prev.shares_multi };
+                delete newSharesMulti[person];
+                return { ...prev, people: newPeople, shares_multi: newSharesMulti };
+            } else {
+                // Aggiungi persona
+                return { ...prev, people: [...current, person] };
+            }
+        });
+    };
+
+    const handleMultiShareChange = (person: string, value: string) => {
+        setFormData(prev => ({
+            ...prev,
+            shares_multi: { ...prev.shares_multi, [person]: value }
+        }));
+    };
+
+    // --- STEP DI PREPARAZIONE DATI (NO DB INSERT) ---
+    const handleSubmit = async () => {
+        // 1. Validazione base dell'interfaccia
+        if (formData.people.length === 0 || !formData.security || !formData.price) {
+            alert("Please fill in all required fields (People, Security, Price).");
+            return;
+        }
+
+        // 2. Simulazione preparazione pacchetto dati
+        // Qui è dove, in futuro, chiameremo la tua funzione Python
+        const payload = {
+            meta: {
+                timestamp: new Date().toISOString(),
+                action: "ADD_TRANSACTION"
+            },
+            data: formData
+        };
+
+        console.log("--------------------------------------------------");
+        console.log("✅ INPUT DATA READY FOR PYTHON FUNCTION:");
+        console.log(payload);
+        console.log("--------------------------------------------------");
+
+        alert("Input captured! Check the browser console (F12) to see the JSON payload.");
+
+        // Chiudiamo la modale (opzionale: potremmo resettare il form)
+        setIsModalOpen(false);
+    };
+
+
+    // --- HELPER LOGICHE TABELLA ---
     const formatValue = (key: string, value: any): string => {
         if (!value && value !== 0) return '';
         if (key === 'operation_date') return new Date(value).toLocaleDateString('it-IT');
-        if (typeof value === 'number') return value.toString(); // Semplifichiamo per il filtro
+        if (typeof value === 'number') return value.toString();
         return String(value);
     };
 
-    // --- LOGICA 1: ESTRAZIONE VALORI UNICI ---
-    // Calcola la lista dei valori unici per la colonna attualmente aperta
     const uniqueColumnValues = useMemo(() => {
         if (!activeColumn) return [];
-
-        // 1. Estrai tutti i valori grezzi
         const rawValues = transactions.map(t => formatValue(activeColumn, t[activeColumn]));
-
-        // 2. Rimuovi duplicati
         const unique = Array.from(new Set(rawValues)).sort();
-
-        // 3. Filtra in base a cosa l'utente sta scrivendo nella casella di ricerca del menu
         if (menuSearchTerm) {
             return unique.filter(v => v.toLowerCase().includes(menuSearchTerm.toLowerCase()));
         }
         return unique;
     }, [transactions, activeColumn, menuSearchTerm]);
 
-    // --- LOGICA 2: FILTRO DATI TABELLA ---
     const processedData = useMemo(() => {
         let data = [...transactions];
-
-        // Applica filtri
         Object.keys(filters).forEach((key) => {
             const selectedValues = filters[key];
-            // Se c'è almeno un valore selezionato per questa colonna, filtra
             if (selectedValues && selectedValues.length > 0) {
                 data = data.filter((row) => {
                     const rowValFormatted = formatValue(key, row[key]);
@@ -110,8 +183,6 @@ export default function Home() {
                 });
             }
         });
-
-        // Applica ordinamento
         if (sortConfig.key) {
             data.sort((a, b) => {
                 const aVal = a[sortConfig.key!];
@@ -121,79 +192,52 @@ export default function Home() {
                 return 0;
             });
         }
-
         return data;
     }, [transactions, filters, sortConfig]);
 
-    // --- GESTORI EVENTI ---
+    // Handler Tabella
+    const handlePasteInSearch = (e: React.ClipboardEvent<HTMLInputElement>, columnKey: string) => {
+        e.preventDefault();
+        const pastedText = e.clipboardData.getData('text');
+        const values = pastedText.split(/[\s,]+/).map(s => s.trim()).filter(Boolean);
+        if (values.length === 0) return;
+        setFilters(prev => {
+            const currentSelected = prev[columnKey] || [];
+            const newSelected = Array.from(new Set([...currentSelected, ...values]));
+            return { ...prev, [columnKey]: newSelected };
+        });
+        setMenuSearchTerm('');
+    };
 
-    // Gestione click su checkbox singolo
     const toggleFilterValue = (columnKey: string, value: string) => {
         setFilters(prev => {
             const currentSelected = prev[columnKey] || [];
             if (currentSelected.includes(value)) {
-                // Rimuovi
                 const newSelected = currentSelected.filter(v => v !== value);
-                return { ...prev, [columnKey]: newSelected.length > 0 ? newSelected : [] }; // Se vuoto, rimuovi chiave o lascia array vuoto? Meglio array vuoto o undefined. Qui puliamo.
+                return { ...prev, [columnKey]: newSelected.length > 0 ? newSelected : [] };
             } else {
-                // Aggiungi
                 return { ...prev, [columnKey]: [...currentSelected, value] };
             }
         });
     };
 
-    // GESTIONE COPIA-INCOLLA (Il cuore della tua richiesta)
-    const handlePasteInSearch = (e: React.ClipboardEvent<HTMLInputElement>, columnKey: string) => {
-        e.preventDefault();
-        // 1. Prendi il testo incollato
-        const pastedText = e.clipboardData.getData('text');
-
-        // 2. Separalo per spazi, tab o virgole
-        const values = pastedText.split(/[\s,]+/).map(s => s.trim()).filter(Boolean);
-
-        if (values.length === 0) return;
-
-        // 3. Aggiungi questi valori ai filtri selezionati
-        setFilters(prev => {
-            const currentSelected = prev[columnKey] || [];
-            // Unisci i vecchi con i nuovi, rimuovendo duplicati
-            const newSelected = Array.from(new Set([...currentSelected, ...values]));
-
-            // Nota: Funziona bene se il valore incollato corrisponde esattamente al valore formattato (es. "AAPL").
-            // Se incolli "15/11/2025" funziona. Se incolli "2025-11-15" no, perché cerchiamo il valore formattato.
-            return { ...prev, [columnKey]: newSelected };
-        });
-
-        // Opzionale: pulisci la barra di ricerca dopo l'incolla
-        setMenuSearchTerm('');
-    };
-
-    const handleSelectAll = (columnKey: string) => {
-        // Seleziona tutti i valori VISIBILI (filtrati dalla ricerca)
-        setFilters(prev => ({
-            ...prev,
-            [columnKey]: [...(prev[columnKey] || []), ...uniqueColumnValues] // Aggiungi quelli visibili
-        }));
-    };
-
-    const handleClearColumnFilter = (columnKey: string) => {
-        setFilters(prev => {
-            const newState = { ...prev };
-            delete newState[columnKey];
-            return newState;
-        });
-    };
-
-    const isFilterActive = (key: string) => {
-        return filters[key] && filters[key].length > 0;
-    };
-
     return (
         <main className="min-h-screen p-8 bg-gray-50 font-sans" onClick={() => setActiveColumn(null)}>
             <div className="max-w-6xl mx-auto" onClick={(e) => e.stopPropagation()}>
-                <h1 className="text-3xl font-bold mb-6 text-gray-800">Transactions</h1>
 
-                {loading && <p className="text-gray-600">Data uploadin...</p>}
+                {/* HEADER CON BOTTONE ADD */}
+                <div className="flex justify-between items-center mb-6">
+                    <h1 className="text-3xl font-bold text-gray-800">Transactions</h1>
+                    <button
+                        onClick={() => setIsModalOpen(true)}
+                        className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium shadow-sm transition-colors"
+                    >
+                        <Plus size={20} />
+                        Add Transaction
+                    </button>
+                </div>
+
+                {loading && !isModalOpen && <p className="text-gray-600">Loading data...</p>}
                 {error && <p className="text-red-500 bg-red-50 p-4 rounded">Error: {error}</p>}
 
                 {!loading && !error && (
@@ -203,85 +247,39 @@ export default function Home() {
                                 <tr>
                                     {COLUMNS.map((col) => (
                                         <th key={col.key} className="px-6 py-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider relative group">
-
-                                            {/* HEADER + Icona Filtro */}
                                             <div
                                                 className="flex items-center cursor-pointer hover:text-blue-600 space-x-2"
                                                 onClick={() => {
                                                     if (activeColumn === col.key) setActiveColumn(null);
-                                                    else {
-                                                        setActiveColumn(col.key);
-                                                        setMenuSearchTerm(''); // Resetta ricerca quando apri menu
-                                                    }
+                                                    else { setActiveColumn(col.key); setMenuSearchTerm(''); }
                                                 }}
                                             >
                                                 <span>{col.label}</span>
-                                                <Filter
-                                                    size={14}
-                                                    className={isFilterActive(col.key) ? "text-blue-600 fill-blue-100" : "text-gray-400 opacity-0 group-hover:opacity-100"}
-                                                />
+                                                <Filter size={14} className={(filters[col.key] && filters[col.key].length > 0) ? "text-blue-600 fill-blue-100" : "text-gray-400 opacity-0 group-hover:opacity-100"} />
                                             </div>
-
-                                            {/* POPOVER MENU EXCEL-STYLE */}
                                             {activeColumn === col.key && (
                                                 <div className="absolute z-50 top-full left-0 mt-2 w-64 bg-white rounded-lg shadow-2xl border border-gray-200 flex flex-col cursor-default">
-
-                                                    {/* 1. Opzioni Ordinamento */}
                                                     <div className="p-2 border-b border-gray-100 bg-gray-50 rounded-t-lg flex gap-1">
-                                                        <button
-                                                            onClick={() => setSortConfig({ key: col.key, direction: 'asc' })}
-                                                            className={`flex-1 flex items-center justify-center p-1.5 rounded text-[10px] border ${sortConfig.key === col.key && sortConfig.direction === 'asc' ? 'bg-blue-100 border-blue-200 text-blue-700' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-100'}`}
-                                                        >
-                                                            <ArrowUp size={12} className="mr-1" /> ASC
-                                                        </button>
-                                                        <button
-                                                            onClick={() => setSortConfig({ key: col.key, direction: 'desc' })}
-                                                            className={`flex-1 flex items-center justify-center p-1.5 rounded text-[10px] border ${sortConfig.key === col.key && sortConfig.direction === 'desc' ? 'bg-blue-100 border-blue-200 text-blue-700' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-100'}`}
-                                                        >
-                                                            <ArrowDown size={12} className="mr-1" /> DESC
-                                                        </button>
+                                                        <button onClick={() => setSortConfig({ key: col.key, direction: 'asc' })} className="flex-1 flex items-center justify-center p-1.5 rounded text-[10px] border bg-white hover:bg-gray-100"><ArrowUp size={12} /> ASC</button>
+                                                        <button onClick={() => setSortConfig({ key: col.key, direction: 'desc' })} className="flex-1 flex items-center justify-center p-1.5 rounded text-[10px] border bg-white hover:bg-gray-100"><ArrowDown size={12} /> DESC</button>
                                                     </div>
-
-                                                    {/* 2. Barra di Ricerca (con PASTE HANDLER) */}
                                                     <div className="p-2 border-b border-gray-100">
                                                         <div className="relative">
                                                             <Search size={14} className="absolute left-2 top-2 text-gray-400" />
-                                                            <input
-                                                                autoFocus
-                                                                type="text"
-                                                                placeholder="Cerca o incolla valori..."
-                                                                className="w-full pl-8 pr-2 py-1.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                                                value={menuSearchTerm}
-                                                                onChange={(e) => setMenuSearchTerm(e.target.value)}
-                                                                onPaste={(e) => handlePasteInSearch(e, col.key)}
-                                                            />
+                                                            <input autoFocus type="text" placeholder="Search or paste..." className="w-full pl-8 pr-2 py-1.5 text-sm border border-gray-300 rounded" value={menuSearchTerm} onChange={(e) => setMenuSearchTerm(e.target.value)} onPaste={(e) => handlePasteInSearch(e, col.key)} />
                                                         </div>
                                                         <div className="flex justify-between mt-2 px-1">
-                                                            <button onClick={() => handleSelectAll(col.key)} className="text-[10px] text-blue-600 hover:underline">Seleziona visibili</button>
-                                                            <button onClick={() => handleClearColumnFilter(col.key)} className="text-[10px] text-red-500 hover:underline">Pulisci filtro</button>
+                                                            <button onClick={() => setFilters(prev => ({ ...prev, [col.key]: uniqueColumnValues }))} className="text-[10px] text-blue-600">Select All</button>
+                                                            <button onClick={() => setFilters(prev => { const n = { ...prev }; delete n[col.key]; return n; })} className="text-[10px] text-red-500">Clear</button>
                                                         </div>
                                                     </div>
-
-                                                    {/* 3. Lista Valori Unici (Scrollabile) */}
                                                     <div className="max-h-60 overflow-y-auto p-1">
-                                                        {uniqueColumnValues.length > 0 ? (
-                                                            uniqueColumnValues.map((val) => {
-                                                                const isChecked = filters[col.key]?.includes(val);
-                                                                return (
-                                                                    <label key={val} className="flex items-center px-2 py-1.5 hover:bg-gray-50 rounded cursor-pointer">
-                                                                        <input
-                                                                            type="checkbox"
-                                                                            className="mr-2 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                                                                            checked={!!isChecked}
-                                                                            onChange={() => toggleFilterValue(col.key, val)}
-                                                                        />
-                                                                        <span className="text-sm text-gray-700 truncate">{val}</span>
-                                                                    </label>
-                                                                )
-                                                            })
-                                                        ) : (
-                                                            <p className="p-4 text-xs text-gray-400 text-center">Nessun valore trovato</p>
-                                                        )}
+                                                        {uniqueColumnValues.map(val => (
+                                                            <label key={val} className="flex items-center px-2 py-1.5 hover:bg-gray-50 rounded cursor-pointer">
+                                                                <input type="checkbox" className="mr-2" checked={!!filters[col.key]?.includes(val)} onChange={() => toggleFilterValue(col.key, val)} />
+                                                                <span className="text-sm text-gray-700 truncate">{val}</span>
+                                                            </label>
+                                                        ))}
                                                     </div>
                                                 </div>
                                             )}
@@ -289,39 +287,235 @@ export default function Home() {
                                     ))}
                                 </tr>
                             </thead>
-
                             <tbody className="bg-white divide-y divide-gray-200">
-                                {processedData.length > 0 ? (
-                                    processedData.map((t) => (
-                                        <tr key={t.id} className="hover:bg-gray-50 transition-colors">
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                                {new Date(t.operation_date).toLocaleDateString('it-IT')}
-                                            </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900">
-                                                {t.ticker}
-                                            </td>
-                                            <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium ${t.buy_or_sell === 'Acquisto' ? 'text-green-600' : 'text-red-600'}`}>
-                                                {t.buy_or_sell}
-                                            </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-right">
-                                                {t.total_shares_num}
-                                            </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right font-mono">
-                                                {t.total_outlay_eur?.toFixed(2)} €
-                                            </td>
-                                        </tr>
-                                    ))
-                                ) : (
-                                    <tr>
-                                        <td colSpan={5} className="px-6 py-12 text-center text-gray-400 italic">
-                                            Nessun risultato. Controlla i filtri attivi.
-                                        </td>
+                                {processedData.map((t) => (
+                                    <tr key={t.id} className="hover:bg-gray-50 transition-colors">
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{new Date(t.operation_date).toLocaleDateString('it-IT')}</td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900">{t.ticker}</td>
+                                        <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium ${t.buy_or_sell === 'Acquisto' ? 'text-green-600' : 'text-red-600'}`}>{t.buy_or_sell}</td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-right">{t.total_shares_num}</td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right font-mono">{t.total_outlay_eur?.toFixed(2)} €</td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{t.person}</td>
                                     </tr>
-                                )}
+                                ))}
                             </tbody>
                         </table>
                     </div>
                 )}
+
+                {/* --- MODAL ADD TRANSACTION (PREDISPOSIZIONE UI) --- */}
+                {isModalOpen && (
+                    <div className="fixed inset-0 z-[100] bg-black/50 flex items-center justify-center p-4 backdrop-blur-sm">
+                        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+
+                            {/* Modal Header */}
+                            <div className="flex justify-between items-center p-6 border-b border-gray-100">
+                                <h2 className="text-2xl font-bold text-gray-800">Add New Transaction</h2>
+                                <button onClick={() => setIsModalOpen(false)} className="text-gray-400 hover:text-gray-600 p-2 rounded-full hover:bg-gray-100">
+                                    <X size={24} />
+                                </button>
+                            </div>
+
+                            {/* Modal Body */}
+                            <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+
+                                {/* 1. PEOPLE (Full Width) */}
+                                <div className="md:col-span-2">
+                                    <label className="block text-sm font-semibold text-gray-700 mb-2">1. People Involved</label>
+                                    <div className="flex gap-2 flex-wrap">
+                                        {PEOPLE_OPTIONS.map(person => {
+                                            const isSelected = formData.people.includes(person);
+                                            return (
+                                                <button
+                                                    key={person}
+                                                    onClick={() => togglePerson(person)}
+                                                    className={`px-4 py-2 rounded-full text-sm font-medium transition-all border ${isSelected
+                                                            ? 'bg-blue-600 text-white border-blue-600 shadow-md'
+                                                            : 'bg-white text-gray-600 border-gray-300 hover:border-blue-400'
+                                                        }`}
+                                                >
+                                                    {isSelected && <Check size={14} className="inline mr-1" />}
+                                                    {person}
+                                                </button>
+                                            )
+                                        })}
+                                    </div>
+                                </div>
+
+                                {/* 2. SECURITY */}
+                                <div>
+                                    <label className="block text-sm font-semibold text-gray-700 mb-1">2. Security (Ticker)</label>
+                                    <input
+                                        name="security"
+                                        value={formData.security}
+                                        onChange={handleInputChange}
+                                        className="w-full border border-gray-300 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 outline-none uppercase"
+                                        placeholder="e.g. AAPL"
+                                    />
+                                </div>
+
+                                {/* 3. DATE */}
+                                <div>
+                                    <label className="block text-sm font-semibold text-gray-700 mb-1">3. Date</label>
+                                    <div className="relative">
+                                        <input
+                                            type="date"
+                                            name="date"
+                                            value={formData.date}
+                                            onChange={handleInputChange}
+                                            className="w-full border border-gray-300 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 outline-none"
+                                        />
+                                        <Calendar className="absolute right-3 top-2.5 text-gray-400 pointer-events-none" size={20} />
+                                    </div>
+                                </div>
+
+                                {/* 4. PRICE */}
+                                <div>
+                                    <label className="block text-sm font-semibold text-gray-700 mb-1">4. Price (Inv. Currency)</label>
+                                    <input
+                                        type="number"
+                                        step="0.01"
+                                        name="price"
+                                        value={formData.price}
+                                        onChange={handleInputChange}
+                                        className="w-full border border-gray-300 rounded-lg p-2.5 outline-none focus:border-blue-500"
+                                        placeholder="0.00"
+                                    />
+                                </div>
+
+                                {/* 5. CURRENCY */}
+                                <div>
+                                    <label className="block text-sm font-semibold text-gray-700 mb-1">5. Currency</label>
+                                    <select
+                                        name="currency"
+                                        value={formData.currency}
+                                        onChange={handleInputChange}
+                                        className="w-full border border-gray-300 rounded-lg p-2.5 outline-none focus:border-blue-500 bg-white"
+                                    >
+                                        <option value="EUR">EUR</option>
+                                        <option value="USD">USD</option>
+                                        <option value="GBP">GBP</option>
+                                    </select>
+                                </div>
+
+                                {/* 6. EXCHANGE RATE */}
+                                <div>
+                                    <label className="block text-sm font-semibold text-gray-700 mb-1">6. Exchange Rate (to EUR)</label>
+                                    <input
+                                        type="number"
+                                        step="0.0001"
+                                        name="exchange_rate"
+                                        value={formData.exchange_rate}
+                                        onChange={handleInputChange}
+                                        disabled={formData.currency === 'EUR'}
+                                        className={`w-full border border-gray-300 rounded-lg p-2.5 outline-none ${formData.currency === 'EUR' ? 'bg-gray-100 text-gray-400' : 'focus:border-blue-500'}`}
+                                    />
+                                </div>
+
+                                {/* 7. NUMBER OF SHARES (Dynamic) */}
+                                <div className="md:col-span-2 bg-gray-50 p-4 rounded-xl border border-gray-200">
+                                    <label className="block text-sm font-semibold text-gray-700 mb-2">7. Number of Shares</label>
+
+                                    {formData.people.length <= 1 ? (
+                                        // CASO 1: Singolo Input
+                                        <input
+                                            type="number"
+                                            name="shares_single"
+                                            value={formData.shares_single}
+                                            onChange={handleInputChange}
+                                            placeholder="Total shares"
+                                            className="w-full border border-gray-300 rounded-lg p-2.5 outline-none focus:border-blue-500"
+                                        />
+                                    ) : (
+                                        // CASO 2: Multi Input (Uno per persona)
+                                        <div className="grid grid-cols-2 gap-4">
+                                            {formData.people.map(person => (
+                                                <div key={person}>
+                                                    <label className="text-xs font-bold text-gray-500 uppercase">{person}'s Shares</label>
+                                                    <input
+                                                        type="number"
+                                                        value={formData.shares_multi[person] || ''}
+                                                        onChange={(e) => handleMultiShareChange(person, e.target.value)}
+                                                        className="w-full border border-gray-300 rounded-lg p-2 outline-none focus:border-blue-500 mt-1"
+                                                        placeholder={`Shares for ${person}`}
+                                                    />
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                    {formData.people.length === 0 && <p className="text-xs text-red-500 mt-1">Select at least one person first.</p>}
+                                </div>
+
+                                {/* 8. PLATFORM */}
+                                <div>
+                                    <label className="block text-sm font-semibold text-gray-700 mb-1">8. Platform</label>
+                                    <input
+                                        name="platform"
+                                        value={formData.platform}
+                                        onChange={handleInputChange}
+                                        className="w-full border border-gray-300 rounded-lg p-2.5 outline-none focus:border-blue-500"
+                                        placeholder="e.g. Fineco"
+                                    />
+                                </div>
+
+                                {/* 9. ACCOUNT OWNER */}
+                                <div>
+                                    <label className="block text-sm font-semibold text-gray-700 mb-1">9. Account Owner</label>
+                                    <select
+                                        name="account_owner"
+                                        value={formData.account_owner}
+                                        onChange={handleInputChange}
+                                        className="w-full border border-gray-300 rounded-lg p-2.5 outline-none focus:border-blue-500 bg-white"
+                                    >
+                                        <option value="">Select owner...</option>
+                                        {PEOPLE_OPTIONS.map(p => <option key={p} value={p}>{p}</option>)}
+                                    </select>
+                                </div>
+
+                                {/* 10. REGULATED MARKET */}
+                                <div className="flex flex-col justify-center">
+                                    <label className="block text-sm font-semibold text-gray-700 mb-2">10. Regulated Market?</label>
+                                    <div className="flex gap-4">
+                                        <label className="flex items-center gap-2 cursor-pointer">
+                                            <input type="radio" name="regulated" value="Yes" checked={formData.regulated === 'Yes'} onChange={handleInputChange} className="text-blue-600" />
+                                            <span>Yes</span>
+                                        </label>
+                                        <label className="flex items-center gap-2 cursor-pointer">
+                                            <input type="radio" name="regulated" value="No" checked={formData.regulated === 'No'} onChange={handleInputChange} className="text-blue-600" />
+                                            <span>No</span>
+                                        </label>
+                                    </div>
+                                </div>
+
+                                {/* 11 & 12 EXPENSES & TAXES */}
+                                <div>
+                                    <label className="block text-sm font-semibold text-gray-700 mb-1">11. Expenses (€)</label>
+                                    <input type="number" name="expenses" value={formData.expenses} onChange={handleInputChange} className="w-full border border-gray-300 rounded-lg p-2.5 outline-none" />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-semibold text-gray-700 mb-1">12. Taxes (€)</label>
+                                    <input type="number" name="taxes" value={formData.taxes} onChange={handleInputChange} className="w-full border border-gray-300 rounded-lg p-2.5 outline-none" />
+                                </div>
+
+                            </div>
+
+                            {/* Modal Footer */}
+                            <div className="p-6 border-t border-gray-100 flex justify-end gap-3 bg-gray-50 rounded-b-2xl">
+                                <button onClick={() => setIsModalOpen(false)} className="px-5 py-2.5 text-gray-600 font-medium hover:bg-gray-200 rounded-lg transition">
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={handleSubmit}
+                                    className="px-5 py-2.5 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition shadow-lg flex items-center gap-2"
+                                >
+                                    Confirm & Check Input
+                                </button>
+                            </div>
+
+                        </div>
+                    </div>
+                )}
+
             </div>
         </main>
     );
