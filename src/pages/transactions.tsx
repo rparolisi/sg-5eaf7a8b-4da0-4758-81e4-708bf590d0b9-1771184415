@@ -1,26 +1,27 @@
 import { useEffect, useState, useMemo, useRef } from 'react';
-// Rimosso import statico che causava problemi in anteprima
+// ICONE
 import { Filter, ArrowUp, ArrowDown, Search, Check, Plus, X, Calendar, TrendingUp, TrendingDown, Settings, AlertTriangle } from 'lucide-react';
 
+/* NOTA PER L'USO LOCALE (Next.js / React):
+   1. Installa la libreria: npm install @supabase/supabase-js
+   2. Decommenta la riga qui sotto:
+   import { createClient } from '@supabase/supabase-js';
+   3. Rimuovi o commenta la logica "useEffect" che carica lo script da CDN e la variabile di stato "supabase".
+   4. Inizializza il client normalmente fuori dal componente:
+      const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!);
+*/
+
 // --- CONFIGURAZIONE ---
-// Tenta di recuperare le variabili d'ambiente, altrimenti usa stringhe vuote
-const supabaseUrl = (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_SUPABASE_URL) || '';
-const supabaseKey = (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_SUPABASE_ANON_KEY) || '';
+// Se vuoi testare la connessione QUI nell'anteprima, inserisci le tue chiavi tra le virgolette.
+// Altrimenti, lascia process.env per il tuo ambiente locale.
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+const SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
 
 // --- API CONFIGURATION ---
 const PYTHON_API_URL = "https://invest-monitor-api.onrender.com";
 
 // --- COSTANTI ---
 const PEOPLE_OPTIONS = ["Ale", "Peppe", "Raff"];
-
-// --- DATI MOCK PER PREVIEW (Fallback se mancano le API Keys) ---
-const MOCK_DATA: Transaction[] = [
-    { id: '1', ticker: 'AAPL', operation_date: '2023-11-15', buy_or_sell: 'Acquisto', total_shares_num: 15, total_outlay_eur: 2450.50, person: 'Ale', category: 'Acquisto' },
-    { id: '2', ticker: 'NVDA', operation_date: '2023-11-10', buy_or_sell: 'Vendita', total_shares_num: 5, total_outlay_eur: 2100.00, person: 'Peppe', category: 'Profitto' },
-    { id: '3', ticker: 'MSFT', operation_date: '2023-10-28', buy_or_sell: 'Acquisto', total_shares_num: 10, total_outlay_eur: 3200.75, person: 'Raff', category: 'Acquisto' },
-    { id: '4', ticker: 'TSLA', operation_date: '2023-10-15', buy_or_sell: 'Vendita', total_shares_num: 8, total_outlay_eur: 1800.20, person: 'Ale', category: 'Perdita' },
-    { id: '5', ticker: 'AMZN', operation_date: '2023-09-05', buy_or_sell: 'Acquisto', total_shares_num: 20, total_outlay_eur: 2800.00, person: 'Peppe', category: 'Acquisto' },
-];
 
 // Definizione completa di tutte le colonne possibili
 const ALL_COLUMNS = [
@@ -30,10 +31,8 @@ const ALL_COLUMNS = [
     { key: 'total_shares_num', label: 'Shares', type: 'number' },
     { key: 'total_outlay_eur', label: 'Total (€)', type: 'number' },
     { key: 'person', label: 'Person', type: 'text' },
-    // Puoi aggiungere qui altre colonne del DB se vuoi renderle disponibili (es. platform, expenses, etc.)
 ];
 
-// Colonne visibili di default come richiesto
 const DEFAULT_VISIBLE_COLUMNS = ['operation_date', 'ticker', 'buy_or_sell', 'person'];
 
 // --- TIPI ---
@@ -54,9 +53,8 @@ type SortConfig = {
 };
 
 export default function Transactions() {
-    // Stato per il client Supabase caricato dinamicamente
+    // Client Supabase (Stato necessario solo per l'anteprima CDN, in locale usa const globale)
     const [supabase, setSupabase] = useState < any > (null);
-    const [isDemoMode, setIsDemoMode] = useState(false);
 
     const [transactions, setTransactions] = useState < Transaction[] > ([]);
     const [loading, setLoading] = useState(true);
@@ -94,66 +92,53 @@ export default function Transactions() {
         taxes: '0',
     });
 
-    // Effetto per caricare Supabase via CDN (risolve errori di importazione in preview)
+    // --- INIZIALIZZAZIONE SUPABASE (CDN per Anteprima) ---
     useEffect(() => {
-        const loadSupabase = () => {
-            // Controllo preliminare: se mancano le chiavi, usa DEMO MODE
-            if (!supabaseUrl || !supabaseKey) {
-                console.warn("Supabase keys are missing. Switching to Demo Mode.");
-                setIsDemoMode(true);
-                setTransactions(MOCK_DATA);
+        const initSupabase = () => {
+            // Se le chiavi mancano, mostriamo l'errore ma non blocchiamo la UI
+            if (!SUPABASE_URL || !SUPABASE_KEY) {
+                setError("Supabase URL or Key missing. Check configuration.");
                 setLoading(false);
                 return;
             }
 
             if ((window as any).supabase) {
                 try {
-                    const client = (window as any).supabase.createClient(supabaseUrl, supabaseKey);
+                    const client = (window as any).supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
                     setSupabase(client);
-                } catch (err: any) {
-                    setError("Error initializing Supabase: " + err.message);
+                } catch (e: any) {
+                    setError(e.message);
                     setLoading(false);
                 }
             } else {
+                // Carica lo script da CDN se non presente (solo per anteprima)
                 const script = document.createElement('script');
-                script.src = "https://unpkg.com/@supabase/supabase-js@2"; // URL più affidabile per UMD
+                script.src = "https://unpkg.com/@supabase/supabase-js@2";
                 script.async = true;
                 script.onload = () => {
-                    try {
-                        if ((window as any).supabase) {
-                            const client = (window as any).supabase.createClient(supabaseUrl, supabaseKey);
-                            setSupabase(client);
-                        } else {
-                            throw new Error("Supabase library not found in window object");
-                        }
-                    } catch (err: any) {
-                        console.error("Supabase Init Error:", err);
-                        // Fallback to demo mode on init error too
-                        setIsDemoMode(true);
-                        setTransactions(MOCK_DATA);
-                        setLoading(false);
+                    if ((window as any).supabase) {
+                        const client = (window as any).supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+                        setSupabase(client);
                     }
                 };
                 script.onerror = () => {
-                    setIsDemoMode(true);
-                    setTransactions(MOCK_DATA);
+                    setError("Failed to load Supabase library.");
                     setLoading(false);
                 };
                 document.body.appendChild(script);
             }
         };
-        loadSupabase();
+        initSupabase();
     }, []);
 
-    // Fetch data quando supabase è pronto
+    // Fetch data appena il client è pronto
     useEffect(() => {
-        if (supabase && !isDemoMode) {
+        if (supabase) {
             fetchTransactions();
         }
-    }, [supabase, isDemoMode]);
+    }, [supabase]);
 
     useEffect(() => {
-        // Chiudi il menu colonne se si clicca fuori
         const handleClickOutside = (event: MouseEvent) => {
             if (columnMenuRef.current && !columnMenuRef.current.contains(event.target as Node)) {
                 setIsColumnMenuOpen(false);
@@ -184,9 +169,7 @@ export default function Transactions() {
             setError(null);
         } catch (err: any) {
             console.error("Fetch error:", err);
-            // Non bloccare l'UI se fallisce il fetch, mostra demo
-            setIsDemoMode(true);
-            setTransactions(MOCK_DATA);
+            setError(err.message || "Error connecting to Supabase");
         } finally {
             setLoading(false);
         }
@@ -198,14 +181,13 @@ export default function Transactions() {
             if (prev.includes(columnKey)) {
                 return prev.filter(key => key !== columnKey);
             } else {
-                // Mantiene l'ordine originale definito in ALL_COLUMNS
                 const newSet = new Set([...prev, columnKey]);
                 return ALL_COLUMNS.filter(col => newSet.has(col.key)).map(col => col.key);
             }
         });
     };
 
-    // --- LOGICA MODALE ---
+    // --- LOGICA MODALE E FORM ---
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
         const { name, value } = e.target;
         setFormData(prev => ({ ...prev, [name]: value }));
@@ -233,11 +215,6 @@ export default function Transactions() {
     };
 
     const handleSubmit = async () => {
-        if (isDemoMode) {
-            alert("This feature is disabled in Demo Mode.");
-            return;
-        }
-
         if (formData.people.length === 0 || !formData.security || !formData.price) {
             alert("Please fill in all required fields.");
             return;
@@ -260,8 +237,7 @@ export default function Transactions() {
                 throw new Error(result.detail || "Error connecting to Python server");
             }
 
-            console.log("✅ Success:", result);
-            alert(`Transaction processed! ${result.inserted_rows} rows added (Sale + P&L if applicable).`);
+            alert(`Transaction processed! ${result.inserted_rows} rows added.`);
 
             setIsModalOpen(false);
             setFormData({
@@ -321,7 +297,7 @@ export default function Transactions() {
         return data;
     }, [transactions, filters, sortConfig]);
 
-    const handlePasteInSearch = (e: React.ClipboardEvent<HTMLInputElement>, columnKey: string) => { /* ... logica precedente ... */ };
+    const handlePasteInSearch = (e: React.ClipboardEvent<HTMLInputElement>, columnKey: string) => { /* ... */ };
     const toggleFilterValue = (columnKey: string, value: string) => {
         setFilters(prev => {
             const current = prev[columnKey] || [];
@@ -413,32 +389,25 @@ export default function Transactions() {
                     </div>
                 </div>
 
-                {/* BANNER DEMO MODE */}
-                {isDemoMode && (
-                    <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 p-3 rounded-lg mb-4 flex items-center gap-2 text-sm">
-                        <AlertTriangle size={16} />
-                        <span><strong>Demo Mode:</strong> Supabase API keys not found. Showing mock data for preview.</span>
-                    </div>
-                )}
-
                 {loading && !isModalOpen && (
                     <div className="flex flex-col items-center justify-center p-8 text-gray-500">
                         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mb-2"></div>
-                        <p>Loading data...</p>
+                        <p>Connecting to Supabase...</p>
                     </div>
                 )}
 
-                {error && !isDemoMode && (
+                {error && (
                     <div className="bg-red-50 border border-red-200 text-red-600 p-4 rounded-lg mb-4 flex items-start gap-3">
-                        <div className="mt-0.5"><X size={18} /></div>
+                        <div className="mt-0.5"><AlertTriangle size={18} /></div>
                         <div>
-                            <p className="font-semibold">Error</p>
+                            <p className="font-semibold">Connection Error</p>
                             <p className="text-sm">{error}</p>
+                            {error.includes("URL") && <p className="text-xs mt-1 text-red-500">Note: In this preview environment, you must hardcode keys in the <code>SUPABASE_URL</code> constants above.</p>}
                         </div>
                     </div>
                 )}
 
-                {!loading && (!error || isDemoMode) && (
+                {!loading && !error && (
                     <div className="bg-white shadow-lg rounded-xl overflow-visible border border-gray-200">
                         <table className="min-w-full divide-y divide-gray-200">
                             <thead className="bg-gray-50">
@@ -452,7 +421,6 @@ export default function Transactions() {
                                                 )}
                                             </div>
 
-                                            {/* Pulsante Filtro (Appare on Hover) */}
                                             <button
                                                 onClick={(e) => { e.stopPropagation(); setActiveColumn(activeColumn === col.key ? null : col.key); setMenuSearchTerm(''); }}
                                                 className={`absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded hover:bg-gray-200 transition-opacity ${activeColumn === col.key || filters[col.key]?.length ? 'opacity-100 bg-blue-50 text-blue-600' : 'opacity-0 group-hover:opacity-100 text-gray-400'}`}
@@ -460,7 +428,6 @@ export default function Transactions() {
                                                 <Filter size={14} />
                                             </button>
 
-                                            {/* MENU FILTRO (Dropdown) */}
                                             {activeColumn === col.key && (
                                                 <div className="absolute top-full left-0 mt-2 w-64 bg-white rounded-lg shadow-xl border border-gray-200 z-50 p-2" onClick={(e) => e.stopPropagation()}>
                                                     <div className="relative mb-2">
@@ -515,7 +482,7 @@ export default function Transactions() {
                     </div>
                 )}
 
-                {/* --- MODAL ADD TRANSACTION (INVARIATO) --- */}
+                {/* --- MODAL ADD TRANSACTION --- */}
                 {isModalOpen && (
                     <div className="fixed inset-0 z-[100] bg-black/50 flex items-center justify-center p-4 backdrop-blur-sm">
                         <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
