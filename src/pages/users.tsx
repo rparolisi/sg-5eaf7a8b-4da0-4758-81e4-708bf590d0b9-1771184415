@@ -5,7 +5,7 @@ import {
     Mail, Globe, CreditCard, Clock, Calendar,
     Shield, XCircle, Settings, Save,
     LogOut, User as UserIcon, MapPin, Hash, Activity,
-    Fingerprint, Lock, Key, Trash2, AlertTriangle
+    Fingerprint, Key, Trash2
 } from 'lucide-react';
 
 // --- CONFIGURATION ---
@@ -61,7 +61,6 @@ export default function UserPage() {
                 }
 
                 // 2. Fetch user details from DB
-                // Usiamo maybeSingle() invece di single() per gestire meglio il caso "profilo mancante"
                 const { data, error: dbError } = await supabase
                     .from('users')
                     .select('*')
@@ -169,7 +168,6 @@ export default function UserPage() {
 
             setUserData(formData);
             setIsEditing(false);
-            // alert("Profile updated successfully!"); 
         } catch (err: any) {
             alert("Error saving profile: " + err.message);
         } finally {
@@ -243,7 +241,7 @@ export default function UserPage() {
     return (
         <div className="min-h-screen bg-slate-50/50 pb-12 font-sans text-slate-900">
 
-            {/* Navbar Simplified */}
+            {/* Navbar Simplified (NO BUTTON) */}
             <nav className="bg-white border-b border-slate-200 px-6 py-4 sticky top-0 z-20 shadow-sm flex justify-between items-center">
                 <div className="flex items-center gap-2">
                     <div className="bg-blue-600 rounded-lg p-1.5">
@@ -251,13 +249,7 @@ export default function UserPage() {
                     </div>
                     <span className="font-bold text-xl text-slate-800 tracking-tight">Invest<span className="text-blue-600">Monitor</span></span>
                 </div>
-                <button
-                    onClick={handleLogout}
-                    className="text-sm font-medium text-slate-500 hover:text-red-600 hover:bg-red-50 px-3 py-2 rounded-lg transition-colors flex items-center gap-2"
-                >
-                    <LogOut size={16} />
-                    <span className="hidden sm:inline">Logout</span>
-                </button>
+                {/* Il bottone Logout è stato rimosso da qui */}
             </nav>
 
             <main className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
