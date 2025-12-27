@@ -46,6 +46,29 @@ export default function Navbar() {
                 console.error("Error fetching navbar user:", error);
             }
         };
+        
+        const checkUser = async () => {
+            // Controlla sessione
+            const { data: { session } } = await supabase.auth.getSession();
+
+            if (session) {
+                // Se c'è sessione, prendiamo il nome dalla tabella users per le iniziali
+                const { data } = await supabase
+                    .from('users')
+                    .select('full_name')
+                    .eq('user_id', session.user.id)
+                    .single();
+
+                if (data) {
+                    // Calcola iniziali
+                    setUserInitials(data.full_name.substring(0, 2).toUpperCase());
+                }
+            } else {
+                // Opzionale: Se non è loggato, puoi reindirizzare o mostrare "Login"
+            }
+        };
+        checkUser();
+    }, []);
 
         fetchUserProfile();
     }, []);
