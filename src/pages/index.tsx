@@ -30,7 +30,7 @@ export default function Home() {
             setLoading(true);
             // Leggiamo la tabella 'Transactions'
             const { data, error } = await supabase
-                .from('Transactions')
+                .from('transactions')
                 .select('*')
                 .order('operation_date', { ascending: false });
 
