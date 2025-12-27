@@ -65,12 +65,12 @@ export default function UserPage() {
                         setSelectedUser(data[0] as UserData);
                     }
                 } else {
-                    setError("Nessun utente trovato nel database.");
+                    setError("No user found in the database.");
                 }
 
             } catch (err: any) {
-                console.error("Errore fetch Supabase:", err);
-                setError(err.message || "Errore durante il caricamento dei dati.");
+                console.error("Supabase fetch error:", err);
+                setError(err.message || "Error loading data.");
             } finally {
                 setLoading(false);
             }
@@ -95,7 +95,8 @@ export default function UserPage() {
     // Helper per formattare la data
     const formatDate = (dateString: string) => {
         if (!dateString) return '-';
-        return new Date(dateString).toLocaleDateString('it-IT', {
+        // Usiamo en-US o en-GB per coerenza con l'inglese
+        return new Date(dateString).toLocaleDateString('en-US', {
             year: 'numeric',
             month: 'long',
             day: 'numeric'
@@ -108,7 +109,7 @@ export default function UserPage() {
             <div className="min-h-screen flex items-center justify-center bg-gray-50">
                 <div className="flex flex-col items-center gap-4">
                     <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-                    <p className="text-gray-500 font-medium">Caricamento dati...</p>
+                    <p className="text-gray-500 font-medium">Loading data...</p>
                 </div>
             </div>
         );
@@ -120,13 +121,13 @@ export default function UserPage() {
             <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
                 <div className="bg-white p-6 rounded-lg shadow-md border border-red-200 max-w-md w-full text-center">
                     <XCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
-                    <h3 className="text-lg font-bold text-gray-900 mb-2">Errore Caricamento</h3>
+                    <h3 className="text-lg font-bold text-gray-900 mb-2">Loading Error</h3>
                     <p className="text-gray-600">{error}</p>
                     <button
                         onClick={() => window.location.reload()}
                         className="mt-6 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
                     >
-                        Riprova
+                        Retry
                     </button>
                 </div>
             </div>
@@ -153,7 +154,7 @@ export default function UserPage() {
                     <div className="relative group">
                         <div className="flex items-center gap-3 bg-slate-100 hover:bg-slate-200 transition-colors rounded-full pl-4 pr-2 py-1.5 cursor-pointer border border-slate-200">
                             <div className="flex flex-col items-end mr-2">
-                                <span className="text-xs text-slate-500 font-semibold uppercase tracking-wider">Seleziona Utente</span>
+                                <span className="text-xs text-slate-500 font-semibold uppercase tracking-wider">Select User</span>
                                 {/* Dropdown nativo stilizzato */}
                                 <select
                                     value={displayUser.alias}
@@ -183,14 +184,14 @@ export default function UserPage() {
                 {/* Header Pagina */}
                 <div className="mb-10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                     <div>
-                        <h1 className="text-3xl font-bold text-slate-900">Profilo Utente</h1>
+                        <h1 className="text-3xl font-bold text-slate-900">User Profile</h1>
                         <p className="mt-1 text-slate-500">
-                            Visualizzazione dati per: <span className="font-semibold text-blue-600">{displayUser.alias}</span>
+                            Viewing data for: <span className="font-semibold text-blue-600">{displayUser.alias}</span>
                         </p>
                     </div>
                     <button className="inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors">
                         <Settings className="w-4 h-4 mr-2" />
-                        Modifica Profilo
+                        Edit Profile
                     </button>
                 </div>
 
@@ -219,7 +220,7 @@ export default function UserPage() {
                                 </div>
                                 <div className="flex items-center gap-2 text-sm text-slate-500">
                                     <Calendar className="w-4 h-4" />
-                                    <span>Membro dal {formatDate(displayUser.creation_date)}</span>
+                                    <span>Member since {formatDate(displayUser.creation_date)}</span>
                                 </div>
                             </div>
                         </div>
@@ -233,7 +234,7 @@ export default function UserPage() {
                                 <div>
                                     <p className="text-sm font-medium text-slate-900">Sharing Status</p>
                                     <p className="text-xs text-slate-500">
-                                        {displayUser.sharing_availability ? 'Profilo visibile' : 'Profilo nascosto'}
+                                        {displayUser.sharing_availability ? 'Profile visible' : 'Profile hidden'}
                                     </p>
                                 </div>
                             </div>
@@ -248,7 +249,7 @@ export default function UserPage() {
                         <section className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
                             <div className="px-6 py-4 border-b border-slate-100 flex items-center gap-2 bg-slate-50/50">
                                 <Globe className="w-5 h-5 text-blue-500" />
-                                <h3 className="font-semibold text-slate-800">Impostazioni Regionali</h3>
+                                <h3 className="font-semibold text-slate-800">Regional Settings</h3>
                             </div>
                             <div className="p-6 grid grid-cols-1 sm:grid-cols-2 gap-y-6 gap-x-8">
                                 <InfoItem label="Country" value={displayUser.country} />
@@ -265,7 +266,7 @@ export default function UserPage() {
                         <section className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
                             <div className="px-6 py-4 border-b border-slate-100 flex items-center gap-2 bg-slate-50/50">
                                 <Shield className="w-5 h-5 text-blue-500" />
-                                <h3 className="font-semibold text-slate-800">Sicurezza & Sessione</h3>
+                                <h3 className="font-semibold text-slate-800">Security & Session</h3>
                             </div>
                             <div className="p-6 grid grid-cols-1 sm:grid-cols-2 gap-y-6 gap-x-8">
                                 <div className="col-span-1 sm:col-span-2">
@@ -289,7 +290,7 @@ export default function UserPage() {
                             <div className="px-6 py-3 border-b border-slate-200 flex items-center justify-between cursor-help group">
                                 <div className="flex items-center gap-2">
                                     <Fingerprint className="w-4 h-4 text-slate-400 group-hover:text-slate-600 transition-colors" />
-                                    <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider group-hover:text-slate-700 transition-colors">Dati di Sistema (Read Only)</span>
+                                    <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider group-hover:text-slate-700 transition-colors">System Data (Read Only)</span>
                                 </div>
                             </div>
                             <div className="px-6 py-4 grid grid-cols-1 gap-4">
