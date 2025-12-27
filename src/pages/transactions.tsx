@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo, useRef } from 'react';
 // Rimosso import statico che causava problemi in anteprima
-import { Filter, ArrowUp, ArrowDown, Search, Check, Plus, X, Calendar, TrendingUp, TrendingDown, Settings } from 'lucide-react';
+import { Filter, ArrowUp, ArrowDown, Search, Check, Plus, X, Calendar, TrendingUp, TrendingDown, Settings, AlertTriangle } from 'lucide-react';
 
 // --- CONFIGURAZIONE ---
 // Tenta di recuperare le variabili d'ambiente, altrimenti usa stringhe vuote
@@ -12,6 +12,15 @@ const PYTHON_API_URL = "https://invest-monitor-api.onrender.com";
 
 // --- COSTANTI ---
 const PEOPLE_OPTIONS = ["Ale", "Peppe", "Raff"];
+
+// --- DATI MOCK PER PREVIEW (Fallback se mancano le API Keys) ---
+const MOCK_DATA: Transaction[] = [
+    { id: '1', ticker: 'AAPL', operation_date: '2023-11-15', buy_or_sell: 'Acquisto', total_shares_num: 15, total_outlay_eur: 2450.50, person: 'Ale', category: 'Acquisto' },
+    { id: '2', ticker: 'NVDA', operation_date: '2023-11-10', buy_or_sell: 'Vendita', total_shares_num: 5, total_outlay_eur: 2100.00, person: 'Peppe', category: 'Profitto' },
+    { id: '3', ticker: 'MSFT', operation_date: '2023-10-28', buy_or_sell: 'Acquisto', total_shares_num: 10, total_outlay_eur: 3200.75, person: 'Raff', category: 'Acquisto' },
+    { id: '4', ticker: 'TSLA', operation_date: '2023-10-15', buy_or_sell: 'Vendita', total_shares_num: 8, total_outlay_eur: 1800.20, person: 'Ale', category: 'Perdita' },
+    { id: '5', ticker: 'AMZN', operation_date: '2023-09-05', buy_or_sell: 'Acquisto', total_shares_num: 20, total_outlay_eur: 2800.00, person: 'Peppe', category: 'Acquisto' },
+];
 
 // Definizione completa di tutte le colonne possibili
 const ALL_COLUMNS = [
@@ -47,6 +56,7 @@ type SortConfig = {
 export default function Transactions() {
     // Stato per il client Supabase caricato dinamicamente
     const [supabase, setSupabase] = useState < any > (null);
+    const [isDemoMode, setIsDemoMode] = useState(false);
 
     const [transactions, setTransactions] = useState < Transaction[] > ([]);
     const [loading, setLoading] = useState(true);
@@ -87,10 +97,11 @@ export default function Transactions() {
     // Effetto per caricare Supabase via CDN (risolve errori di importazione in preview)
     useEffect(() => {
         const loadSupabase = () => {
-            // Controllo preliminare per evitare il caricamento se le chiavi non ci sono
+            // Controllo preliminare: se mancano le chiavi, usa DEMO MODE
             if (!supabaseUrl || !supabaseKey) {
-                console.warn("Supabase keys are missing");
-                setError("Missing Supabase configuration (API Keys). Please check your .env file.");
+                console.warn("Supabase keys are missing. Switching to Demo Mode.");
+                setIsDemoMode(true);
+                setTransactions(MOCK_DATA);
                 setLoading(false);
                 return;
             }
@@ -117,12 +128,15 @@ export default function Transactions() {
                         }
                     } catch (err: any) {
                         console.error("Supabase Init Error:", err);
-                        setError("Failed to initialize Supabase client: " + err.message);
+                        // Fallback to demo mode on init error too
+                        setIsDemoMode(true);
+                        setTransactions(MOCK_DATA);
                         setLoading(false);
                     }
                 };
                 script.onerror = () => {
-                    setError("Failed to load Supabase script from CDN.");
+                    setIsDemoMode(true);
+                    setTransactions(MOCK_DATA);
                     setLoading(false);
                 };
                 document.body.appendChild(script);
@@ -133,10 +147,10 @@ export default function Transactions() {
 
     // Fetch data quando supabase è pronto
     useEffect(() => {
-        if (supabase) {
+        if (supabase && !isDemoMode) {
             fetchTransactions();
         }
-    }, [supabase]);
+    }, [supabase, isDemoMode]);
 
     useEffect(() => {
         // Chiudi il menu colonne se si clicca fuori
@@ -170,7 +184,9 @@ export default function Transactions() {
             setError(null);
         } catch (err: any) {
             console.error("Fetch error:", err);
-            setError("Error fetching data: " + err.message);
+            // Non bloccare l'UI se fallisce il fetch, mostra demo
+            setIsDemoMode(true);
+            setTransactions(MOCK_DATA);
         } finally {
             setLoading(false);
         }
@@ -217,6 +233,11 @@ export default function Transactions() {
     };
 
     const handleSubmit = async () => {
+        if (isDemoMode) {
+            alert("This feature is disabled in Demo Mode.");
+            return;
+        }
+
         if (formData.people.length === 0 || !formData.security || !formData.price) {
             alert("Please fill in all required fields.");
             return;
@@ -392,6 +413,14 @@ export default function Transactions() {
                     </div>
                 </div>
 
+                {/* BANNER DEMO MODE */}
+                {isDemoMode && (
+                    <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 p-3 rounded-lg mb-4 flex items-center gap-2 text-sm">
+                        <AlertTriangle size={16} />
+                        <span><strong>Demo Mode:</strong> Supabase API keys not found. Showing mock data for preview.</span>
+                    </div>
+                )}
+
                 {loading && !isModalOpen && (
                     <div className="flex flex-col items-center justify-center p-8 text-gray-500">
                         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mb-2"></div>
@@ -399,7 +428,7 @@ export default function Transactions() {
                     </div>
                 )}
 
-                {error && (
+                {error && !isDemoMode && (
                     <div className="bg-red-50 border border-red-200 text-red-600 p-4 rounded-lg mb-4 flex items-start gap-3">
                         <div className="mt-0.5"><X size={18} /></div>
                         <div>
@@ -409,7 +438,7 @@ export default function Transactions() {
                     </div>
                 )}
 
-                {!loading && !error && (
+                {!loading && (!error || isDemoMode) && (
                     <div className="bg-white shadow-lg rounded-xl overflow-visible border border-gray-200">
                         <table className="min-w-full divide-y divide-gray-200">
                             <thead className="bg-gray-50">
