@@ -7,6 +7,7 @@ import {
     LogOut, User as UserIcon, MapPin, Hash, Activity,
     Fingerprint, Lock, Key
 } from 'lucide-react';
+import { LogOut, Trash2 } from 'lucide-react'; // Aggiungi Trash2
 
 // --- CONFIGURATION ---
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
@@ -217,6 +218,33 @@ export default function UserPage() {
     if (!userData) return null;
 
     const displayUser = isEditing ? formData! : userData;
+
+    const handleDeleteAccount = async () => {
+        // 1. Chiedi conferma per evitare click accidentali
+        const confirmed = window.confirm(
+            "Sei sicuro di voler cancellare il tuo account?\nQuesta azione è irreversibile e perderai tutti i dati."
+        );
+        if (!confirmed) return;
+
+        try {
+            setLoading(true); // Se hai uno stato di loading
+
+            // 2. Chiama la funzione SQL che abbiamo creato
+            const { error } = await supabase.rpc('delete_my_account');
+
+            if (error) throw error;
+
+            // 3. Se tutto va bene, fai il logout locale e rimanda al login
+            await supabase.auth.signOut();
+            router.push('/'); // O alla pagina di login
+
+        } catch (error: any) {
+            console.error("Errore cancellazione:", error.message);
+            alert("Errore durante la cancellazione dell'account.");
+        } finally {
+            setLoading(false);
+        }
+    };
 
     return (
         <div className="min-h-screen bg-slate-50/50 pb-12 font-sans text-slate-900">
@@ -495,6 +523,22 @@ export default function UserPage() {
                                     >
                                         <LogOut size={16} />
                                         Sign out of current session
+                                    </button>
+                                    <button
+                                        onClick={handleLogout} // La tua funzione di logout esistente
+                                        className="flex items-center gap-2 text-slate-600 hover:text-slate-900 transition-colors"
+                                    >
+                                        <LogOut size={18} />
+                                        <span>Sign out of current session</span>
+                                    </button>
+
+                                    {/* NUOVO Tasto Delete Account */}
+                                    <button
+                                        onClick={handleDeleteAccount}
+                                        className="flex items-center gap-2 text-red-500 hover:text-red-700 hover:bg-red-50 px-3 py-2 rounded-lg transition-colors text-sm font-medium"
+                                    >
+                                        <Trash2 size={18} />
+                                        <span>Delete Account</span>
                                     </button>
                                 </div>
 
