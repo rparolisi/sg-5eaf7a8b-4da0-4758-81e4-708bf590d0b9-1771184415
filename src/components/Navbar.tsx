@@ -1,10 +1,54 @@
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
-import { TrendingUp, List, PieChart, Info, Home, User } from 'lucide-react'; // Aggiunto User
+import { createClient } from '@supabase/supabase-js';
+import { TrendingUp, List, PieChart, Info, Home } from 'lucide-react';
+
+// --- CONFIGURAZIONE SUPABASE ---
+// (Assicurati che le variabili d'ambiente siano accessibili anche qui)
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+const SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
+const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 export default function Navbar() {
     const router = useRouter();
     const isActive = (path: string) => router.pathname === path;
+    const [userInitials, setUserInitials] = useState < string > ('U'); // Default 'U' o 'IM'
+
+    // --- FETCH USER INITIALS ---
+    useEffect(() => {
+        const fetchUserProfile = async () => {
+            try {
+                // 1. Ottieni l'utente autenticato dalla sessione Supabase
+                const { data: { user } } = await supabase.auth.getUser();
+
+                if (user) {
+                    // 2. Se c'è un utente loggato, prendi il suo nome dalla tabella 'users'
+                    // Assumiamo che la colonna 'user_id' nella tabella 'users' corrisponda all'UUID di auth
+                    const { data, error } = await supabase
+                        .from('users')
+                        .select('full_name')
+                        .eq('user_id', user.id)
+                        .single();
+
+                    if (data && data.full_name) {
+                        // 3. Calcola le iniziali
+                        const initials = data.full_name
+                            .split(' ')
+                            .map((n: string) => n[0])
+                            .join('')
+                            .toUpperCase()
+                            .substring(0, 2);
+                        setUserInitials(initials);
+                    }
+                }
+            } catch (error) {
+                console.error("Error fetching navbar user:", error);
+            }
+        };
+
+        fetchUserProfile();
+    }, []);
 
     const navItems = [
         { name: 'Home', path: '/', icon: Home },
@@ -30,7 +74,7 @@ export default function Navbar() {
                             </span>
                         </div>
 
-                        {/* DESKTOP LINKS (Spostati qui per stare vicini al logo) */}
+                        {/* DESKTOP LINKS */}
                         <div className="hidden md:flex space-x-8">
                             {navItems.map((item) => {
                                 const active = isActive(item.path);
@@ -40,8 +84,8 @@ export default function Navbar() {
                                         key={item.path}
                                         href={item.path}
                                         className={`inline-flex items-center px-1 pt-1 text-sm font-medium transition-colors border-b-2 ${active
-                                                ? 'border-blue-600 text-blue-600'
-                                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                                            ? 'border-blue-600 text-blue-600'
+                                            : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                                             }`}
                                     >
                                         <Icon size={16} className="mr-2" />
@@ -57,13 +101,12 @@ export default function Navbar() {
                         <Link href="/users">
                             <div className={`
                                 w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold shadow-sm transition-all border
-                                ${isActive('/users') 
-                                    ? 'bg-blue-600 text-white border-blue-600' 
+                                ${isActive('/users')
+                                    ? 'bg-blue-600 text-white border-blue-600'
                                     : 'bg-white text-blue-600 border-gray-200 hover:border-blue-300 hover:bg-blue-50'
                                 }
                             `}>
-                                {/* Qui potresti mettere le iniziali dinamiche se avessi l'utente nello stato */}
-                                IM
+                                {userInitials}
                             </div>
                         </Link>
                     </div>
@@ -80,11 +123,11 @@ export default function Navbar() {
                                 </Link>
                             );
                         })}
-                        
-                        {/* Aggiunta Link Profilo su Mobile */}
+
+                        {/* Profile Link Mobile */}
                         <Link href="/users" className={`flex flex-col items-center ${isActive('/users') ? 'text-blue-600' : 'text-gray-400'}`}>
                             <div className={`w-6 h-6 rounded-full border flex items-center justify-center text-[10px] font-bold ${isActive('/users') ? 'border-blue-600 bg-blue-100' : 'border-gray-400'}`}>
-                                IM
+                                {userInitials}
                             </div>
                             <span className="text-[10px] mt-1 font-medium">Profile</span>
                         </Link>
