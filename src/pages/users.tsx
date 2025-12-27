@@ -115,16 +115,25 @@ export default function UserPage() {
         setFormData({ ...formData, sharing_availability: !formData.sharing_availability });
     };
 
-    // Save Profile Data (Public Table)
+    // Save Profile Data (Auth + Public Table)
     const handleSaveProfile = async () => {
         if (!formData || !userData) return;
         try {
             setSaveLoading(true);
 
+            // 1. Check if Email Changed -> Update Auth
+            if (formData.email !== userData.email) {
+                const { error: authError } = await supabase.auth.updateUser({ email: formData.email });
+                if (authError) throw authError;
+                alert(`Email update initiated! Please check ${formData.email} to confirm the change.`);
+            }
+
+            // 2. Update Public Profile Table
             const { error } = await supabase
                 .from('users')
                 .update({
                     full_name: formData.full_name,
+                    email: formData.email, // <--- Now updating email in DB too
                     country: formData.country,
                     language: formData.language,
                     currency: formData.currency,
@@ -340,12 +349,15 @@ export default function UserPage() {
                                 <h3 className="font-semibold text-slate-800">General Information</h3>
                             </div>
                             <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+                                {/* EMAIL: Now editable with warning */}
                                 <InfoField
                                     label="Email Address"
+                                    name="email"
                                     value={displayUser.email}
-                                    readOnly={true}
+                                    isEditing={isEditing}
+                                    onChange={handleInputChange}
                                     icon={<Mail size={14} />}
-                                    helperText="Managed via Auth Provider"
+                                    helperText="Changing email requires confirmation"
                                 />
                                 <InfoField
                                     label="Country"
