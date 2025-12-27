@@ -18,8 +18,10 @@ import {
     X,
     Edit3,
     Eye,     
-    EyeOff    
+    EyeOff,
+    LogOut    
 } from 'lucide-react';
+import { useRouter } from 'next/router'; // Assicurati di avere router
 
 // --- CONFIGURAZIONE SUPABASE ---
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
@@ -171,6 +173,12 @@ export default function UserPage() {
         }
     };
 
+    const router = useRouter();
+
+    const handleLogout = async () => {
+        await supabase.auth.signOut();
+        router.push('/login'); // Ti rimanda al login dopo essere uscito
+    };
     // Annulla modifiche
     const handleCancel = () => {
         setFormData(selectedUser);
@@ -299,6 +307,25 @@ export default function UserPage() {
                                 Edit Profile
                             </button>
                         )}
+                    </div>
+                    <div className="flex items-center gap-3">
+
+                        {/* Tasto Logout - visibile solo se NON si sta editando */}
+                        {!isEditing && (
+                            <button
+                                onClick={handleLogout}
+                                className="inline-flex items-center justify-center px-4 py-2 border border-slate-300 text-sm font-medium rounded-md shadow-sm text-slate-700 bg-white hover:bg-red-50 hover:text-red-600 hover:border-red-200 focus:outline-none transition-colors"
+                            >
+                                <LogOut className="w-4 h-4 mr-2" />
+                                Logout
+                            </button>
+                        )}
+
+                        {isEditing ? (
+                            // ... i tuoi bottoni Cancel/Save ...
+                        ): (
+                                // ... il tuo bottone Edit Profile ...
+                            )}
                     </div>
                 </div>
 
