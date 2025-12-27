@@ -43,7 +43,7 @@ export default function Home() {
                     </Link>
 
                     {/* CARD 2: PORTFOLIO VALUATION */}
-                    <Link href="/portfolio-valuation" className="group">
+                    <Link href="/portfolio_valuation" className="group">
                         <div className="bg-white rounded-2xl p-8 shadow-sm hover:shadow-xl border border-gray-100 transition-all duration-300 transform hover:-translate-y-1 h-full flex flex-col justify-between">
                             <div>
                                 <div className="w-12 h-12 bg-emerald-100 rounded-xl flex items-center justify-center text-emerald-600 mb-6 group-hover:bg-emerald-600 group-hover:text-white transition-colors">
@@ -61,7 +61,7 @@ export default function Home() {
                     </Link>
 
                     {/* CARD 3: SECURITIES INFO */}
-                    <Link href="/securities-info" className="group">
+                    <Link href="/securities_info" className="group">
                         <div className="bg-white rounded-2xl p-8 shadow-sm hover:shadow-xl border border-gray-100 transition-all duration-300 transform hover:-translate-y-1 h-full flex flex-col justify-between">
                             <div>
                                 <div className="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center text-purple-600 mb-6 group-hover:bg-purple-600 group-hover:text-white transition-colors">
