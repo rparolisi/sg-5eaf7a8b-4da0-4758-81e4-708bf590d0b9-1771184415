@@ -241,16 +241,7 @@ export default function UserPage() {
     return (
         <div className="min-h-screen bg-slate-50/50 pb-12 font-sans text-slate-900">
 
-            {/* Navbar Simplified (NO BUTTON) */}
-            <nav className="bg-white border-b border-slate-200 px-6 py-4 sticky top-0 z-20 shadow-sm flex justify-between items-center">
-                <div className="flex items-center gap-2">
-                    <div className="bg-blue-600 rounded-lg p-1.5">
-                        <UserIcon size={20} className="text-white" />
-                    </div>
-                    <span className="font-bold text-xl text-slate-800 tracking-tight">Invest<span className="text-blue-600">Monitor</span></span>
-                </div>
-                {/* Il bottone Logout è stato rimosso da qui */}
-            </nav>
+
 
             <main className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
 
