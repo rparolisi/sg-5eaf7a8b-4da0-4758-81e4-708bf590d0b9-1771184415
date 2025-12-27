@@ -16,7 +16,9 @@ import {
     ChevronDown,
     Save,
     X,
-    Edit3
+    Edit3,
+    Eye,     
+    EyeOff    
 } from 'lucide-react';
 
 // --- CONFIGURAZIONE SUPABASE ---
