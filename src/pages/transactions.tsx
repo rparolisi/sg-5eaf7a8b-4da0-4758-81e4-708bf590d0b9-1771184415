@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 // ICONE
-import { Filter, ArrowUp, ArrowDown, Search, Check, Plus, X, Calendar, TrendingUp, TrendingDown, Settings, AlertTriangle } from 'lucide-react';
+import { Filter, ArrowUp, ArrowDown, Search, Check, Plus, X, Calendar, TrendingUp, TrendingDown, Settings, AlertTriangle, GripVertical } from 'lucide-react';
 
 /* NOTA PER L'USO LOCALE (Next.js / React):
    1. Installa la libreria: npm install @supabase/supabase-js
@@ -90,6 +90,9 @@ export default function Transactions() {
     // --- GESTIONE LARGHEZZA COLONNE (RESIZING) ---
     const [colWidths, setColWidths] = useState < Record < string, number>> ({});
     const resizingRef = useRef < { startX: number, startWidth: number, colKey: string } | null > (null);
+
+    // --- GESTIONE DRAG & DROP COLONNE ---
+    const [draggedColKey, setDraggedColKey] = useState < string | null > (null);
 
     // --- NUOVI STATI COLONNE ---
     const [visibleColumns, setVisibleColumns] = useState < string[] > (DEFAULT_VISIBLE_COLUMNS);
@@ -184,7 +187,6 @@ export default function Transactions() {
         e.preventDefault();
         e.stopPropagation();
 
-        // Troviamo la larghezza attuale (se non è nello stato, la prendiamo dal DOM)
         const thElement = (e.target as HTMLElement).closest('th');
         const currentWidth = thElement ? thElement.getBoundingClientRect().width : 100;
 
@@ -196,7 +198,7 @@ export default function Transactions() {
 
         document.addEventListener('mousemove', handleMouseMove);
         document.addEventListener('mouseup', handleMouseUp);
-        document.body.style.cursor = 'col-resize'; // Cambia cursore globale
+        document.body.style.cursor = 'col-resize';
     };
 
     const handleMouseMove = useCallback((e: MouseEvent) => {
@@ -204,7 +206,7 @@ export default function Transactions() {
 
         const { startX, startWidth, colKey } = resizingRef.current;
         const deltaX = e.pageX - startX;
-        const newWidth = Math.max(50, startWidth + deltaX); // Minimo 50px
+        const newWidth = Math.max(50, startWidth + deltaX);
 
         setColWidths(prev => ({
             ...prev,
@@ -216,9 +218,45 @@ export default function Transactions() {
         resizingRef.current = null;
         document.removeEventListener('mousemove', handleMouseMove);
         document.removeEventListener('mouseup', handleMouseUp);
-        document.body.style.cursor = ''; // Ripristina cursore
+        document.body.style.cursor = '';
     }, [handleMouseMove]);
 
+    // --- GESTIONE EVENTI DRAG & DROP (COLONNE) ---
+    const handleDragStart = (e: React.DragEvent, colKey: string) => {
+        setDraggedColKey(colKey);
+        // Effetto trasparenza per il 'ghost'
+        if (e.dataTransfer) {
+            e.dataTransfer.effectAllowed = "move";
+            // Opzionale: impostare immagine custom
+        }
+    };
+
+    const handleDragOver = (e: React.DragEvent, colKey: string) => {
+        e.preventDefault(); // Necessario per permettere il drop
+        if (draggedColKey !== colKey) {
+            // Qui potresti aggiungere un feedback visivo (es. bordo)
+        }
+    };
+
+    const handleDrop = (e: React.DragEvent, targetColKey: string) => {
+        e.preventDefault();
+        if (!draggedColKey || draggedColKey === targetColKey) return;
+
+        // Riordina l'array visibleColumns
+        const newOrder = [...visibleColumns];
+        const dragIndex = newOrder.indexOf(draggedColKey);
+        const hoverIndex = newOrder.indexOf(targetColKey);
+
+        if (dragIndex > -1 && hoverIndex > -1) {
+            // Rimuovi dall'indice originale
+            newOrder.splice(dragIndex, 1);
+            // Inserisci nel nuovo indice
+            newOrder.splice(hoverIndex, 0, draggedColKey);
+            setVisibleColumns(newOrder);
+        }
+
+        setDraggedColKey(null);
+    };
 
     async function fetchTransactions() {
         if (!supabase) return;
@@ -247,8 +285,9 @@ export default function Transactions() {
             if (prev.includes(columnKey)) {
                 return prev.filter(key => key !== columnKey);
             } else {
-                const newSet = new Set([...prev, columnKey]);
-                return ALL_COLUMNS.filter(col => newSet.has(col.key)).map(col => col.key);
+                // AGGIUNTA: Appendiamo la nuova colonna alla fine invece di resettare l'ordine
+                // questo preserva il riordinamento manuale fatto dall'utente
+                return [...prev, columnKey];
             }
         });
     };
@@ -385,24 +424,16 @@ export default function Transactions() {
 
     // --- RENDERING CELLE TABELLA ---
     const renderCellContent = (t: Transaction, colKey: string) => {
-        // Formattazione specifica per tipo di dato
         const val = t[colKey];
-
         switch (colKey) {
             case 'transaction_id':
                 return <span className="text-gray-400 text-xs font-mono" title={val}>{val ? String(val).substring(0, 8) + '...' : '-'}</span>;
-
-            // DATE
             case 'operation_date':
             case 'created_at':
             case 'historical_fifo_avg_date':
                 return val ? new Date(val).toLocaleDateString('it-IT') : '-';
-
-            // TESTO IN GRASSETTO
             case 'ticker':
                 return <span className="font-bold">{val}</span>;
-
-            // ETICHETTE / TAGS
             case 'buy_or_sell':
                 return (
                     <span className={`px-2 py-1 rounded-full text-xs font-medium
@@ -414,8 +445,6 @@ export default function Transactions() {
                 );
             case 'operation_sign':
                 return <span className={`font-mono font-bold ${val > 0 ? 'text-green-600' : 'text-red-600'}`}>{val > 0 ? '+' : ''}{val}</span>;
-
-            // VALUTA (EUR)
             case 'purchase_price_per_share_eur':
             case 'transaction_fees_eur':
             case 'transaction_taxes_eur':
@@ -424,22 +453,15 @@ export default function Transactions() {
             case 'average_price':
             case 'effective_average_price':
                 return <div className="text-right font-mono text-gray-700">{val ? Number(val).toFixed(2) : '-'} €</div>;
-
-            // VALUTA (TRANSACTION CURRENCY)
             case 'purchase_price_per_share_curr':
                 return <div className="text-right font-mono">{val ? Number(val).toFixed(2) : '-'} <span className="text-xs text-gray-400">{t.asset_currency}</span></div>;
-
-            // NUMERI / QUANTITÀ
             case 'total_shares_num':
             case 'shares_count':
             case 'cumulative_shares_count':
                 return <div className="text-right">{val ? Number(val).toLocaleString('it-IT') : '-'}</div>;
-
             case 'exchange_rate_at_purchase':
             case 'ratio':
                 return <div className="text-right text-gray-500 text-xs">{val ? Number(val).toFixed(4) : '-'}</div>;
-
-            // TESTO GENERALE (Fallback)
             case 'sector':
             case 'asset_currency':
             case 'category':
@@ -448,7 +470,6 @@ export default function Transactions() {
             case 'regulated_market_or_mtf':
             case 'person':
                 return val || '-';
-
             default:
                 return val || '-';
         }
@@ -527,87 +548,104 @@ export default function Transactions() {
                         <table className="min-w-full divide-y divide-gray-200" style={{ tableLayout: 'fixed' }}>
                             <thead className="bg-gray-50">
                                 <tr>
-                                    {ALL_COLUMNS.filter(col => visibleColumns.includes(col.key)).map((col) => (
-                                        <th
-                                            key={col.key}
-                                            className="px-6 py-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider relative group"
-                                            style={{
-                                                width: colWidths[col.key] || 'auto',
-                                                minWidth: '100px' // Larghezza minima di default per evitare il collasso
-                                            }}
-                                        >
-                                            <div className="flex items-center gap-2 cursor-pointer truncate" onClick={() => handleSort(col.key)}>
-                                                {col.label}
-                                                {sortConfig.key === col.key && (
-                                                    sortConfig.direction === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />
-                                                )}
-                                            </div>
+                                    {/* MAPPING DI VISIBLE COLUMNS (Fondamentale per il riordinamento) */}
+                                    {visibleColumns.map((colKey) => {
+                                        const col = ALL_COLUMNS.find(c => c.key === colKey);
+                                        if (!col) return null;
 
-                                            {/* Pulsante Filtro (Appare on Hover) */}
-                                            <button
-                                                onClick={(e) => { e.stopPropagation(); setActiveColumn(activeColumn === col.key ? null : col.key); setMenuSearchTerm(''); }}
-                                                className={`absolute right-3 top-1/2 -translate-y-1/2 p-1.5 rounded hover:bg-gray-200 transition-opacity ${activeColumn === col.key || filters[col.key]?.length ? 'opacity-100 bg-blue-50 text-blue-600' : 'opacity-0 group-hover:opacity-100 text-gray-400'}`}
+                                        return (
+                                            <th
+                                                key={col.key}
+                                                // DRAG & DROP ATTRIBUTES
+                                                draggable
+                                                onDragStart={(e) => handleDragStart(e, col.key)}
+                                                onDragOver={(e) => handleDragOver(e, col.key)}
+                                                onDrop={(e) => handleDrop(e, col.key)}
+
+                                                className={`px-6 py-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider relative group cursor-grab active:cursor-grabbing transition-colors ${draggedColKey === col.key ? 'opacity-50 bg-gray-100' : ''}`}
+                                                style={{
+                                                    width: colWidths[col.key] || 'auto',
+                                                    minWidth: '100px'
+                                                }}
                                             >
-                                                <Filter size={14} />
-                                            </button>
+                                                <div className="flex items-center gap-2 truncate" onClick={() => handleSort(col.key)}>
+                                                    {/* Icona Grip opzionale per indicare draggabilità */}
+                                                    <GripVertical size={14} className="text-gray-300 group-hover:text-gray-500 flex-shrink-0" />
 
-                                            {/* RESIZER HANDLE */}
-                                            <div
-                                                className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-400 group-hover:bg-gray-300 transition-colors z-10"
-                                                onMouseDown={(e) => startResize(e, col.key)}
-                                                onClick={(e) => e.stopPropagation()} // Previene il sort quando si clicca sul bordo
-                                            />
-
-                                            {/* MENU FILTRO (Dropdown) */}
-                                            {activeColumn === col.key && (
-                                                <div className="absolute top-full left-0 mt-2 w-64 bg-white rounded-lg shadow-xl border border-gray-200 z-50 p-2" onClick={(e) => e.stopPropagation()}>
-                                                    <div className="relative mb-2">
-                                                        <Search size={14} className="absolute left-2.5 top-2.5 text-gray-400" />
-                                                        <input
-                                                            autoFocus
-                                                            type="text"
-                                                            placeholder={`Search ${col.label}...`}
-                                                            className="w-full pl-8 pr-3 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none"
-                                                            value={menuSearchTerm}
-                                                            onChange={(e) => setMenuSearchTerm(e.target.value)}
-                                                            onPaste={(e) => handlePasteInSearch(e, col.key)}
-                                                        />
-                                                    </div>
-                                                    <div className="max-h-48 overflow-y-auto space-y-1">
-                                                        {uniqueColumnValues.map((val) => {
-                                                            const isSelected = filters[col.key]?.includes(val);
-                                                            return (
-                                                                <label key={val} className="flex items-center gap-2 px-2 py-1.5 hover:bg-gray-50 rounded cursor-pointer text-sm">
-                                                                    <div className={`w-4 h-4 border rounded flex items-center justify-center transition-colors ${isSelected ? 'bg-blue-600 border-blue-600' : 'border-gray-300'}`}>
-                                                                        {isSelected && <Check size={12} className="text-white" />}
-                                                                    </div>
-                                                                    <span className="truncate text-gray-700">{val || '(Empty)'}</span>
-                                                                    <input type="checkbox" className="hidden" checked={!!isSelected} onChange={() => toggleFilterValue(col.key, val)} />
-                                                                </label>
-                                                            );
-                                                        })}
-                                                        {uniqueColumnValues.length === 0 && <p className="text-xs text-gray-400 text-center py-2">No results found</p>}
-                                                    </div>
-                                                    <div className="pt-2 mt-2 border-t border-gray-100 flex justify-between">
-                                                        <button onClick={() => setFilters(prev => ({ ...prev, [col.key]: [] }))} className="text-xs text-gray-500 hover:text-gray-800">Clear</button>
-                                                        <button onClick={() => setActiveColumn(null)} className="text-xs text-blue-600 font-medium hover:text-blue-800">Done</button>
-                                                    </div>
+                                                    {col.label}
+                                                    {sortConfig.key === col.key && (
+                                                        sortConfig.direction === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />
+                                                    )}
                                                 </div>
-                                            )}
-                                        </th>
-                                    ))}
+
+                                                {/* Pulsante Filtro (Appare on Hover) */}
+                                                <button
+                                                    onClick={(e) => { e.stopPropagation(); setActiveColumn(activeColumn === col.key ? null : col.key); setMenuSearchTerm(''); }}
+                                                    className={`absolute right-3 top-1/2 -translate-y-1/2 p-1.5 rounded hover:bg-gray-200 transition-opacity ${activeColumn === col.key || filters[col.key]?.length ? 'opacity-100 bg-blue-50 text-blue-600' : 'opacity-0 group-hover:opacity-100 text-gray-400'}`}
+                                                >
+                                                    <Filter size={14} />
+                                                </button>
+
+                                                {/* RESIZER HANDLE */}
+                                                <div
+                                                    className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-400 group-hover:bg-gray-300 transition-colors z-10"
+                                                    onMouseDown={(e) => startResize(e, col.key)}
+                                                    onClick={(e) => e.stopPropagation()}
+                                                    draggable={false} // Impedisce il drag della colonna quando si usa il resizer
+                                                />
+
+                                                {/* MENU FILTRO (Dropdown) */}
+                                                {activeColumn === col.key && (
+                                                    <div className="absolute top-full left-0 mt-2 w-64 bg-white rounded-lg shadow-xl border border-gray-200 z-50 p-2 cursor-default" onClick={(e) => e.stopPropagation()}>
+                                                        <div className="relative mb-2">
+                                                            <Search size={14} className="absolute left-2.5 top-2.5 text-gray-400" />
+                                                            <input
+                                                                autoFocus
+                                                                type="text"
+                                                                placeholder={`Search ${col.label}...`}
+                                                                className="w-full pl-8 pr-3 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none"
+                                                                value={menuSearchTerm}
+                                                                onChange={(e) => setMenuSearchTerm(e.target.value)}
+                                                                onPaste={(e) => handlePasteInSearch(e, col.key)}
+                                                            />
+                                                        </div>
+                                                        <div className="max-h-48 overflow-y-auto space-y-1">
+                                                            {uniqueColumnValues.map((val) => {
+                                                                const isSelected = filters[col.key]?.includes(val);
+                                                                return (
+                                                                    <label key={val} className="flex items-center gap-2 px-2 py-1.5 hover:bg-gray-50 rounded cursor-pointer text-sm">
+                                                                        <div className={`w-4 h-4 border rounded flex items-center justify-center transition-colors ${isSelected ? 'bg-blue-600 border-blue-600' : 'border-gray-300'}`}>
+                                                                            {isSelected && <Check size={12} className="text-white" />}
+                                                                        </div>
+                                                                        <span className="truncate text-gray-700">{val || '(Empty)'}</span>
+                                                                        <input type="checkbox" className="hidden" checked={!!isSelected} onChange={() => toggleFilterValue(col.key, val)} />
+                                                                    </label>
+                                                                );
+                                                            })}
+                                                            {uniqueColumnValues.length === 0 && <p className="text-xs text-gray-400 text-center py-2">No results found</p>}
+                                                        </div>
+                                                        <div className="pt-2 mt-2 border-t border-gray-100 flex justify-between">
+                                                            <button onClick={() => setFilters(prev => ({ ...prev, [col.key]: [] }))} className="text-xs text-gray-500 hover:text-gray-800">Clear</button>
+                                                            <button onClick={() => setActiveColumn(null)} className="text-xs text-blue-600 font-medium hover:text-blue-800">Done</button>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </th>
+                                        );
+                                    })}
                                 </tr>
                             </thead>
                             <tbody className="bg-white divide-y divide-gray-200">
                                 {processedData.map((t) => (
                                     <tr key={t.transaction_id || t.id} className="hover:bg-gray-50 transition-colors">
-                                        {ALL_COLUMNS.filter(col => visibleColumns.includes(col.key)).map(col => (
+                                        {/* MAPPING VISIBLE COLUMNS ANCHE QUI */}
+                                        {visibleColumns.map(colKey => (
                                             <td
-                                                key={col.key}
+                                                key={colKey}
                                                 className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 overflow-hidden text-ellipsis"
-                                                style={{ width: colWidths[col.key] || 'auto' }}
+                                                style={{ width: colWidths[colKey] || 'auto' }}
                                             >
-                                                {renderCellContent(t, col.key)}
+                                                {renderCellContent(t, colKey)}
                                             </td>
                                         ))}
                                     </tr>
@@ -617,7 +655,7 @@ export default function Transactions() {
                     </div>
                 )}
 
-                {/* --- MODAL ADD TRANSACTION --- */}
+                {/* --- MODAL ADD TRANSACTION (INVARIATO) --- */}
                 {isModalOpen && (
                     <div className="fixed inset-0 z-[100] bg-black/50 flex items-center justify-center p-4 backdrop-blur-sm">
                         <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
