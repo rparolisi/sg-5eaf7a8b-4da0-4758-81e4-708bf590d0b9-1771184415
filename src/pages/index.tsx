@@ -1,6 +1,6 @@
-import { useEffect, useState, useMemo, useRef } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { createClient } from '@supabase/supabase-js';
-import { Filter, ArrowUp, ArrowDown, X } from 'lucide-react';
+import { Filter, ArrowUp, ArrowDown, Search, Check } from 'lucide-react';
 
 // --- CONFIGURAZIONE ---
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -37,9 +37,16 @@ export default function Home() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState < string | null > (null);
 
-    // Stati interfaccia
+    // --- STATI ---
     const [activeColumn, setActiveColumn] = useState < string | null > (null);
-    const [filters, setFilters] = useState < Record < string, string>> ({});
+
+    // filters ora mappa la colonna a un ARRAY di stringhe selezionate
+    // Es: { ticker: ['AAPL', 'MSFT'], buy_or_sell: ['Acquisto'] }
+    const [filters, setFilters] = useState < Record < string, string[]>> ({});
+
+    // Stato per la barra di ricerca interna al menu (per filtrare la lista di checkbox)
+    const [menuSearchTerm, setMenuSearchTerm] = useState('');
+
     const [sortConfig, setSortConfig] = useState < SortConfig > ({ key: 'operation_date', direction: 'desc' });
 
     useEffect(() => {
@@ -49,10 +56,7 @@ export default function Home() {
     async function fetchTransactions() {
         try {
             setLoading(true);
-            const { data, error } = await supabase
-                .from('transactions')
-                .select('*');
-
+            const { data, error } = await supabase.from('transactions').select('*');
             if (error) throw error;
             setTransactions(data || []);
         } catch (err: any) {
@@ -63,38 +67,54 @@ export default function Home() {
         }
     }
 
-    // --- LOGICA FILTRO E ORDINAMENTO AGGIORNATA ---
+    // --- HELPER: FORMATTAZIONE VALORI ---
+    // Trasforma qualsiasi valore (data ISO, numero) in stringa leggibile per l'utente
+    const formatValue = (key: string, value: any): string => {
+        if (!value && value !== 0) return '';
+        if (key === 'operation_date') return new Date(value).toLocaleDateString('it-IT');
+        if (typeof value === 'number') return value.toString(); // Semplifichiamo per il filtro
+        return String(value);
+    };
+
+    // --- LOGICA 1: ESTRAZIONE VALORI UNICI ---
+    // Calcola la lista dei valori unici per la colonna attualmente aperta
+    const uniqueColumnValues = useMemo(() => {
+        if (!activeColumn) return [];
+
+        // 1. Estrai tutti i valori grezzi
+        const rawValues = transactions.map(t => formatValue(activeColumn, t[activeColumn]));
+
+        // 2. Rimuovi duplicati
+        const unique = Array.from(new Set(rawValues)).sort();
+
+        // 3. Filtra in base a cosa l'utente sta scrivendo nella casella di ricerca del menu
+        if (menuSearchTerm) {
+            return unique.filter(v => v.toLowerCase().includes(menuSearchTerm.toLowerCase()));
+        }
+        return unique;
+    }, [transactions, activeColumn, menuSearchTerm]);
+
+    // --- LOGICA 2: FILTRO DATI TABELLA ---
     const processedData = useMemo(() => {
         let data = [...transactions];
 
-        // 1. Applica Filtri
+        // Applica filtri
         Object.keys(filters).forEach((key) => {
-            const searchValue = filters[key].toLowerCase();
-
-            if (searchValue) {
-                data = data.filter((item) => {
-                    let itemValue = '';
-
-                    // MODIFICA CRUCIALE QUI:
-                    // Se stiamo filtrando la colonna 'operation_date', la trasformiamo in formato IT prima del controllo
-                    if (key === 'operation_date' && item[key]) {
-                        itemValue = new Date(item[key]).toLocaleDateString('it-IT'); // Diventa "15/11/2025"
-                    } else {
-                        // Per tutte le altre colonne, prendiamo il valore grezzo
-                        itemValue = String(item[key] || '');
-                    }
-
-                    return itemValue.toLowerCase().includes(searchValue);
+            const selectedValues = filters[key];
+            // Se c'è almeno un valore selezionato per questa colonna, filtra
+            if (selectedValues && selectedValues.length > 0) {
+                data = data.filter((row) => {
+                    const rowValFormatted = formatValue(key, row[key]);
+                    return selectedValues.includes(rowValFormatted);
                 });
             }
         });
 
-        // 2. Applica Ordinamento
+        // Applica ordinamento
         if (sortConfig.key) {
             data.sort((a, b) => {
                 const aVal = a[sortConfig.key!];
                 const bVal = b[sortConfig.key!];
-
                 if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
                 if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
                 return 0;
@@ -104,24 +124,67 @@ export default function Home() {
         return data;
     }, [transactions, filters, sortConfig]);
 
-    // Gestori
-    const toggleColumnMenu = (key: string) => {
-        if (activeColumn === key) setActiveColumn(null);
-        else setActiveColumn(key);
+    // --- GESTORI EVENTI ---
+
+    // Gestione click su checkbox singolo
+    const toggleFilterValue = (columnKey: string, value: string) => {
+        setFilters(prev => {
+            const currentSelected = prev[columnKey] || [];
+            if (currentSelected.includes(value)) {
+                // Rimuovi
+                const newSelected = currentSelected.filter(v => v !== value);
+                return { ...prev, [columnKey]: newSelected.length > 0 ? newSelected : [] }; // Se vuoto, rimuovi chiave o lascia array vuoto? Meglio array vuoto o undefined. Qui puliamo.
+            } else {
+                // Aggiungi
+                return { ...prev, [columnKey]: [...currentSelected, value] };
+            }
+        });
     };
 
-    const handleSort = (key: string, direction: 'asc' | 'desc') => {
-        setSortConfig({ key, direction });
+    // GESTIONE COPIA-INCOLLA (Il cuore della tua richiesta)
+    const handlePasteInSearch = (e: React.ClipboardEvent<HTMLInputElement>, columnKey: string) => {
+        e.preventDefault();
+        // 1. Prendi il testo incollato
+        const pastedText = e.clipboardData.getData('text');
+
+        // 2. Separalo per spazi, tab o virgole
+        const values = pastedText.split(/[\s,]+/).map(s => s.trim()).filter(Boolean);
+
+        if (values.length === 0) return;
+
+        // 3. Aggiungi questi valori ai filtri selezionati
+        setFilters(prev => {
+            const currentSelected = prev[columnKey] || [];
+            // Unisci i vecchi con i nuovi, rimuovendo duplicati
+            const newSelected = Array.from(new Set([...currentSelected, ...values]));
+
+            // Nota: Funziona bene se il valore incollato corrisponde esattamente al valore formattato (es. "AAPL").
+            // Se incolli "15/11/2025" funziona. Se incolli "2025-11-15" no, perché cerchiamo il valore formattato.
+            return { ...prev, [columnKey]: newSelected };
+        });
+
+        // Opzionale: pulisci la barra di ricerca dopo l'incolla
+        setMenuSearchTerm('');
     };
 
-    const handleFilterChange = (key: string, value: string) => {
-        setFilters(prev => ({ ...prev, [key]: value }));
+    const handleSelectAll = (columnKey: string) => {
+        // Seleziona tutti i valori VISIBILI (filtrati dalla ricerca)
+        setFilters(prev => ({
+            ...prev,
+            [columnKey]: [...(prev[columnKey] || []), ...uniqueColumnValues] // Aggiungi quelli visibili
+        }));
     };
 
-    const clearFilter = (key: string) => {
-        const newFilters = { ...filters };
-        delete newFilters[key];
-        setFilters(newFilters);
+    const handleClearColumnFilter = (columnKey: string) => {
+        setFilters(prev => {
+            const newState = { ...prev };
+            delete newState[columnKey];
+            return newState;
+        });
+    };
+
+    const isFilterActive = (key: string) => {
+        return filters[key] && filters[key].length > 0;
     };
 
     return (
@@ -140,62 +203,84 @@ export default function Home() {
                                     {COLUMNS.map((col) => (
                                         <th key={col.key} className="px-6 py-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider relative group">
 
-                                            {/* HEADER */}
+                                            {/* HEADER + Icona Filtro */}
                                             <div
                                                 className="flex items-center cursor-pointer hover:text-blue-600 space-x-2"
-                                                onClick={() => toggleColumnMenu(col.key)}
+                                                onClick={() => {
+                                                    if (activeColumn === col.key) setActiveColumn(null);
+                                                    else {
+                                                        setActiveColumn(col.key);
+                                                        setMenuSearchTerm(''); // Resetta ricerca quando apri menu
+                                                    }
+                                                }}
                                             >
                                                 <span>{col.label}</span>
-                                                {filters[col.key] || sortConfig.key === col.key ? (
-                                                    <Filter size={14} className="text-blue-500" />
-                                                ) : (
-                                                    <Filter size={14} className="opacity-0 group-hover:opacity-50 transition-opacity" />
-                                                )}
+                                                <Filter
+                                                    size={14}
+                                                    className={isFilterActive(col.key) ? "text-blue-600 fill-blue-100" : "text-gray-400 opacity-0 group-hover:opacity-100"}
+                                                />
                                             </div>
 
-                                            {/* POPOVER MENU */}
+                                            {/* POPOVER MENU EXCEL-STYLE */}
                                             {activeColumn === col.key && (
-                                                <div className="absolute z-50 top-full left-0 mt-2 w-56 bg-white rounded-lg shadow-xl border border-gray-100 p-3">
+                                                <div className="absolute z-50 top-full left-0 mt-2 w-64 bg-white rounded-lg shadow-2xl border border-gray-200 flex flex-col cursor-default">
 
-                                                    {/* Ordinamento */}
-                                                    <div className="flex flex-col gap-1 mb-3">
+                                                    {/* 1. Opzioni Ordinamento */}
+                                                    <div className="p-2 border-b border-gray-100 bg-gray-50 rounded-t-lg flex gap-1">
                                                         <button
-                                                            onClick={() => handleSort(col.key, 'asc')}
-                                                            className={`flex items-center px-2 py-1.5 text-xs rounded hover:bg-gray-100 ${sortConfig.key === col.key && sortConfig.direction === 'asc' ? 'text-blue-600 bg-blue-50 font-bold' : 'text-gray-700'}`}
+                                                            onClick={() => setSortConfig({ key: col.key, direction: 'asc' })}
+                                                            className={`flex-1 flex items-center justify-center p-1.5 rounded text-[10px] border ${sortConfig.key === col.key && sortConfig.direction === 'asc' ? 'bg-blue-100 border-blue-200 text-blue-700' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-100'}`}
                                                         >
-                                                            <ArrowUp size={14} className="mr-2" /> Ordina Crescente
+                                                            <ArrowUp size={12} className="mr-1" /> ASC
                                                         </button>
                                                         <button
-                                                            onClick={() => handleSort(col.key, 'desc')}
-                                                            className={`flex items-center px-2 py-1.5 text-xs rounded hover:bg-gray-100 ${sortConfig.key === col.key && sortConfig.direction === 'desc' ? 'text-blue-600 bg-blue-50 font-bold' : 'text-gray-700'}`}
+                                                            onClick={() => setSortConfig({ key: col.key, direction: 'desc' })}
+                                                            className={`flex-1 flex items-center justify-center p-1.5 rounded text-[10px] border ${sortConfig.key === col.key && sortConfig.direction === 'desc' ? 'bg-blue-100 border-blue-200 text-blue-700' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-100'}`}
                                                         >
-                                                            <ArrowDown size={14} className="mr-2" /> Ordina Decrescente
+                                                            <ArrowDown size={12} className="mr-1" /> DESC
                                                         </button>
                                                     </div>
 
-                                                    <hr className="border-gray-100 mb-3" />
-
-                                                    {/* Ricerca */}
-                                                    <div className="mb-1">
-                                                        <label className="text-[10px] uppercase text-gray-400 font-bold mb-1 block">Filtra {col.label}</label>
+                                                    {/* 2. Barra di Ricerca (con PASTE HANDLER) */}
+                                                    <div className="p-2 border-b border-gray-100">
                                                         <div className="relative">
+                                                            <Search size={14} className="absolute left-2 top-2 text-gray-400" />
                                                             <input
                                                                 autoFocus
                                                                 type="text"
-                                                                className="w-full text-sm border border-gray-300 rounded px-2 py-1.5 focus:outline-none focus:border-blue-500"
-                                                                placeholder={col.key === 'operation_date' ? "es. 15/11/2025" : "Cerca..."}
-                                                                value={filters[col.key] || ''}
-                                                                onChange={(e) => handleFilterChange(col.key, e.target.value)}
+                                                                placeholder="Cerca o incolla valori..."
+                                                                className="w-full pl-8 pr-2 py-1.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                                value={menuSearchTerm}
+                                                                onChange={(e) => setMenuSearchTerm(e.target.value)}
+                                                                onPaste={(e) => handlePasteInSearch(e, col.key)}
                                                             />
-                                                            {filters[col.key] && (
-                                                                <button
-                                                                    onClick={() => clearFilter(col.key)}
-                                                                    className="absolute right-2 top-1.5 text-gray-400 hover:text-red-500"
-                                                                >
-                                                                    <X size={14} />
-                                                                </button>
-                                                            )}
                                                         </div>
+                                                        <div className="flex justify-between mt-2 px-1">
+                                                            <button onClick={() => handleSelectAll(col.key)} className="text-[10px] text-blue-600 hover:underline">Seleziona visibili</button>
+                                                            <button onClick={() => handleClearColumnFilter(col.key)} className="text-[10px] text-red-500 hover:underline">Pulisci filtro</button>
+                                                        </div>
+                                                    </div>
+
+                                                    {/* 3. Lista Valori Unici (Scrollabile) */}
+                                                    <div className="max-h-60 overflow-y-auto p-1">
+                                                        {uniqueColumnValues.length > 0 ? (
+                                                            uniqueColumnValues.map((val) => {
+                                                                const isChecked = filters[col.key]?.includes(val);
+                                                                return (
+                                                                    <label key={val} className="flex items-center px-2 py-1.5 hover:bg-gray-50 rounded cursor-pointer">
+                                                                        <input
+                                                                            type="checkbox"
+                                                                            className="mr-2 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                                                            checked={!!isChecked}
+                                                                            onChange={() => toggleFilterValue(col.key, val)}
+                                                                        />
+                                                                        <span className="text-sm text-gray-700 truncate">{val}</span>
+                                                                    </label>
+                                                                )
+                                                            })
+                                                        ) : (
+                                                            <p className="p-4 text-xs text-gray-400 text-center">Nessun valore trovato</p>
+                                                        )}
                                                     </div>
                                                 </div>
                                             )}
@@ -217,10 +302,10 @@ export default function Home() {
                                             <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium ${t.buy_or_sell === 'Acquisto' ? 'text-green-600' : 'text-red-600'}`}>
                                                 {t.buy_or_sell}
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-right">
                                                 {t.total_shares_num}
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-mono">
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right font-mono">
                                                 {t.total_outlay_eur?.toFixed(2)} €
                                             </td>
                                         </tr>
@@ -228,7 +313,7 @@ export default function Home() {
                                 ) : (
                                     <tr>
                                         <td colSpan={5} className="px-6 py-12 text-center text-gray-400 italic">
-                                            Nessun risultato trovato.
+                                            Nessun risultato. Controlla i filtri attivi.
                                         </td>
                                     </tr>
                                 )}
