@@ -24,13 +24,22 @@ const PYTHON_API_URL = "https://invest-monitor-api.onrender.com";
 const PEOPLE_OPTIONS = ["Ale", "Peppe", "Raff"];
 
 // Definizione completa di tutte le colonne possibili
+// Aggiornata con tutti i campi presenti nel form e nel DB
 const ALL_COLUMNS = [
     { key: 'operation_date', label: 'Date', type: 'date' },
     { key: 'ticker', label: 'Ticker', type: 'text' },
     { key: 'buy_or_sell', label: 'Type', type: 'text' },
     { key: 'total_shares_num', label: 'Shares', type: 'number' },
+    { key: 'price', label: 'Price', type: 'number' },
+    { key: 'currency', label: 'Currency', type: 'text' },
+    { key: 'exchange_rate', label: 'Ex. Rate', type: 'number' },
     { key: 'total_outlay_eur', label: 'Total (€)', type: 'number' },
     { key: 'person', label: 'Person', type: 'text' },
+    { key: 'platform', label: 'Platform', type: 'text' },
+    { key: 'account_owner', label: 'Account Owner', type: 'text' },
+    { key: 'regulated', label: 'Regulated', type: 'text' },
+    { key: 'expenses', label: 'Expenses (€)', type: 'number' },
+    { key: 'taxes', label: 'Taxes (€)', type: 'number' },
 ];
 
 const DEFAULT_VISIBLE_COLUMNS = ['operation_date', 'ticker', 'buy_or_sell', 'person'];
@@ -333,8 +342,15 @@ export default function Transactions() {
                 );
             case 'total_shares_num':
                 return <div className="text-right">{t.total_shares_num}</div>;
+            case 'price':
+                return <div className="text-right">{t.price ? Number(t.price).toFixed(2) : '-'}</div>;
+            case 'exchange_rate':
+                return <div className="text-right text-gray-500">{t.exchange_rate ? Number(t.exchange_rate).toFixed(4) : '-'}</div>;
             case 'total_outlay_eur':
                 return <div className="text-right font-mono">{t.total_outlay_eur?.toFixed(2)} €</div>;
+            case 'expenses':
+            case 'taxes':
+                return <div className="text-right text-red-500">{t[colKey] ? Number(t[colKey]).toFixed(2) : '0.00'} €</div>;
             case 'person':
                 return t.person;
             default:
@@ -362,7 +378,7 @@ export default function Transactions() {
                             {isColumnMenuOpen && (
                                 <div className="absolute right-0 top-12 w-56 bg-white rounded-xl shadow-xl border border-gray-200 z-50 p-3 animate-in fade-in slide-in-from-top-2">
                                     <h3 className="text-sm font-semibold text-gray-700 mb-2 px-1">Show Columns</h3>
-                                    <div className="space-y-1">
+                                    <div className="max-h-60 overflow-y-auto space-y-1">
                                         {ALL_COLUMNS.map(col => (
                                             <label key={col.key} className="flex items-center gap-2 p-2 hover:bg-gray-50 rounded-lg cursor-pointer text-sm text-gray-700 select-none">
                                                 <div className={`w-4 h-4 border rounded flex items-center justify-center transition-colors ${visibleColumns.includes(col.key) ? 'bg-blue-600 border-blue-600' : 'border-gray-300'}`}>
