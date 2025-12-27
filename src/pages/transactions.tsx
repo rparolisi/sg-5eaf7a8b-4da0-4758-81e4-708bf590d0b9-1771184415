@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { Filter, ArrowUp, ArrowDown, Search, Check } from 'lucide-react';
+import Link from 'next/link';
 
 // --- CONFIGURAZIONE ---
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -321,6 +322,11 @@ export default function Home() {
                         </table>
                     </div>
                 )}
+            </div>
+            <div className="mb-6">
+                <Link href="/" className="text-blue-600 hover:underline flex items-center gap-2">
+                    ← Torna alla Home
+                </Link>
             </div>
         </main>
     );
