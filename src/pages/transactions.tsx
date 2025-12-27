@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, useRef } from 'react';
+import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 // ICONE
 import { Filter, ArrowUp, ArrowDown, Search, Check, Plus, X, Calendar, TrendingUp, TrendingDown, Settings, AlertTriangle } from 'lucide-react';
 
@@ -87,6 +87,10 @@ export default function Transactions() {
     const [menuSearchTerm, setMenuSearchTerm] = useState('');
     const [sortConfig, setSortConfig] = useState < SortConfig > ({ key: 'operation_date', direction: 'desc' });
 
+    // --- GESTIONE LARGHEZZA COLONNE (RESIZING) ---
+    const [colWidths, setColWidths] = useState < Record < string, number>> ({});
+    const resizingRef = useRef < { startX: number, startWidth: number, colKey: string } | null > (null);
+
     // --- NUOVI STATI COLONNE ---
     const [visibleColumns, setVisibleColumns] = useState < string[] > (DEFAULT_VISIBLE_COLUMNS);
     const [isColumnMenuOpen, setIsColumnMenuOpen] = useState(false);
@@ -174,6 +178,47 @@ export default function Transactions() {
             setFormData(prev => ({ ...prev, exchange_rate: '1' }));
         }
     }, [formData.currency]);
+
+    // --- GESTIONE EVENTI RESIZING ---
+    const startResize = (e: React.MouseEvent, colKey: string) => {
+        e.preventDefault();
+        e.stopPropagation();
+
+        // Troviamo la larghezza attuale (se non è nello stato, la prendiamo dal DOM)
+        const thElement = (e.target as HTMLElement).closest('th');
+        const currentWidth = thElement ? thElement.getBoundingClientRect().width : 100;
+
+        resizingRef.current = {
+            startX: e.pageX,
+            startWidth: colWidths[colKey] || currentWidth,
+            colKey: colKey
+        };
+
+        document.addEventListener('mousemove', handleMouseMove);
+        document.addEventListener('mouseup', handleMouseUp);
+        document.body.style.cursor = 'col-resize'; // Cambia cursore globale
+    };
+
+    const handleMouseMove = useCallback((e: MouseEvent) => {
+        if (!resizingRef.current) return;
+
+        const { startX, startWidth, colKey } = resizingRef.current;
+        const deltaX = e.pageX - startX;
+        const newWidth = Math.max(50, startWidth + deltaX); // Minimo 50px
+
+        setColWidths(prev => ({
+            ...prev,
+            [colKey]: newWidth
+        }));
+    }, []);
+
+    const handleMouseUp = useCallback(() => {
+        resizingRef.current = null;
+        document.removeEventListener('mousemove', handleMouseMove);
+        document.removeEventListener('mouseup', handleMouseUp);
+        document.body.style.cursor = ''; // Ripristina cursore
+    }, [handleMouseMove]);
+
 
     async function fetchTransactions() {
         if (!supabase) return;
@@ -478,26 +523,42 @@ export default function Transactions() {
                 )}
 
                 {!loading && !error && (
-                    <div className="bg-white shadow-lg rounded-xl overflow-visible border border-gray-200">
-                        <table className="min-w-full divide-y divide-gray-200">
+                    <div className="bg-white shadow-lg rounded-xl overflow-visible border border-gray-200 overflow-x-auto">
+                        <table className="min-w-full divide-y divide-gray-200" style={{ tableLayout: 'fixed' }}>
                             <thead className="bg-gray-50">
                                 <tr>
                                     {ALL_COLUMNS.filter(col => visibleColumns.includes(col.key)).map((col) => (
-                                        <th key={col.key} className="px-6 py-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider relative group">
-                                            <div className="flex items-center gap-2 cursor-pointer" onClick={() => handleSort(col.key)}>
+                                        <th
+                                            key={col.key}
+                                            className="px-6 py-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider relative group"
+                                            style={{
+                                                width: colWidths[col.key] || 'auto',
+                                                minWidth: '100px' // Larghezza minima di default per evitare il collasso
+                                            }}
+                                        >
+                                            <div className="flex items-center gap-2 cursor-pointer truncate" onClick={() => handleSort(col.key)}>
                                                 {col.label}
                                                 {sortConfig.key === col.key && (
                                                     sortConfig.direction === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />
                                                 )}
                                             </div>
 
+                                            {/* Pulsante Filtro (Appare on Hover) */}
                                             <button
                                                 onClick={(e) => { e.stopPropagation(); setActiveColumn(activeColumn === col.key ? null : col.key); setMenuSearchTerm(''); }}
-                                                className={`absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded hover:bg-gray-200 transition-opacity ${activeColumn === col.key || filters[col.key]?.length ? 'opacity-100 bg-blue-50 text-blue-600' : 'opacity-0 group-hover:opacity-100 text-gray-400'}`}
+                                                className={`absolute right-3 top-1/2 -translate-y-1/2 p-1.5 rounded hover:bg-gray-200 transition-opacity ${activeColumn === col.key || filters[col.key]?.length ? 'opacity-100 bg-blue-50 text-blue-600' : 'opacity-0 group-hover:opacity-100 text-gray-400'}`}
                                             >
                                                 <Filter size={14} />
                                             </button>
 
+                                            {/* RESIZER HANDLE */}
+                                            <div
+                                                className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-400 group-hover:bg-gray-300 transition-colors z-10"
+                                                onMouseDown={(e) => startResize(e, col.key)}
+                                                onClick={(e) => e.stopPropagation()} // Previene il sort quando si clicca sul bordo
+                                            />
+
+                                            {/* MENU FILTRO (Dropdown) */}
                                             {activeColumn === col.key && (
                                                 <div className="absolute top-full left-0 mt-2 w-64 bg-white rounded-lg shadow-xl border border-gray-200 z-50 p-2" onClick={(e) => e.stopPropagation()}>
                                                     <div className="relative mb-2">
@@ -541,7 +602,11 @@ export default function Transactions() {
                                 {processedData.map((t) => (
                                     <tr key={t.transaction_id || t.id} className="hover:bg-gray-50 transition-colors">
                                         {ALL_COLUMNS.filter(col => visibleColumns.includes(col.key)).map(col => (
-                                            <td key={col.key} className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                            <td
+                                                key={col.key}
+                                                className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 overflow-hidden text-ellipsis"
+                                                style={{ width: colWidths[col.key] || 'auto' }}
+                                            >
                                                 {renderCellContent(t, col.key)}
                                             </td>
                                         ))}
