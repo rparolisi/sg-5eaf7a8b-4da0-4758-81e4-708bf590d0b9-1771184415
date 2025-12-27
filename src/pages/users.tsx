@@ -20,7 +20,7 @@ import {
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
 const SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
 
-// Inizializzazione Client (creato fuori dal componente per evitare re-inizializzazioni)
+// Inizializzazione Client
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // --- Tipi di dati ---
@@ -51,7 +51,6 @@ export default function UserPage() {
                 setLoading(true);
 
                 // Query su Supabase: seleziona tutti i campi dalla tabella 'users'
-                // Assicurati che la tabella si chiami 'users' o 'user' nel tuo DB
                 const { data, error } = await supabase
                     .from('users')
                     .select('*')
@@ -61,11 +60,14 @@ export default function UserPage() {
 
                 if (data && data.length > 0) {
                     setUsersList(data as UserData[]);
-                    // Seleziona il primo utente di default
-                    setSelectedUser(data[0] as UserData);
+                    // Seleziona il primo utente di default se nessuno è selezionato
+                    if (!selectedUser) {
+                        setSelectedUser(data[0] as UserData);
+                    }
                 } else {
                     setError("Nessun utente trovato nel database.");
                 }
+
             } catch (err: any) {
                 console.error("Errore fetch Supabase:", err);
                 setError(err.message || "Errore durante il caricamento dei dati.");
@@ -83,13 +85,14 @@ export default function UserPage() {
         if (user) setSelectedUser(user);
     };
 
-    // Helper helpers
+    // Helper per le iniziali
     const getInitials = (name: string) => {
         return name
             ? name.split(' ').map((n) => n[0]).join('').toUpperCase().substring(0, 2)
             : 'U';
     };
 
+    // Helper per formattare la data
     const formatDate = (dateString: string) => {
         if (!dateString) return '-';
         return new Date(dateString).toLocaleDateString('it-IT', {
@@ -105,7 +108,7 @@ export default function UserPage() {
             <div className="min-h-screen flex items-center justify-center bg-gray-50">
                 <div className="flex flex-col items-center gap-4">
                     <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-                    <p className="text-gray-500 font-medium">Caricamento dati da Supabase...</p>
+                    <p className="text-gray-500 font-medium">Caricamento dati...</p>
                 </div>
             </div>
         );
@@ -130,7 +133,7 @@ export default function UserPage() {
         );
     }
 
-    // Fallback sicuro
+    // Fallback sicuro se qualcosa va storto con la selezione
     const displayUser = selectedUser || usersList[0];
 
     if (!displayUser) return null;
@@ -138,10 +141,9 @@ export default function UserPage() {
     return (
         <div className="min-h-screen bg-slate-50 font-sans text-slate-900 pb-12">
 
-            {/* Navbar simulata - Inserisci questo blocco nel tuo Layout o Header principale */}
+            {/* Navbar simulata */}
             <nav className="bg-white border-b border-gray-200 px-6 py-4 flex justify-between items-center sticky top-0 z-10 shadow-sm">
                 <div className="flex items-center gap-2">
-                    {/* Logo Placeholder */}
                     <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold">IM</div>
                     <span className="text-xl font-bold tracking-tight text-slate-800">InvestMonitor</span>
                 </div>
@@ -152,7 +154,7 @@ export default function UserPage() {
                         <div className="flex items-center gap-3 bg-slate-100 hover:bg-slate-200 transition-colors rounded-full pl-4 pr-2 py-1.5 cursor-pointer border border-slate-200">
                             <div className="flex flex-col items-end mr-2">
                                 <span className="text-xs text-slate-500 font-semibold uppercase tracking-wider">Seleziona Utente</span>
-                                {/* Dropdown nativo stilizzato per sembrare custom */}
+                                {/* Dropdown nativo stilizzato */}
                                 <select
                                     value={displayUser.alias}
                                     onChange={(e) => handleUserChange(e.target.value)}
