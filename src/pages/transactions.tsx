@@ -323,11 +323,6 @@ export default function Home() {
                     </div>
                 )}
             </div>
-            <div className="mb-6">
-                <Link href="/" className="text-blue-600 hover:underline flex items-center gap-2">
-                    ← Torna alla Home
-                </Link>
-            </div>
         </main>
     );
 }
