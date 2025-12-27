@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 // ICONE
-import { Filter, ArrowUp, ArrowDown, Search, Check, Plus, X, Calendar, TrendingUp, TrendingDown, Settings, AlertTriangle, GripVertical } from 'lucide-react';
+import { Filter, ArrowUp, ArrowDown, Search, Check, Plus, X, Calendar, TrendingUp, TrendingDown, Settings, AlertTriangle, GripVertical, List } from 'lucide-react';
 
 /* NOTA PER L'USO LOCALE (Next.js / React):
    1. Installa la libreria: npm install @supabase/supabase-js
@@ -86,6 +86,7 @@ export default function Transactions() {
     const [filters, setFilters] = useState < Record < string, string[]>> ({});
     const [menuSearchTerm, setMenuSearchTerm] = useState('');
     const [sortConfig, setSortConfig] = useState < SortConfig > ({ key: 'operation_date', direction: 'desc' });
+    const [rowsLimit, setRowsLimit] = useState < number > (25);
 
     // --- GESTIONE LARGHEZZA COLONNE (RESIZING) ---
     const [colWidths, setColWidths] = useState < Record < string, number>> ({});
@@ -404,6 +405,11 @@ export default function Transactions() {
         return data;
     }, [transactions, filters, sortConfig]);
 
+    // DATI VISUALIZZATI (CON LIMITAZIONE RIGHE)
+    const displayData = useMemo(() => {
+        return processedData.slice(0, rowsLimit);
+    }, [processedData, rowsLimit]);
+
     const handlePasteInSearch = (e: React.ClipboardEvent<HTMLInputElement>, columnKey: string) => { /* ... */ };
     const toggleFilterValue = (columnKey: string, value: string) => {
         setFilters(prev => {
@@ -482,6 +488,30 @@ export default function Transactions() {
                     <h1 className="text-3xl font-bold text-gray-800">Transactions</h1>
 
                     <div className="flex items-center gap-3">
+                        {/* --- ROW LIMITER --- */}
+                        <div className="flex items-center gap-2 bg-white border border-gray-300 rounded-lg px-3 py-1.5 shadow-sm">
+                            <List size={16} className="text-gray-400" />
+                            <span className="text-sm text-gray-500 font-medium whitespace-nowrap hidden sm:inline">Rows:</span>
+                            <input
+                                type="number"
+                                min="1"
+                                max={processedData.length > 0 ? processedData.length : 1}
+                                value={rowsLimit}
+                                onChange={(e) => {
+                                    const val = parseInt(e.target.value);
+                                    if (!isNaN(val)) {
+                                        // Allow any number, slice handles bounds, but nice to clamp for UI logic if needed
+                                        // For now, let user type, default to 1 if < 1
+                                        setRowsLimit(val > 0 ? val : 1);
+                                    }
+                                }}
+                                className="w-14 text-sm outline-none font-semibold text-gray-700 text-right"
+                            />
+                            <span className="text-xs text-gray-400 border-l border-gray-200 pl-2 ml-1">
+                                / {processedData.length}
+                            </span>
+                        </div>
+
                         {/* --- GEAR ICON & COLUMN MENU --- */}
                         <div className="relative" ref={columnMenuRef}>
                             <button
@@ -519,8 +549,8 @@ export default function Transactions() {
                         </div>
 
                         {/* ADD BUTTON */}
-                        <button onClick={() => setIsModalOpen(true)} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium shadow-sm transition-colors">
-                            <Plus size={20} /> Add Transaction
+                        <button onClick={() => setIsModalOpen(true)} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium shadow-sm transition-colors whitespace-nowrap">
+                            <Plus size={20} /> <span className="hidden sm:inline">Add Transaction</span><span className="sm:hidden">Add</span>
                         </button>
                     </div>
                 </div>
@@ -636,7 +666,7 @@ export default function Transactions() {
                                 </tr>
                             </thead>
                             <tbody className="bg-white divide-y divide-gray-200">
-                                {processedData.map((t) => (
+                                {displayData.map((t) => (
                                     <tr key={t.transaction_id || t.id} className="hover:bg-gray-50 transition-colors">
                                         {/* MAPPING VISIBLE COLUMNS ANCHE QUI */}
                                         {visibleColumns.map(colKey => (
