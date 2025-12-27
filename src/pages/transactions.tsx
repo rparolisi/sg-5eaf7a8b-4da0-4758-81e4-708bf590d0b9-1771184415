@@ -191,10 +191,10 @@ export default function Home() {
     return (
         <main className="min-h-screen p-8 bg-gray-50 font-sans" onClick={() => setActiveColumn(null)}>
             <div className="max-w-6xl mx-auto" onClick={(e) => e.stopPropagation()}>
-                <h1 className="text-3xl font-bold mb-6 text-gray-800">Monitor Investimenti</h1>
+                <h1 className="text-3xl font-bold mb-6 text-gray-800">Transactions</h1>
 
-                {loading && <p className="text-gray-600">Caricamento dati...</p>}
-                {error && <p className="text-red-500 bg-red-50 p-4 rounded">Errore: {error}</p>}
+                {loading && <p className="text-gray-600">Data uploadin...</p>}
+                {error && <p className="text-red-500 bg-red-50 p-4 rounded">Error: {error}</p>}
 
                 {!loading && !error && (
                     <div className="bg-white shadow-lg rounded-xl overflow-visible border border-gray-200">
