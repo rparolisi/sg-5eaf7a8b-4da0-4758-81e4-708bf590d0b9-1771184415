@@ -5,7 +5,7 @@ import {
     Mail, Globe, CreditCard, Clock, Calendar,
     Shield, CheckCircle, XCircle, Settings, Save, X,
     LogOut, User as UserIcon, MapPin, Hash, Activity,
-    Fingerprint, Lock // <--- Aggiunti questi due import mancanti
+    Fingerprint, Lock, Key
 } from 'lucide-react';
 
 // --- CONFIGURATION ---
@@ -36,10 +36,15 @@ export default function UserPage() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState < string | null > (null);
 
-    // Editing State
+    // Editing State (Profile)
     const [isEditing, setIsEditing] = useState(false);
     const [formData, setFormData] = useState < UserData | null > (null);
     const [saveLoading, setSaveLoading] = useState(false);
+
+    // Editing State (Password)
+    const [isChangingPassword, setIsChangingPassword] = useState(false);
+    const [passwordForm, setPasswordForm] = useState({ newPassword: '', confirmPassword: '' });
+    const [passwordLoading, setPasswordLoading] = useState(false);
 
     // --- FETCH DATA ---
     useEffect(() => {
@@ -98,12 +103,20 @@ export default function UserPage() {
         });
     };
 
+    const handlePasswordChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        setPasswordForm({
+            ...passwordForm,
+            [e.target.name]: e.target.value
+        });
+    };
+
     const toggleSharing = () => {
         if (!formData || !isEditing) return;
         setFormData({ ...formData, sharing_availability: !formData.sharing_availability });
     };
 
-    const handleSave = async () => {
+    // Save Profile Data (Public Table)
+    const handleSaveProfile = async () => {
         if (!formData || !userData) return;
         try {
             setSaveLoading(true);
@@ -129,6 +142,35 @@ export default function UserPage() {
             alert("Error saving profile: " + err.message);
         } finally {
             setSaveLoading(false);
+        }
+    };
+
+    // Update Password (Supabase Auth)
+    const handleUpdatePassword = async () => {
+        if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+            alert("New passwords do not match.");
+            return;
+        }
+        if (passwordForm.newPassword.length < 6) {
+            alert("Password must be at least 6 characters long.");
+            return;
+        }
+
+        try {
+            setPasswordLoading(true);
+            const { error } = await supabase.auth.updateUser({
+                password: passwordForm.newPassword
+            });
+
+            if (error) throw error;
+
+            alert("Password updated successfully!");
+            setIsChangingPassword(false);
+            setPasswordForm({ newPassword: '', confirmPassword: '' });
+        } catch (err: any) {
+            alert("Error updating password: " + err.message);
+        } finally {
+            setPasswordLoading(false);
         }
     };
 
@@ -213,7 +255,7 @@ export default function UserPage() {
                                     Cancel
                                 </button>
                                 <button
-                                    onClick={handleSave}
+                                    onClick={handleSaveProfile}
                                     disabled={saveLoading}
                                     className="inline-flex items-center justify-center px-5 py-2 border border-transparent text-sm font-medium rounded-lg shadow-sm text-white bg-green-600 hover:bg-green-700 transition-all disabled:opacity-70"
                                 >
@@ -338,35 +380,112 @@ export default function UserPage() {
                                 <Shield className="text-blue-500" size={18} />
                                 <h3 className="font-semibold text-slate-800">Security & System</h3>
                             </div>
-                            <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
-                                <InfoField
-                                    label="Session Timeout (min)"
-                                    name="timeout_time"
-                                    type="number"
-                                    value={displayUser.timeout_time}
-                                    isEditing={isEditing}
-                                    onChange={handleInputChange}
-                                    icon={<Clock size={14} />}
-                                />
-                                <div className="md:col-span-2 border-t border-slate-100 my-2"></div>
+                            <div className="p-6 space-y-6">
+
+                                {/* Password Change Section */}
+                                <div className="bg-blue-50 rounded-xl p-4 border border-blue-100">
+                                    <div className="flex items-center justify-between mb-4">
+                                        <label className="text-sm font-bold text-slate-700 flex items-center gap-2">
+                                            <Key size={16} /> Password Management
+                                        </label>
+                                        {!isChangingPassword && (
+                                            <button
+                                                onClick={() => setIsChangingPassword(true)}
+                                                className="text-xs font-semibold text-blue-600 hover:text-blue-800 hover:underline"
+                                            >
+                                                Change Password
+                                            </button>
+                                        )}
+                                    </div>
+
+                                    {!isChangingPassword ? (
+                                        <div className="flex items-center gap-2 text-slate-500 text-sm">
+                                            <span>••••••••••••••••</span>
+                                            <span className="text-xs bg-white px-2 py-0.5 rounded border border-slate-200">Secure</span>
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-3 animate-in fade-in slide-in-from-top-2 duration-300">
+                                            <input
+                                                type="password"
+                                                name="newPassword"
+                                                placeholder="New Password"
+                                                value={passwordForm.newPassword}
+                                                onChange={handlePasswordChange}
+                                                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                                            />
+                                            <input
+                                                type="password"
+                                                name="confirmPassword"
+                                                placeholder="Confirm New Password"
+                                                value={passwordForm.confirmPassword}
+                                                onChange={handlePasswordChange}
+                                                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                                            />
+                                            <div className="flex gap-2 justify-end">
+                                                <button
+                                                    onClick={() => { setIsChangingPassword(false); setPasswordForm({ newPassword: '', confirmPassword: '' }) }}
+                                                    className="px-3 py-1.5 text-xs font-medium text-slate-600 bg-white border border-slate-300 rounded hover:bg-slate-50"
+                                                >
+                                                    Cancel
+                                                </button>
+                                                <button
+                                                    onClick={handleUpdatePassword}
+                                                    disabled={passwordLoading}
+                                                    className="px-3 py-1.5 text-xs font-medium text-white bg-blue-600 rounded hover:bg-blue-700 disabled:opacity-70"
+                                                >
+                                                    {passwordLoading ? 'Updating...' : 'Update Password'}
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Session Timeout */}
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <InfoField
+                                        label="Session Timeout (min)"
+                                        name="timeout_time"
+                                        type="number"
+                                        value={displayUser.timeout_time}
+                                        isEditing={isEditing}
+                                        onChange={handleInputChange}
+                                        icon={<Clock size={14} />}
+                                    />
+                                </div>
+
+                                <div className="border-t border-slate-100"></div>
 
                                 {/* Read Only System Data */}
-                                <div className="space-y-1">
-                                    <label className="text-xs font-bold text-slate-400 uppercase flex items-center gap-1">
-                                        <Hash size={12} /> Internal Database ID
-                                    </label>
-                                    <div className="font-mono text-xs bg-slate-100 text-slate-600 p-2 rounded select-all">
-                                        {displayUser.id}
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div className="space-y-1">
+                                        <label className="text-xs font-bold text-slate-400 uppercase flex items-center gap-1">
+                                            <Hash size={12} /> Internal DB ID
+                                        </label>
+                                        <div className="font-mono text-xs bg-slate-100 text-slate-600 p-2 rounded select-all truncate">
+                                            {displayUser.id}
+                                        </div>
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className="text-xs font-bold text-slate-400 uppercase flex items-center gap-1">
+                                            <Fingerprint size={12} /> Auth UUID
+                                        </label>
+                                        <div className="font-mono text-xs bg-slate-100 text-slate-600 p-2 rounded select-all truncate">
+                                            {displayUser.user_id}
+                                        </div>
                                     </div>
                                 </div>
-                                <div className="space-y-1">
-                                    <label className="text-xs font-bold text-slate-400 uppercase flex items-center gap-1">
-                                        <Fingerprint size={12} /> Auth UUID
-                                    </label>
-                                    <div className="font-mono text-xs bg-slate-100 text-slate-600 p-2 rounded select-all">
-                                        {displayUser.user_id}
-                                    </div>
+
+                                {/* Explicit Logout Button in Body */}
+                                <div className="pt-4 border-t border-slate-100">
+                                    <button
+                                        onClick={handleLogout}
+                                        className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 text-sm text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors border border-red-100 font-medium"
+                                    >
+                                        <LogOut size={16} />
+                                        Sign out of current session
+                                    </button>
                                 </div>
+
                             </div>
                         </section>
 
