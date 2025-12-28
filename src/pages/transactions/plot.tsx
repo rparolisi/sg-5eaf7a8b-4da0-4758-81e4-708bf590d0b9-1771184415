@@ -615,7 +615,7 @@ export default function PlotPage() {
                         <div
                             ref={chartContainerRef}
                             className="w-full h-[500px] bg-white p-4"
-                            style={{ height: '540px', minWidth: '800px' }} // Min-width aiuta la stabilità dell'export
+                            style={{ height: '540px'}} // Min-width aiuta la stabilità dell'export
                         >
                             {loading ? (
                                 <div className="h-full flex flex-col items-center justify-center text-slate-400">
