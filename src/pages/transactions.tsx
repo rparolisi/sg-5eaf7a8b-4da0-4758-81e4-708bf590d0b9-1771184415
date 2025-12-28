@@ -82,8 +82,8 @@ type SortConfig = {
 
 export default function Transactions() {
     // Client Supabase
+    const router = useRouter();
     const [supabase, setSupabase] = useState < any > (null);
-
     const [transactions, setTransactions] = useState < Transaction[] > ([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState < string | null > (null);
