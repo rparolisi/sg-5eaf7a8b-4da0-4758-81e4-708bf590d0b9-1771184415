@@ -366,7 +366,7 @@ export default function PlotPage() {
     };
 
     const clearFilters = () => {
-        setFilters({ person: [], ticker: [], sector: [], category: uniqueValues.categories });
+        setFilters({ person: [], ticker: [], sector: [], category: [] });
     };
 
     const hasActiveFilters = filters.person.length > 0 || filters.ticker.length > 0 || filters.sector.length > 0;
@@ -497,17 +497,22 @@ export default function PlotPage() {
                                 </button>
                             </div>
 
+                            {/* SNAPSHOT DATE SELECTOR (STYLED) */}
                             {chartType === 'pie' && (
-                                <div className="flex items-center gap-2 animate-in fade-in slide-in-from-top-1">
-                                    <label className="text-xs font-bold text-slate-400 uppercase">Snapshot Date:</label>
-                                    <input
-                                        type="date"
-                                        className="p-1.5 border border-slate-300 rounded text-sm outline-none focus:border-purple-500"
-                                        value={pieDate}
-                                        min={dateRange.start}
-                                        max={dateRange.end}
-                                        onChange={(e) => setPieDate(e.target.value)}
-                                    />
+                                <div className="animate-in fade-in slide-in-from-top-1 w-full max-w-[200px]">
+                                    <div className="relative group">
+                                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                            <span className="text-slate-400 text-[10px] font-bold tracking-wider">DATE</span>
+                                        </div>
+                                        <input
+                                            type="date"
+                                            className="w-full pl-12 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-700 outline-none focus:bg-white focus:border-purple-500 focus:ring-2 focus:ring-purple-100 transition-all shadow-sm group-hover:border-purple-300"
+                                            value={pieDate}
+                                            min={dateRange.start}
+                                            max={dateRange.end}
+                                            onChange={(e) => setPieDate(e.target.value)}
+                                        />
+                                    </div>
                                 </div>
                             )}
                         </div>
