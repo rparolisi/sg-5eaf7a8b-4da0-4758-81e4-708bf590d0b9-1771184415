@@ -405,8 +405,8 @@ export default function PlotPage() {
         const serializer = new XMLSerializer();
         const source = '<?xml version="1.0" standalone="no"?>\r\n' + serializer.serializeToString(svg);
         const canvas = document.createElement('canvas');
-        canvas.width = svg.clientWidth * 2;
-        canvas.height = svg.clientHeight * 2;
+        canvas.width = svg.getBoundingClientRect().width * 2;
+        canvas.height = svg.getBoundingClientRect().height * 2;
         const ctx = canvas.getContext('2d');
         const img = new Image();
         img.src = 'data:image/svg+xml;base64,' + window.btoa(unescape(encodeURIComponent(source)));
