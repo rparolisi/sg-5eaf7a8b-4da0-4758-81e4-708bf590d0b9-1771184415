@@ -549,7 +549,7 @@ export default function Transactions() {
                         </button>
                         <button
                             onClick={() => router.push('/transactions/plot')}
-                            className="flex items-center justify-center gap-2 bg-white hover:bg-purple-50 text-purple-600 border border-purple-200 px-6 py-2.5 rounded-full font-medium shadow-sm hover:shadow-md transition-all"
+                            className="flex items-center justify-center gap-2 bg-white hover:bg-purple-50 text-purple-600 border border-purple-200 px-6 py-2.5 rounded-full font-medium shadow-sm hover:shadow-md transition-all hover:-translate-y-0.5"
                         >
                             <LineChartIcon size={20} /> Plot
                         </button>
