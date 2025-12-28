@@ -799,7 +799,9 @@ export default function Transactions() {
                             </div>
 
                             {/* Chart Area */}
-                            <div className="p-6 flex-grow min-h-[400px]">
+                            {/* Chart Area */}
+                            {/* FIX: Aggiunto style height per forzare l'altezza se Tailwind fallisce */}
+                            <div className="p-6 w-full" style={{ height: '450px', minHeight: '400px' }}>
                                 {chartData.length > 0 ? (
                                     <ResponsiveContainer width="100%" height="100%">
                                         <LineChart data={chartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
