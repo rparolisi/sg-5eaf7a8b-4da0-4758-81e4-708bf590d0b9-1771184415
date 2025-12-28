@@ -145,7 +145,7 @@ export default function PlotPage() {
         person: [],
         ticker: [],
         sector: [],
-        category: []
+        category: ['Buy', 'Sell']
     });
 
     // Stato Date Range
