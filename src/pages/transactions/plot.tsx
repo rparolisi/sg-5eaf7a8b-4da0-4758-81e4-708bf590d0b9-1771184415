@@ -26,6 +26,9 @@ const COLUMNS = [
     { key: 'person', label: 'Person', type: 'text' },
     { key: 'sector', label: 'Sector', type: 'text' },
     { key: 'category', label: 'Category', type: 'text' },
+    // Colonne Calcolate
+    { key: 'cumulative_cost', label: 'Cumulative Cost (€)', type: 'number' }, // NUOVA COLONNA
+    // Colonne DB
     { key: 'total_outlay_eur', label: 'Total Amount (€)', type: 'number' },
     { key: 'purchase_price_per_share_eur', label: 'Price per Share (€)', type: 'number' },
     { key: 'shares_count', label: 'Shares Count', type: 'number' },
@@ -37,15 +40,14 @@ const COLUMNS = [
 // --- COMPONENTE MULTI-SELECT CON RICERCA ---
 const MultiSelect = ({ label, options, selected, onChange }: { label: string, options: string[], selected: string[], onChange: (val: string[]) => void }) => {
     const [isOpen, setIsOpen] = useState(false);
-    const [searchTerm, setSearchTerm] = useState(""); // Stato per la ricerca
+    const [searchTerm, setSearchTerm] = useState("");
     const dropdownRef = useRef < HTMLDivElement > (null);
 
-    // Chiude il menu se clicchi fuori
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
             if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
                 setIsOpen(false);
-                setSearchTerm(""); // Resetta la ricerca quando chiudi
+                setSearchTerm("");
             }
         };
         document.addEventListener("mousedown", handleClickOutside);
@@ -60,7 +62,6 @@ const MultiSelect = ({ label, options, selected, onChange }: { label: string, op
         }
     };
 
-    // Filtra le opzioni in base al testo inserito
     const filteredOptions = options.filter(opt =>
         opt.toLowerCase().includes(searchTerm.toLowerCase())
     );
@@ -80,8 +81,6 @@ const MultiSelect = ({ label, options, selected, onChange }: { label: string, op
 
             {isOpen && (
                 <div className="absolute top-full left-0 w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-xl z-50 overflow-hidden flex flex-col max-h-80">
-
-                    {/* BARRA DI RICERCA (Sticky in alto) */}
                     <div className="p-2 border-b border-slate-100 bg-white sticky top-0 z-10">
                         <div className="relative">
                             <Search size={14} className="absolute left-2.5 top-2.5 text-slate-400" />
@@ -95,8 +94,6 @@ const MultiSelect = ({ label, options, selected, onChange }: { label: string, op
                             />
                         </div>
                     </div>
-
-                    {/* LISTA OPZIONI (Scrollabile) */}
                     <div className="overflow-y-auto flex-1 custom-scrollbar">
                         {filteredOptions.length > 0 ? (
                             filteredOptions.map(option => {
@@ -116,7 +113,7 @@ const MultiSelect = ({ label, options, selected, onChange }: { label: string, op
                             })
                         ) : (
                             <div className="px-4 py-3 text-xs text-slate-400 italic text-center">
-                                No results found for "{searchTerm}"
+                                No results found
                             </div>
                         )}
                     </div>
@@ -132,14 +129,12 @@ export default function PlotPage() {
     const [loading, setLoading] = useState(true);
     const [rawData, setRawData] = useState < any[] > ([]);
 
-    // --- STATO CONFIGURAZIONE GRAFICO ---
     const [config, setConfig] = useState({
         x: 'operation_date',
         y: 'total_outlay_eur',
         groupBy: 'ticker'
     });
 
-    // --- STATO FILTRI ---
     const [filters, setFilters] = useState < {
         person: string[];
         ticker: string[];
@@ -152,7 +147,7 @@ export default function PlotPage() {
         category: []
     });
 
-    // 1. FETCH DATA
+    // 1. FETCH DATA & CALCULATE CUMULATIVE COST
     const fetchData = async () => {
         setLoading(true);
         try {
@@ -162,7 +157,14 @@ export default function PlotPage() {
                 .order('operation_date', { ascending: true });
 
             if (error) throw error;
-            setRawData(data || []);
+
+            // Arricchiamo i dati calcolando il Cumulative Cost
+            const enrichedData = (data || []).map(t => ({
+                ...t,
+                cumulative_cost: (t.cumulative_shares_count || 0) * (t.average_price || 0)
+            }));
+
+            setRawData(enrichedData);
         } catch (err: any) {
             console.error("Errore fetch:", err);
         } finally {
@@ -174,7 +176,7 @@ export default function PlotPage() {
         fetchData();
     }, []);
 
-    // 2. ESTRAZIONE VALORI UNICI PER I FILTRI
+    // 2. UNIQUE VALUES FOR FILTERS
     const uniqueValues = useMemo(() => {
         const getUnique = (key: string) => Array.from(new Set(rawData.map(item => item[key]).filter(Boolean))).sort();
         return {
@@ -185,11 +187,11 @@ export default function PlotPage() {
         };
     }, [rawData]);
 
-    // 3. ELABORAZIONE DATI (Filter -> Group -> Format)
+    // 3. DATA PROCESSING CON "DAILY FILLING" (Riempimento giorni mancanti)
     const { chartData, lines } = useMemo(() => {
         if (!rawData.length) return { chartData: [], lines: [] };
 
-        // A. FILTRAGGIO
+        // A. Filter Raw Data
         let filtered = rawData.filter(item => {
             if (filters.person.length > 0 && !filters.person.includes(item.person)) return false;
             if (filters.ticker.length > 0 && !filters.ticker.includes(item.ticker)) return false;
@@ -198,45 +200,72 @@ export default function PlotPage() {
             return true;
         });
 
-        // B. RAGGRUPPAMENTO
-        if (!config.groupBy) {
-            const data = filtered.map(t => ({
-                xAxis: t[config.x],
-                displayX: new Date(t[config.x]).toLocaleDateString(),
-                value: Number(t[config.y]) || 0
-            }));
-            return { chartData: data, lines: ['value'] };
+        if (filtered.length === 0) return { chartData: [], lines: [] };
+
+        // B. Determine Time Range (From First Transaction to Today)
+        const sortedFiltered = [...filtered].sort((a, b) => new Date(a[config.x]).getTime() - new Date(b[config.x]).getTime());
+        const minDate = new Date(sortedFiltered[0][config.x]).getTime();
+        const maxDate = new Date().getTime(); // Fino a oggi
+        const oneDay = 24 * 60 * 60 * 1000;
+
+        // C. Group Transactions by Date for quick lookup
+        const txByDate: Record<string, any[]> = {};
+        filtered.forEach(t => {
+            const dateKey = new Date(t[config.x]).toISOString().split('T')[0]; // YYYY-MM-DD
+            if (!txByDate[dateKey]) txByDate[dateKey] = [];
+            txByDate[dateKey].push(t);
+        });
+
+        // D. Generate Dense Time Series (Forward Fill)
+        const denseData = [];
+        const activeGroups = new Set < string > ();
+
+        // Track last known value for each group
+        const groupState: Record<string, number> = {};
+
+        // Loop day by day
+        for (let time = minDate; time <= maxDate; time += oneDay) {
+            const dateObj = new Date(time);
+            const dateKey = dateObj.toISOString().split('T')[0];
+            const displayX = dateObj.toLocaleDateString();
+
+            // Check if we have transactions today
+            const todaysTxs = txByDate[dateKey];
+
+            if (todaysTxs) {
+                todaysTxs.forEach(t => {
+                    const groupName = config.groupBy ? (t[config.groupBy] || 'Other') : 'value';
+                    const val = Number(t[config.y]) || 0;
+
+                    activeGroups.add(groupName);
+                    // Update state (Forward Fill logic: last transaction wins for the day)
+                    groupState[groupName] = val;
+                });
+            }
+
+            // Create row for this day using current state
+            const row: any = {
+                displayX,
+                rawX: time
+            };
+
+            // Fill row with known states (or 0/null if never seen)
+            // Nota: Se config.y è una metrica di flusso (es. Fees), il forward fill potrebbe non avere senso,
+            // ma per Cumulative Cost / Shares è perfetto.
+            // Qui applichiamo forward fill a tutto per coerenza con la richiesta "insert days".
+            activeGroups.forEach(g => {
+                if (groupState[g] !== undefined) {
+                    row[g] = groupState[g];
+                }
+            });
+
+            // Push only if we have some data
+            if (activeGroups.size > 0) {
+                denseData.push(row);
+            }
         }
 
-        const groupedMap: Record<string, any> = {};
-        const allGroups = new Set < string > ();
-
-        filtered.forEach(t => {
-            const xVal = t[config.x];
-            if (!xVal) return;
-
-            const groupName = t[config.groupBy] || 'Other';
-            const yVal = Number(t[config.y]) || 0;
-
-            allGroups.add(groupName);
-
-            if (!groupedMap[xVal]) {
-                groupedMap[xVal] = {
-                    xAxis: xVal,
-                    displayX: new Date(xVal).toLocaleDateString(),
-                    rawX: t[config.x]
-                };
-            }
-            groupedMap[xVal][groupName] = yVal;
-        });
-
-        const finalData = Object.values(groupedMap).sort((a: any, b: any) => {
-            if (a.rawX < b.rawX) return -1;
-            if (a.rawX > b.rawX) return 1;
-            return 0;
-        });
-
-        return { chartData: finalData, lines: Array.from(allGroups) };
+        return { chartData: denseData, lines: Array.from(activeGroups) };
 
     }, [rawData, config, filters]);
 
@@ -253,34 +282,24 @@ export default function PlotPage() {
 
     return (
         <div className="min-h-screen bg-slate-50 font-sans text-slate-900 pb-10">
-
-            {/* --- HEADER --- */}
+            {/* HEADER */}
             <div className="bg-white border-b border-slate-200 px-6 py-4 sticky top-0 z-10 shadow-sm">
                 <div className="max-w-7xl mx-auto flex items-center justify-between">
                     <div className="flex items-center gap-4">
-                        <button
-                            onClick={() => router.back()}
-                            className="p-2 hover:bg-slate-100 rounded-full transition-colors text-slate-500"
-                        >
+                        <button onClick={() => router.back()} className="p-2 hover:bg-slate-100 rounded-full transition-colors text-slate-500">
                             <ArrowLeft size={20} />
                         </button>
                         <h1 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-                            <BarChart3 className="text-purple-600" />
-                            Plotting
+                            <BarChart3 className="text-purple-600" /> Plotting
                         </h1>
                     </div>
-                    <div className="text-sm text-slate-500">
-                        {rawData.length} records loaded
-                    </div>
+                    <div className="text-sm text-slate-500">{rawData.length} records loaded</div>
                 </div>
             </div>
 
             <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-4 gap-6 p-6">
-
-                {/* --- LEFT SIDEBAR: CONTROLS & FILTERS --- */}
+                {/* SIDEBAR */}
                 <div className="lg:col-span-1 space-y-6">
-
-                    {/* AXIS CONFIG */}
                     <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
                         <div className="flex items-center gap-2 mb-4 text-slate-800 font-semibold border-b border-slate-100 pb-2">
                             <Settings size={18} /> Axes Setup
@@ -288,35 +307,19 @@ export default function PlotPage() {
                         <div className="space-y-4">
                             <div>
                                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">X Axis (Time)</label>
-                                <select
-                                    className="w-full p-2 border border-slate-300 rounded-lg text-sm bg-slate-50 outline-none focus:ring-2 focus:ring-purple-500"
-                                    value={config.x}
-                                    onChange={(e) => setConfig({ ...config, x: e.target.value })}
-                                >
-                                    {COLUMNS.filter(c => c.type === 'date').map(c => (
-                                        <option key={c.key} value={c.key}>{c.label}</option>
-                                    ))}
+                                <select className="w-full p-2 border border-slate-300 rounded-lg text-sm bg-slate-50 outline-none focus:ring-2 focus:ring-purple-500" value={config.x} onChange={(e) => setConfig({ ...config, x: e.target.value })}>
+                                    {COLUMNS.filter(c => c.type === 'date').map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
                                 </select>
                             </div>
                             <div>
                                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Y Axis (Value)</label>
-                                <select
-                                    className="w-full p-2 border border-slate-300 rounded-lg text-sm bg-slate-50 outline-none focus:ring-2 focus:ring-purple-500"
-                                    value={config.y}
-                                    onChange={(e) => setConfig({ ...config, y: e.target.value })}
-                                >
-                                    {COLUMNS.filter(c => c.type === 'number').map(c => (
-                                        <option key={c.key} value={c.key}>{c.label}</option>
-                                    ))}
+                                <select className="w-full p-2 border border-slate-300 rounded-lg text-sm bg-slate-50 outline-none focus:ring-2 focus:ring-purple-500" value={config.y} onChange={(e) => setConfig({ ...config, y: e.target.value })}>
+                                    {COLUMNS.filter(c => c.type === 'number').map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
                                 </select>
                             </div>
                             <div>
                                 <label className="block text-xs font-bold text-purple-600 uppercase mb-1">Group By</label>
-                                <select
-                                    className="w-full p-2 border border-purple-200 bg-purple-50 rounded-lg text-sm text-purple-900 font-medium outline-none focus:ring-2 focus:ring-purple-500"
-                                    value={config.groupBy}
-                                    onChange={(e) => setConfig({ ...config, groupBy: e.target.value })}
-                                >
+                                <select className="w-full p-2 border border-purple-200 bg-purple-50 rounded-lg text-sm text-purple-900 font-medium outline-none focus:ring-2 focus:ring-purple-500" value={config.groupBy} onChange={(e) => setConfig({ ...config, groupBy: e.target.value })}>
                                     <option value="">(None - Single Line)</option>
                                     <option value="ticker">Ticker</option>
                                     <option value="person">Person</option>
@@ -327,109 +330,48 @@ export default function PlotPage() {
                         </div>
                     </div>
 
-                    {/* FILTERS MULTIPLI CON CERCA */}
                     <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
                         <div className="flex items-center justify-between mb-4 border-b border-slate-100 pb-2">
-                            <div className="flex items-center gap-2 text-slate-800 font-semibold">
-                                <Filter size={18} /> Filters
-                            </div>
-                            {hasActiveFilters && (
-                                <button onClick={clearFilters} className="text-xs text-red-500 hover:underline flex items-center gap-1">
-                                    <XCircle size={12} /> Clear
-                                </button>
-                            )}
+                            <div className="flex items-center gap-2 text-slate-800 font-semibold"><Filter size={18} /> Filters</div>
+                            {hasActiveFilters && <button onClick={clearFilters} className="text-xs text-red-500 hover:underline flex items-center gap-1"><XCircle size={12} /> Clear</button>}
                         </div>
-
                         <div className="space-y-4">
-                            <MultiSelect
-                                label="Person"
-                                options={uniqueValues.people}
-                                selected={filters.person}
-                                onChange={(val) => handleFilterChange('person', val)}
-                            />
-                            <MultiSelect
-                                label="Ticker"
-                                options={uniqueValues.tickers}
-                                selected={filters.ticker}
-                                onChange={(val) => handleFilterChange('ticker', val)}
-                            />
-                            <MultiSelect
-                                label="Category"
-                                options={uniqueValues.categories}
-                                selected={filters.category}
-                                onChange={(val) => handleFilterChange('category', val)}
-                            />
-                            <MultiSelect
-                                label="Sector"
-                                options={uniqueValues.sectors}
-                                selected={filters.sector}
-                                onChange={(val) => handleFilterChange('sector', val)}
-                            />
+                            <MultiSelect label="Person" options={uniqueValues.people} selected={filters.person} onChange={(val) => handleFilterChange('person', val)} />
+                            <MultiSelect label="Ticker" options={uniqueValues.tickers} selected={filters.ticker} onChange={(val) => handleFilterChange('ticker', val)} />
+                            <MultiSelect label="Category" options={uniqueValues.categories} selected={filters.category} onChange={(val) => handleFilterChange('category', val)} />
+                            <MultiSelect label="Sector" options={uniqueValues.sectors} selected={filters.sector} onChange={(val) => handleFilterChange('sector', val)} />
                         </div>
                     </div>
                 </div>
 
-                {/* --- RIGHT SIDE: CHART --- */}
+                {/* CHART */}
                 <div className="lg:col-span-3">
                     <div className="bg-white p-6 rounded-xl shadow-lg border border-slate-200 flex flex-col relative">
-
                         {loading && (
                             <div className="absolute inset-0 bg-white/80 z-20 flex flex-col items-center justify-center text-slate-400">
-                                <RefreshCw className="animate-spin mb-2" size={32} />
-                                <p>Loading data...</p>
+                                <RefreshCw className="animate-spin mb-2" size={32} /> <p>Loading data...</p>
                             </div>
                         )}
-
                         {!loading && chartData.length === 0 ? (
                             <div className="flex-1 flex flex-col items-center justify-center text-slate-400 border-2 border-dashed border-slate-100 rounded-lg py-20">
                                 <BarChart3 size={48} className="mb-4 opacity-20" />
                                 <p>No data found matching your filters.</p>
-                                <button onClick={clearFilters} className="mt-4 text-blue-600 font-medium hover:underline">
-                                    Clear Filters
-                                </button>
+                                <button onClick={clearFilters} className="mt-4 text-blue-600 font-medium hover:underline">Clear Filters</button>
                             </div>
                         ) : (
                             <>
                                 <div className="mb-6 text-center">
-                                    <h2 className="text-lg font-bold text-slate-800">
-                                        {COLUMNS.find(c => c.key === config.y)?.label} over Time
-                                    </h2>
-                                    <p className="text-sm text-slate-500">
-                                        Grouped by <span className="font-semibold text-purple-600 uppercase">{config.groupBy || 'Total'}</span>
-                                    </p>
+                                    <h2 className="text-lg font-bold text-slate-800">{COLUMNS.find(c => c.key === config.y)?.label} over Time</h2>
+                                    <p className="text-sm text-slate-500">Grouped by <span className="font-semibold text-purple-600 uppercase">{config.groupBy || 'Total'}</span></p>
                                 </div>
-
-                                {/* Grafico con altezza fissa */}
                                 <div className="w-full h-[500px]" style={{ height: '500px' }}>
                                     <ResponsiveContainer width="100%" height="100%">
                                         <LineChart data={chartData} margin={{ top: 10, right: 30, left: 10, bottom: 20 }}>
                                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                                            <XAxis
-                                                dataKey="displayX"
-                                                tick={{ fontSize: 12, fill: '#64748b' }}
-                                                axisLine={false}
-                                                tickLine={false}
-                                                dy={10}
-                                                angle={-15}
-                                                textAnchor="end"
-                                            />
-                                            <YAxis
-                                                tick={{ fontSize: 12, fill: '#64748b' }}
-                                                axisLine={false}
-                                                tickLine={false}
-                                                tickFormatter={(val) => val >= 1000 ? `${(val / 1000).toFixed(1)}k` : val}
-                                            />
-                                            <Tooltip
-                                                contentStyle={{
-                                                    backgroundColor: 'rgba(255, 255, 255, 0.95)',
-                                                    borderRadius: '12px',
-                                                    border: 'none',
-                                                    boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)',
-                                                    padding: '12px'
-                                                }}
-                                            />
+                                            <XAxis dataKey="displayX" tick={{ fontSize: 12, fill: '#64748b' }} axisLine={false} tickLine={false} dy={10} angle={-15} textAnchor="end" />
+                                            <YAxis tick={{ fontSize: 12, fill: '#64748b' }} axisLine={false} tickLine={false} tickFormatter={(val) => val >= 1000 ? `${(val / 1000).toFixed(1)}k` : val} />
+                                            <Tooltip contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.95)', borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)', padding: '12px' }} />
                                             <Legend wrapperStyle={{ paddingTop: '20px' }} />
-
                                             {lines.map((lineKey, index) => (
                                                 <Line
                                                     key={lineKey}
@@ -438,24 +380,22 @@ export default function PlotPage() {
                                                     name={lineKey === 'value' ? 'Total Value' : lineKey}
                                                     stroke={lines.length === 1 ? '#8b5cf6' : COLORS[index % COLORS.length]}
                                                     strokeWidth={2.5}
-                                                    dot={{ r: 3, strokeWidth: 0, fill: lines.length === 1 ? '#8b5cf6' : COLORS[index % COLORS.length] }}
-                                                    activeDot={{ r: 7, strokeWidth: 0 }}
+                                                    dot={false} // Rimosso dot per pulizia grafica su serie dense
+                                                    activeDot={{ r: 6 }}
                                                     connectNulls={true}
                                                 />
                                             ))}
                                         </LineChart>
                                     </ResponsiveContainer>
                                 </div>
-
                                 <div className="mt-4 pt-4 border-t border-slate-100 flex justify-between items-center text-xs text-slate-400">
-                                    <span>Showing {chartData.length} time points</span>
+                                    <span>Showing {chartData.length} daily points (forward-filled)</span>
                                     <span>{lines.length} lines plotted</span>
                                 </div>
                             </>
                         )}
                     </div>
                 </div>
-
             </div>
         </div>
     );
