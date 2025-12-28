@@ -40,7 +40,7 @@ const COLUMNS = [
 const MultiSelect = ({ label, options, selected, onChange }: { label: string, options: string[], selected: string[], onChange: (val: string[]) => void }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [searchTerm, setSearchTerm] = useState("");
-    const dropdownRef = useRef<HTMLDivElement>(null);
+    const dropdownRef = useRef < HTMLDivElement > (null);
 
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
@@ -126,31 +126,31 @@ const MultiSelect = ({ label, options, selected, onChange }: { label: string, op
 export default function PlotPage() {
     const router = useRouter();
     const [loading, setLoading] = useState(true);
-    const [rawData, setRawData] = useState<any[]>([]);
+    const [rawData, setRawData] = useState < any[] > ([]);
 
     // --- STATE VISUALIZZAZIONE (Line vs Pie) ---
-    const [chartType, setChartType] = useState<'line' | 'pie'>('line');
-    const [pieDate, setPieDate] = useState<string>(''); // Data specifica per la torta
+    const [chartType, setChartType] = useState < 'line' | 'pie' > ('line');
+    const [pieDate, setPieDate] = useState < string > ('');
 
     const [config, setConfig] = useState({
         x: 'operation_date',
-        y: 'cumulative_cost', 
-        groupBy: 'ticker'     
+        y: 'cumulative_cost',
+        groupBy: 'ticker'
     });
 
-    const [filters, setFilters] = useState<{
+    const [filters, setFilters] = useState < {
         person: string[];
         ticker: string[];
         sector: string[];
         category: string[];
-    }>({
+    } > ({
         person: [],
         ticker: [],
         sector: [],
-        category: ['Acquisto', 'Vendita'] // Default Categories
+        category: [] // Partiamo vuoti, li riempiamo automaticamente dopo
     });
 
-    // Stato Date Range (Per il Line Chart)
+    // Stato Date Range
     const [dateRange, setDateRange] = useState({
         start: '',
         end: ''
@@ -180,33 +180,50 @@ export default function PlotPage() {
         }
     };
 
-    // 2. SET DEFAULT PERSON
+    // 2. INITIALIZE DEFAULTS (Person & Categories)
     useEffect(() => {
-        const setDefaultPerson = async () => {
+        const initializeDefaults = async () => {
+            // A. Imposta Persona (Utente Loggato)
             try {
                 const { data: { user } } = await supabase.auth.getUser();
-                if (!user) return;
-                const { data: userProfile } = await supabase
-                    .from('users')
-                    .select('alias')
-                    .eq('user_id', user.id)
-                    .maybeSingle();
+                if (user) {
+                    const { data: userProfile } = await supabase
+                        .from('users')
+                        .select('alias')
+                        .eq('user_id', user.id)
+                        .maybeSingle();
 
-                if (userProfile && userProfile.alias) {
-                    setFilters(prev => ({
-                        ...prev,
-                        person: [userProfile.alias]
-                    }));
+                    if (userProfile && userProfile.alias) {
+                        setFilters(prev => ({ ...prev, person: [userProfile.alias] }));
+                    }
                 }
             } catch (e) {
                 console.error("Errore user:", e);
             }
         };
+
         fetchData();
-        setDefaultPerson();
+        initializeDefaults();
     }, []);
 
-    // 3. UNIQUE VALUES
+    // 3. AUTO-SELECT ALL CATEGORIES WHEN DATA LOADS
+    // Questo risolve il problema "No data found": seleziona automaticamente tutte le categorie presenti nel DB
+    useEffect(() => {
+        if (rawData.length > 0) {
+            // Estrai tutte le categorie uniche dai dati
+            const allCategories = Array.from(new Set(rawData.map(item => item.category).filter(Boolean)));
+
+            // Se il filtro categoria è vuoto, selezionale tutte
+            setFilters(prev => {
+                if (prev.category.length === 0) {
+                    return { ...prev, category: allCategories };
+                }
+                return prev;
+            });
+        }
+    }, [rawData]);
+
+    // 4. UNIQUE VALUES
     const uniqueValues = useMemo(() => {
         const getUnique = (key: string) => Array.from(new Set(rawData.map(item => item[key]).filter(Boolean))).sort();
         return {
@@ -217,11 +234,13 @@ export default function PlotPage() {
         };
     }, [rawData]);
 
-    // 4. AUTO-UPDATE DATE RANGES
+    // 5. AUTO-UPDATE DATE RANGES
     useEffect(() => {
         if (rawData.length === 0) return;
 
-        const filteredForDates = rawData.filter(item => {
+        // Se i filtri non matchano nulla, usa tutto il dataset come fallback per le date
+        // così il grafico non scompare completamente
+        let dataForDates = rawData.filter(item => {
             if (filters.person.length > 0 && !filters.person.includes(item.person)) return false;
             if (filters.ticker.length > 0 && !filters.ticker.includes(item.ticker)) return false;
             if (filters.sector.length > 0 && !filters.sector.includes(item.sector)) return false;
@@ -229,26 +248,35 @@ export default function PlotPage() {
             return true;
         });
 
-        if (filteredForDates.length > 0) {
-            const dates = filteredForDates.map(d => new Date(d.operation_date).getTime());
+        // Fallback: se il filtro restituisce 0 risultati, usa rawData per calcolare almeno un range valido
+        if (dataForDates.length === 0 && rawData.length > 0) {
+            // Non forziamo le date se l'utente ha filtrato tutto via intenzionalmente, 
+            // ma qui serve per inizializzare.
+            // dataForDates = rawData; 
+        }
+
+        if (dataForDates.length > 0) {
+            const dates = dataForDates.map(d => new Date(d.operation_date).getTime());
             const minDate = new Date(Math.min(...dates)).toISOString().split('T')[0];
             const maxDate = new Date(Math.max(...dates)).toISOString().split('T')[0];
             const today = new Date().toISOString().split('T')[0];
-            
+
             const endDate = today > maxDate ? today : maxDate;
 
-            setDateRange({
-                start: minDate,
-                end: endDate
+            // Aggiorna solo se le date sono diverse per evitare loop
+            setDateRange(prev => {
+                if (prev.start !== minDate || prev.end !== endDate) {
+                    return { start: minDate, end: endDate };
+                }
+                return prev;
             });
-            
-            // Imposta anche la data default per il Pie Chart (l'ultimo giorno)
+
             if (!pieDate) setPieDate(endDate);
         }
-    }, [rawData, filters]);
+    }, [rawData, filters]); // Dipende da rawData e filters
 
 
-    // 5. MOTORE DI CALCOLO (LINE CHART)
+    // 6. MOTORE DI CALCOLO (LINE CHART)
     const { chartData, lines } = useMemo(() => {
         if (!rawData.length || !dateRange.start || !dateRange.end) return { chartData: [], lines: [] };
 
@@ -271,19 +299,20 @@ export default function PlotPage() {
             txByDate[dateKey].push(t);
         });
 
-        const positionState: Record<string, any> = {}; 
+        const positionState: Record<string, any> = {};
         const getPositionKey = (t: any) => `${t.person || 'Unknown'}-${t.ticker || 'Unknown'}`;
 
+        // Pre-Scan
         filtered.forEach(t => {
             const tDate = new Date(t[config.x]).getTime();
             if (tDate < startDateMs) {
                 const key = getPositionKey(t);
-                positionState[key] = t; 
+                positionState[key] = t;
             }
         });
 
         const denseData = [];
-        const foundGroups = new Set<string>();
+        const foundGroups = new Set < string > ();
 
         for (let time = startDateMs; time <= endDateMs; time += oneDay) {
             const dateObj = new Date(time);
@@ -299,12 +328,14 @@ export default function PlotPage() {
             }
 
             const dayValues: Record<string, number> = {};
+            let hasData = false;
 
             Object.values(positionState).forEach(pos => {
                 const groupName = config.groupBy ? (pos[config.groupBy] || 'Other') : 'value';
                 const val = Number(pos[config.y]) || 0;
                 dayValues[groupName] = (dayValues[groupName] || 0) + val;
                 foundGroups.add(groupName);
+                if (val !== 0) hasData = true;
             });
 
             denseData.push({ displayX, rawX: time, dateKey, ...dayValues });
@@ -314,28 +345,25 @@ export default function PlotPage() {
 
     }, [rawData, config, filters, dateRange]);
 
-    // 6. MOTORE DI CALCOLO (PIE CHART) - Dati puntuali
+    // 7. MOTORE DI CALCOLO (PIE CHART)
     const pieChartData = useMemo(() => {
         if (!pieDate || chartData.length === 0) return [];
 
-        // 1. Trova la riga corrispondente alla data selezionata nel dataset "dense" (già calcolato)
-        // Usiamo chartData perché contiene già i valori aggregati corretti (cumulative) per quel giorno
         const targetRow = chartData.find(row => row.dateKey === pieDate);
 
         if (!targetRow) return [];
 
-        // 2. Trasforma la riga in array per la torta: [{name: 'AAPL', value: 100}, ...]
         return lines
             .map(lineKey => ({
                 name: lineKey,
                 value: targetRow[lineKey] || 0
             }))
-            .filter(item => item.value > 0) // Nascondi fette a zero
-            .sort((a, b) => b.value - a.value); // Ordina decrescente
+            .filter(item => item.value > 0)
+            .sort((a, b) => b.value - a.value);
 
     }, [chartData, pieDate, lines]);
 
-    // 7. TICKS ASSE X
+    // 8. TICKS ASSE X
     const xAxisTicks = useMemo(() => {
         if (chartData.length === 0) return [];
         const MAX_TICKS = 8;
@@ -352,7 +380,7 @@ export default function PlotPage() {
     };
 
     const clearFilters = () => {
-        setFilters({ person: [], ticker: [], sector: [], category: ['Acquisto', 'Vendita'] });
+        setFilters({ person: [], ticker: [], sector: [], category: [] });
     };
 
     const hasActiveFilters = filters.person.length > 0 || filters.ticker.length > 0 || filters.sector.length > 0 || filters.category.length > 0;
@@ -375,10 +403,10 @@ export default function PlotPage() {
             </div>
 
             <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-4 gap-6 p-6">
-                
+
                 {/* SIDEBAR */}
                 <div className="lg:col-span-1 space-y-6">
-                    
+
                     {/* AXIS SETUP */}
                     <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
                         <div className="flex items-center gap-2 mb-4 text-slate-800 font-semibold border-b border-slate-100 pb-2">
@@ -418,11 +446,11 @@ export default function PlotPage() {
                         <div className="grid grid-cols-2 gap-3">
                             <div>
                                 <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">From</label>
-                                <input type="date" className="w-full p-1.5 border border-slate-300 rounded text-xs outline-none focus:border-purple-500" value={dateRange.start} onChange={(e) => setDateRange({...dateRange, start: e.target.value})} />
+                                <input type="date" className="w-full p-1.5 border border-slate-300 rounded text-xs outline-none focus:border-purple-500" value={dateRange.start} onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })} />
                             </div>
                             <div>
                                 <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">To</label>
-                                <input type="date" className="w-full p-1.5 border border-slate-300 rounded text-xs outline-none focus:border-purple-500" value={dateRange.end} onChange={(e) => setDateRange({...dateRange, end: e.target.value})} />
+                                <input type="date" className="w-full p-1.5 border border-slate-300 rounded text-xs outline-none focus:border-purple-500" value={dateRange.end} onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })} />
                             </div>
                         </div>
                     </div>
@@ -445,17 +473,17 @@ export default function PlotPage() {
                 {/* CHART */}
                 <div className="lg:col-span-3">
                     <div className="bg-white p-6 rounded-xl shadow-lg border border-slate-200 flex flex-col relative">
-                        
+
                         {/* CHART TYPE TOGGLE & PIE DATE */}
                         <div className="flex flex-col items-center justify-center mb-6 gap-3">
                             <div className="flex items-center bg-slate-100 p-1 rounded-lg">
-                                <button 
+                                <button
                                     onClick={() => setChartType('line')}
                                     className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all ${chartType === 'line' ? 'bg-white text-purple-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
                                 >
                                     <LineIcon size={16} /> Line
                                 </button>
-                                <button 
+                                <button
                                     onClick={() => setChartType('pie')}
                                     className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all ${chartType === 'pie' ? 'bg-white text-purple-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
                                 >
@@ -463,12 +491,11 @@ export default function PlotPage() {
                                 </button>
                             </div>
 
-                            {/* SELECTOR DATA SOLO PER PIE CHART */}
                             {chartType === 'pie' && (
                                 <div className="flex items-center gap-2 animate-in fade-in slide-in-from-top-1">
                                     <label className="text-xs font-bold text-slate-400 uppercase">Snapshot Date:</label>
-                                    <input 
-                                        type="date" 
+                                    <input
+                                        type="date"
                                         className="p-1.5 border border-slate-300 rounded text-sm outline-none focus:border-purple-500"
                                         value={pieDate}
                                         min={dateRange.start}
@@ -491,20 +518,19 @@ export default function PlotPage() {
                                     <p>No data found matching your filters.</p>
                                 </div>
                             ) : chartType === 'line' ? (
-                                /* --- LINE CHART --- */
                                 <ResponsiveContainer width="100%" height="100%">
                                     <LineChart data={chartData} margin={{ top: 10, right: 30, left: 10, bottom: 20 }}>
                                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                                        <XAxis 
-                                            dataKey="displayX" 
+                                        <XAxis
+                                            dataKey="displayX"
                                             ticks={xAxisTicks}
-                                            interval={0} 
-                                            tick={{ fontSize: 12, fill: '#64748b' }} 
-                                            axisLine={false} 
-                                            tickLine={false} 
-                                            dy={10} 
-                                            angle={0} 
-                                            textAnchor="middle" 
+                                            interval={0}
+                                            tick={{ fontSize: 12, fill: '#64748b' }}
+                                            axisLine={false}
+                                            tickLine={false}
+                                            dy={10}
+                                            angle={0}
+                                            textAnchor="middle"
                                         />
                                         <YAxis tick={{ fontSize: 12, fill: '#64748b' }} axisLine={false} tickLine={false} tickFormatter={(val) => val >= 1000 ? `${(val / 1000).toFixed(1)}k` : val} />
                                         <Tooltip contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.95)', borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)', padding: '12px' }} />
@@ -525,26 +551,24 @@ export default function PlotPage() {
                                     </LineChart>
                                 </ResponsiveContainer>
                             ) : (
-                                /* --- PIE CHART --- */
                                 <ResponsiveContainer width="100%" height="100%">
                                     <PieChart>
                                         <Pie
                                             data={pieChartData}
                                             cx="50%"
                                             cy="50%"
-                                            innerRadius={100} // Donut style (più moderno)
+                                            innerRadius={100}
                                             outerRadius={160}
                                             paddingAngle={2}
                                             dataKey="value"
                                         >
                                             {pieChartData.map((entry, index) => {
-                                                // Trova il colore coerente con le linee (usando l'indice nella lista lines)
                                                 const colorIndex = lines.indexOf(entry.name);
                                                 const color = colorIndex >= 0 ? COLORS[colorIndex % COLORS.length] : COLORS[index % COLORS.length];
                                                 return <Cell key={`cell-${index}`} fill={color} stroke="white" strokeWidth={2} />;
                                             })}
                                         </Pie>
-                                        <Tooltip 
+                                        <Tooltip
                                             formatter={(value: number) => value.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                             contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.95)', borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)', padding: '12px' }}
                                         />
