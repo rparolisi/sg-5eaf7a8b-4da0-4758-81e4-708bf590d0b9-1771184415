@@ -2,7 +2,7 @@ import { useRouter } from 'next/router';
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import {
-    ArrowLeft, BarChart3, Settings, Filter, RefreshCw, XCircle, ChevronDown, Check, Search
+    ArrowLeft, BarChart3, Settings, Filter, RefreshCw, XCircle, ChevronDown, Check, Search, Calendar
 } from 'lucide-react';
 import {
     LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
@@ -26,9 +26,7 @@ const COLUMNS = [
     { key: 'person', label: 'Person', type: 'text' },
     { key: 'sector', label: 'Sector', type: 'text' },
     { key: 'category', label: 'Category', type: 'text' },
-    // Colonne Calcolate
-    { key: 'cumulative_cost', label: 'Cumulative Cost (€)', type: 'number' }, // NUOVA COLONNA
-    // Colonne DB
+    { key: 'cumulative_cost', label: 'Cumulative Cost (€)', type: 'number' },
     { key: 'total_outlay_eur', label: 'Total Amount (€)', type: 'number' },
     { key: 'purchase_price_per_share_eur', label: 'Price per Share (€)', type: 'number' },
     { key: 'shares_count', label: 'Shares Count', type: 'number' },
@@ -37,7 +35,7 @@ const COLUMNS = [
     { key: 'effective_average_price', label: 'Eff. Avg Price', type: 'number' }
 ];
 
-// --- COMPONENTE MULTI-SELECT CON RICERCA ---
+// --- COMPONENTE MULTI-SELECT ---
 const MultiSelect = ({ label, options, selected, onChange }: { label: string, options: string[], selected: string[], onChange: (val: string[]) => void }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [searchTerm, setSearchTerm] = useState("");
@@ -147,7 +145,13 @@ export default function PlotPage() {
         category: []
     });
 
-    // 1. FETCH DATA & CALCULATE CUMULATIVE COST
+    // Stato Date Range (Start/End)
+    const [dateRange, setDateRange] = useState({
+        start: '',
+        end: ''
+    });
+
+    // 1. FETCH DATA
     const fetchData = async () => {
         setLoading(true);
         try {
@@ -158,7 +162,6 @@ export default function PlotPage() {
 
             if (error) throw error;
 
-            // Arricchiamo i dati calcolando il Cumulative Cost
             const enrichedData = (data || []).map(t => ({
                 ...t,
                 cumulative_cost: (t.cumulative_shares_count || 0) * (t.average_price || 0)
@@ -187,11 +190,42 @@ export default function PlotPage() {
         };
     }, [rawData]);
 
-    // 3. DATA PROCESSING CON "DAILY FILLING" (Riempimento giorni mancanti)
-    const { chartData, lines } = useMemo(() => {
-        if (!rawData.length) return { chartData: [], lines: [] };
+    // 3. AUTO-UPDATE DATE RANGE based on Filters
+    // Questo useEffect aggiorna le date min/max ogni volta che cambiano i filtri categorici
+    useEffect(() => {
+        if (rawData.length === 0) return;
 
-        // A. Filter Raw Data
+        // Filtra i dati in base ai filtri categorici correnti
+        const filteredForDates = rawData.filter(item => {
+            if (filters.person.length > 0 && !filters.person.includes(item.person)) return false;
+            if (filters.ticker.length > 0 && !filters.ticker.includes(item.ticker)) return false;
+            if (filters.sector.length > 0 && !filters.sector.includes(item.sector)) return false;
+            if (filters.category.length > 0 && !filters.category.includes(item.category)) return false;
+            return true;
+        });
+
+        if (filteredForDates.length > 0) {
+            // Trova min e max data tra i dati filtrati
+            const dates = filteredForDates.map(d => new Date(d.operation_date).getTime());
+            const minDate = new Date(Math.min(...dates)).toISOString().split('T')[0];
+            const maxDate = new Date(Math.max(...dates)).toISOString().split('T')[0];
+
+            // Imposta la data finale a "Oggi" se l'ultima transazione è passata, per vedere la linea piatta fino ad oggi
+            const today = new Date().toISOString().split('T')[0];
+
+            setDateRange({
+                start: minDate,
+                end: today > maxDate ? today : maxDate
+            });
+        }
+    }, [rawData, filters]);
+
+
+    // 4. DATA PROCESSING CON "TIME TRAVEL"
+    const { chartData, lines } = useMemo(() => {
+        if (!rawData.length || !dateRange.start || !dateRange.end) return { chartData: [], lines: [] };
+
+        // A. FILTRAGGIO CATEGORICO (Person, Ticker, etc.)
         let filtered = rawData.filter(item => {
             if (filters.person.length > 0 && !filters.person.includes(item.person)) return false;
             if (filters.ticker.length > 0 && !filters.ticker.includes(item.ticker)) return false;
@@ -200,74 +234,80 @@ export default function PlotPage() {
             return true;
         });
 
-        if (filtered.length === 0) return { chartData: [], lines: [] };
-
-        // B. Determine Time Range (From First Transaction to Today)
-        const sortedFiltered = [...filtered].sort((a, b) => new Date(a[config.x]).getTime() - new Date(b[config.x]).getTime());
-        const minDate = new Date(sortedFiltered[0][config.x]).getTime();
-        const maxDate = new Date().getTime(); // Fino a oggi
+        // B. SETUP TIME RANGE
+        const startDateMs = new Date(dateRange.start).getTime();
+        const endDateMs = new Date(dateRange.end).getTime();
         const oneDay = 24 * 60 * 60 * 1000;
 
-        // C. Group Transactions by Date for quick lookup
+        // C. GROUP BY DATE (Per lookup veloce)
         const txByDate: Record<string, any[]> = {};
         filtered.forEach(t => {
-            const dateKey = new Date(t[config.x]).toISOString().split('T')[0]; // YYYY-MM-DD
+            const dateKey = new Date(t[config.x]).toISOString().split('T')[0];
             if (!txByDate[dateKey]) txByDate[dateKey] = [];
             txByDate[dateKey].push(t);
         });
 
-        // D. Generate Dense Time Series (Forward Fill)
-        const denseData = [];
+        // D. IDENTIFICA I GRUPPI ATTIVI (Tutte le linee da disegnare)
         const activeGroups = new Set < string > ();
+        filtered.forEach(t => {
+            const groupName = config.groupBy ? (t[config.groupBy] || 'Other') : 'value';
+            activeGroups.add(groupName);
+        });
 
-        // Track last known value for each group
+        // E. PRE-SCAN: Calcola lo stato iniziale PRIMA della start date
+        // Se filtro dal 2024, devo sapere quante azioni avevo accumulato fino al 2023.
         const groupState: Record<string, number> = {};
 
-        // Loop day by day
-        for (let time = minDate; time <= maxDate; time += oneDay) {
+        filtered.forEach(t => {
+            const tDate = new Date(t[config.x]).getTime();
+            if (tDate < startDateMs) {
+                const groupName = config.groupBy ? (t[config.groupBy] || 'Other') : 'value';
+                const val = Number(t[config.y]) || 0;
+                // Forward fill: l'ultimo valore prima della start date vince
+                groupState[groupName] = val;
+            }
+        });
+
+        // F. GENERAZIONE DENSE DATA (Giorno per giorno)
+        const denseData = [];
+
+        for (let time = startDateMs; time <= endDateMs; time += oneDay) {
             const dateObj = new Date(time);
             const dateKey = dateObj.toISOString().split('T')[0];
             const displayX = dateObj.toLocaleDateString();
 
-            // Check if we have transactions today
+            // Aggiorna lo stato se ci sono transazioni OGGI
             const todaysTxs = txByDate[dateKey];
-
             if (todaysTxs) {
                 todaysTxs.forEach(t => {
                     const groupName = config.groupBy ? (t[config.groupBy] || 'Other') : 'value';
                     const val = Number(t[config.y]) || 0;
-
-                    activeGroups.add(groupName);
-                    // Update state (Forward Fill logic: last transaction wins for the day)
                     groupState[groupName] = val;
                 });
             }
 
-            // Create row for this day using current state
+            // Crea la riga per il grafico usando lo stato corrente
             const row: any = {
                 displayX,
                 rawX: time
             };
 
-            // Fill row with known states (or 0/null if never seen)
-            // Nota: Se config.y è una metrica di flusso (es. Fees), il forward fill potrebbe non avere senso,
-            // ma per Cumulative Cost / Shares è perfetto.
-            // Qui applichiamo forward fill a tutto per coerenza con la richiesta "insert days".
             activeGroups.forEach(g => {
                 if (groupState[g] !== undefined) {
                     row[g] = groupState[g];
+                } else {
+                    // Se non abbiamo uno stato precedente (es. ticker comprato dopo la start date),
+                    // possiamo mettere 0 o null. Per cumulate cost, 0 ha senso.
+                    row[g] = 0;
                 }
             });
 
-            // Push only if we have some data
-            if (activeGroups.size > 0) {
-                denseData.push(row);
-            }
+            denseData.push(row);
         }
 
         return { chartData: denseData, lines: Array.from(activeGroups) };
 
-    }, [rawData, config, filters]);
+    }, [rawData, config, filters, dateRange]); // Aggiunto dateRange alle dipendenze
 
     // --- HANDLERS ---
     const handleFilterChange = (key: keyof typeof filters, value: string[]) => {
@@ -298,8 +338,11 @@ export default function PlotPage() {
             </div>
 
             <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-4 gap-6 p-6">
+
                 {/* SIDEBAR */}
                 <div className="lg:col-span-1 space-y-6">
+
+                    {/* AXIS SETUP */}
                     <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
                         <div className="flex items-center gap-2 mb-4 text-slate-800 font-semibold border-b border-slate-100 pb-2">
                             <Settings size={18} /> Axes Setup
@@ -330,6 +373,34 @@ export default function PlotPage() {
                         </div>
                     </div>
 
+                    {/* DATE RANGE FILTER (NUOVO) */}
+                    <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+                        <div className="flex items-center gap-2 mb-4 text-slate-800 font-semibold border-b border-slate-100 pb-2">
+                            <Calendar size={18} /> Date Range
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                            <div>
+                                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">From</label>
+                                <input
+                                    type="date"
+                                    className="w-full p-1.5 border border-slate-300 rounded text-xs outline-none focus:border-purple-500"
+                                    value={dateRange.start}
+                                    onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })}
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">To</label>
+                                <input
+                                    type="date"
+                                    className="w-full p-1.5 border border-slate-300 rounded text-xs outline-none focus:border-purple-500"
+                                    value={dateRange.end}
+                                    onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })}
+                                />
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* FILTERS */}
                     <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
                         <div className="flex items-center justify-between mb-4 border-b border-slate-100 pb-2">
                             <div className="flex items-center gap-2 text-slate-800 font-semibold"><Filter size={18} /> Filters</div>
@@ -380,7 +451,7 @@ export default function PlotPage() {
                                                     name={lineKey === 'value' ? 'Total Value' : lineKey}
                                                     stroke={lines.length === 1 ? '#8b5cf6' : COLORS[index % COLORS.length]}
                                                     strokeWidth={2.5}
-                                                    dot={false} // Rimosso dot per pulizia grafica su serie dense
+                                                    dot={false}
                                                     activeDot={{ r: 6 }}
                                                     connectNulls={true}
                                                 />
@@ -389,7 +460,7 @@ export default function PlotPage() {
                                     </ResponsiveContainer>
                                 </div>
                                 <div className="mt-4 pt-4 border-t border-slate-100 flex justify-between items-center text-xs text-slate-400">
-                                    <span>Showing {chartData.length} daily points (forward-filled)</span>
+                                    <span>Showing {chartData.length} daily points (filled)</span>
                                     <span>{lines.length} lines plotted</span>
                                 </div>
                             </>
