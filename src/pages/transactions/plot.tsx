@@ -10,6 +10,7 @@ import {
     PieChart, Pie, Cell
 } from 'recharts';
 import * as htmlToImage from 'html-to-image';
+import * as XLSX from 'xlsx';
 
 // --- CONFIGURAZIONE SUPABASE ---
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
@@ -379,23 +380,32 @@ export default function PlotPage() {
     // --- LOGICA EXPORT ---
     const exportData = (format: 'csv' | 'xlsx') => {
         const dataToExport = chartType === 'line' ? chartData : pieChartData;
-        if (!dataToExport.length) return;
+        if (!dataToExport || dataToExport.length === 0) return;
+
+        const filename = `invest_monitor_data_${new Date().toISOString().split('T')[0]}`;
 
         if (format === 'csv') {
-            const headers = Object.keys(dataToExport[0]).join(',');
-            const rows = dataToExport.map(r => Object.values(r).join(',')).join('\n');
-            const blob = new Blob([headers + '\n' + rows], { type: 'text/csv' });
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `export_${chartType}_${new Date().toISOString().split('T')[0]}.csv`;
-            a.click();
+            // Genera il foglio di lavoro
+            const worksheet = XLSX.utils.json_to_sheet(dataToExport);
+            // Genera il contenuto CSV
+            const csvOutput = XLSX.utils.sheet_to_csv(worksheet);
+            const blob = new Blob([csvOutput], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.setAttribute('download', `${filename}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
         } else {
-            if (!(window as any).XLSX) return alert("Libreria XLSX in caricamento...");
-            const ws = (window as any).XLSX.utils.json_to_sheet(dataToExport);
-            const wb = (window as any).XLSX.utils.book_new();
-            (window as any).XLSX.utils.book_append_sheet(wb, ws, "Data");
-            (window as any).XLSX.writeFile(wb, `export_${chartType}_${new Date().toISOString().split('T')[0]}.xlsx`);
+            // Crea un nuovo workbook (file Excel)
+            const wb = XLSX.utils.book_new();
+            // Converte i dati in un foglio Excel
+            const ws = XLSX.utils.json_to_sheet(dataToExport);
+            // Aggiunge il foglio al workbook
+            XLSX.utils.book_append_sheet(wb, ws, "Dati Grafico");
+            // Scrive il file e avvia il download
+            XLSX.writeFile(wb, `${filename}.xlsx`);
         }
         setIsDownloadOpen(false);
     };
