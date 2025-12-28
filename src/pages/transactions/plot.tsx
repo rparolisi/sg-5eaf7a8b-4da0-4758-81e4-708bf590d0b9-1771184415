@@ -2,7 +2,8 @@ import { useRouter } from 'next/router';
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import {
-    ArrowLeft, BarChart3, Settings, Filter, RefreshCw, XCircle, ChevronDown, Check, Search, Calendar, PieChart as PieIcon, LineChart as LineIcon, Clock
+    ArrowLeft, BarChart3, Settings, Filter, RefreshCw, XCircle, ChevronDown, Check, Search, Calendar, PieChart as PieIcon,
+    LineChart as LineIcon, Clock, Download, FileText, FileSpreadsheet, Image as ImageIcon
 } from 'lucide-react';
 import {
     LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
@@ -127,6 +128,9 @@ export default function PlotPage() {
     const router = useRouter();
     const [loading, setLoading] = useState(true);
     const [rawData, setRawData] = useState < any[] > ([]);
+    const chartContainerRef = useRef < HTMLDivElement > (null);
+    const downloadMenuRef = useRef < HTMLDivElement > (null);
+    const [isDownloadOpen, setIsDownloadOpen] = useState(false);
 
     // --- STATE VISUALIZZAZIONE (Line vs Pie) ---
     const [chartType, setChartType] = useState < 'line' | 'pie' > ('line');
@@ -371,6 +375,52 @@ export default function PlotPage() {
 
     const hasActiveFilters = filters.person.length > 0 || filters.ticker.length > 0 || filters.sector.length > 0;
 
+    // --- LOGICA EXPORT ---
+    const exportData = (format: 'csv' | 'xlsx') => {
+        const dataToExport = chartType === 'line' ? chartData : pieChartData;
+        if (!dataToExport.length) return;
+
+        if (format === 'csv') {
+            const headers = Object.keys(dataToExport[0]).join(',');
+            const rows = dataToExport.map(r => Object.values(r).join(',')).join('\n');
+            const blob = new Blob([headers + '\n' + rows], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `export_${chartType}_${new Date().toISOString().split('T')[0]}.csv`;
+            a.click();
+        } else {
+            if (!(window as any).XLSX) return alert("Libreria XLSX in caricamento...");
+            const ws = (window as any).XLSX.utils.json_to_sheet(dataToExport);
+            const wb = (window as any).XLSX.utils.book_new();
+            (window as any).XLSX.utils.book_append_sheet(wb, ws, "Data");
+            (window as any).XLSX.writeFile(wb, `export_${chartType}_${new Date().toISOString().split('T')[0]}.xlsx`);
+        }
+        setIsDownloadOpen(false);
+    };
+
+    const exportImage = () => {
+        const svg = chartContainerRef.current?.querySelector('svg');
+        if (!svg) return;
+        const serializer = new XMLSerializer();
+        const source = '<?xml version="1.0" standalone="no"?>\r\n' + serializer.serializeToString(svg);
+        const canvas = document.createElement('canvas');
+        canvas.width = svg.clientWidth * 2;
+        canvas.height = svg.clientHeight * 2;
+        const ctx = canvas.getContext('2d');
+        const img = new Image();
+        img.src = 'data:image/svg+xml;base64,' + window.btoa(unescape(encodeURIComponent(source)));
+        img.onload = () => {
+            ctx?.scale(2, 2);
+            ctx?.drawImage(img, 0, 0);
+            const link = document.createElement('a');
+            link.download = `plot_${new Date().toISOString().split('T')[0]}.png`;
+            link.href = canvas.toDataURL('image/png');
+            link.click();
+        };
+        setIsDownloadOpen(false);
+    };
+
     return (
         <div className="min-h-screen bg-slate-50 font-sans text-slate-900 pb-10">
             {/* HEADER */}
@@ -481,44 +531,56 @@ export default function PlotPage() {
                     <div className="bg-white p-6 rounded-xl shadow-lg border border-slate-200 flex flex-col relative">
 
                         {/* CHART TYPE TOGGLE & PIE DATE */}
-                        <div className="flex flex-col items-center justify-center mb-6 gap-3">
-                            <div className="flex items-center bg-slate-100 p-1 rounded-lg">
-                                <button
-                                    onClick={() => setChartType('line')}
-                                    className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all ${chartType === 'line' ? 'bg-white text-purple-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-                                >
-                                    <LineIcon size={16} /> Line
-                                </button>
-                                <button
-                                    onClick={() => setChartType('pie')}
-                                    className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all ${chartType === 'pie' ? 'bg-white text-purple-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-                                >
-                                    <PieIcon size={16} /> Pie
-                                </button>
+                        {/* --- TOP CONTROL BAR --- */}
+                        <div className="flex items-center justify-between mb-8 border-b border-slate-50 pb-4">
+                            <div className="w-24"></div> {/* Spacer per bilanciare la riga */}
+
+                            {/* Toggle Centrale (quello che avevi già, ma pulito) */}
+                            <div className="flex flex-col items-center gap-3">
+                                <div className="flex items-center bg-slate-100 p-1 rounded-xl shadow-inner">
+                                    <button onClick={() => setChartType('line')} className={`flex items-center gap-2 px-6 py-2 rounded-lg text-sm font-bold transition-all ${chartType === 'line' ? 'bg-white text-purple-600 shadow-md' : 'text-slate-500 hover:text-slate-800'}`}><LineIcon size={16} /> Line</button>
+                                    <button onClick={() => setChartType('pie')} className={`flex items-center gap-2 px-6 py-2 rounded-lg text-sm font-bold transition-all ${chartType === 'pie' ? 'bg-white text-purple-600 shadow-md' : 'text-slate-500 hover:text-slate-800'}`}><PieIcon size={16} /> Pie</button>
+                                </div>
                             </div>
 
-                            {/* SNAPSHOT DATE SELECTOR (STYLED) */}
-                            {chartType === 'pie' && (
-                                <div className="animate-in fade-in slide-in-from-top-1 w-full max-w-[200px]">
-                                    <div className="relative group">
-                                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                            <span className="text-slate-400 text-[10px] font-bold tracking-wider">DATE</span>
-                                        </div>
-                                        <input
-                                            type="date"
-                                            className="w-full pl-12 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-700 outline-none focus:bg-white focus:border-purple-500 focus:ring-2 focus:ring-purple-100 transition-all shadow-sm group-hover:border-purple-300"
-                                            value={pieDate}
-                                            min={dateRange.start}
-                                            max={dateRange.end}
-                                            onChange={(e) => setPieDate(e.target.value)}
-                                        />
+                            {/* Tasto Download a Destra */}
+                            <div className="relative" ref={downloadMenuRef}>
+                                <button
+                                    onClick={() => setIsDownloadOpen(!isDownloadOpen)}
+                                    className="flex items-center gap-2 px-4 py-2 bg-slate-800 text-white rounded-lg text-sm font-bold hover:bg-slate-700 transition-all shadow-md active:scale-95"
+                                >
+                                    <Download size={18} /> Export
+                                </button>
+
+                                {isDownloadOpen && (
+                                    <div className="absolute right-0 mt-2 w-56 bg-white rounded-xl shadow-2xl border border-slate-100 z-50 p-2 animate-in fade-in slide-in-from-top-2">
+                                        <button onClick={exportImage} className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-slate-50 rounded-lg text-sm font-medium text-slate-700">
+                                            <ImageIcon size={16} className="text-blue-500" /> Download Image (PNG)
+                                        </button>
+                                        <div className="h-px bg-slate-100 my-1"></div>
+                                        <button onClick={() => exportData('csv')} className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-slate-50 rounded-lg text-sm font-medium text-slate-700">
+                                            <FileText size={16} className="text-green-500" /> Export Data (CSV)
+                                        </button>
+                                        <button onClick={() => exportData('xlsx')} className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-slate-50 rounded-lg text-sm font-medium text-slate-700">
+                                            <FileSpreadsheet size={16} className="text-emerald-600" /> Export Data (XLSX)
+                                        </button>
                                     </div>
-                                </div>
-                            )}
+                                )}
+                            </div>
                         </div>
 
+                        {/* Il selettore della Snapshot Date rimane subito sotto se chartType === 'pie' */}
+                        {chartType === 'pie' && (
+                            <div className="flex justify-center mb-6 animate-in zoom-in-95">
+                                <div className="relative group max-w-[220px]">
+                                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><span className="text-slate-400 text-[10px] font-bold tracking-wider">DATE</span></div>
+                                    <input type="date" className="w-full pl-12 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-700 outline-none focus:bg-white focus:border-purple-500 transition-all shadow-sm" value={pieDate} min={dateRange.start} max={dateRange.end} onChange={(e) => setPieDate(e.target.value)} />
+                                </div>
+                            </div>
+                        )}
+
                         {/* CONTENT */}
-                        <div className="w-full h-[500px]" style={{ height: '500px' }}>
+                        <div ref={chartContainerRef} className="w-full h-[500px]" style={{ height: '500px' }}>
                             {loading ? (
                                 <div className="h-full flex flex-col items-center justify-center text-slate-400">
                                     <RefreshCw className="animate-spin mb-2" size={32} /> <p>Loading data...</p>
