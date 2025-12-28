@@ -2,10 +2,11 @@ import { useRouter } from 'next/router';
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import {
-    ArrowLeft, BarChart3, Settings, Filter, RefreshCw, XCircle, ChevronDown, Check, Search, Calendar
+    ArrowLeft, BarChart3, Settings, Filter, RefreshCw, XCircle, ChevronDown, Check, Search, Calendar, PieChart as PieIcon, LineChart as LineIcon
 } from 'lucide-react';
 import {
-    LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
+    LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+    PieChart, Pie, Cell
 } from 'recharts';
 
 // --- CONFIGURAZIONE SUPABASE ---
@@ -26,9 +27,7 @@ const COLUMNS = [
     { key: 'person', label: 'Person', type: 'text' },
     { key: 'sector', label: 'Sector', type: 'text' },
     { key: 'category', label: 'Category', type: 'text' },
-    // Colonne Calcolate
     { key: 'cumulative_cost', label: 'Cumulative Cost (€)', type: 'number' },
-    // Colonne DB
     { key: 'total_outlay_eur', label: 'Total Amount (€)', type: 'number' },
     { key: 'purchase_price_per_share_eur', label: 'Price per Share (€)', type: 'number' },
     { key: 'shares_count', label: 'Shares Count', type: 'number' },
@@ -41,7 +40,7 @@ const COLUMNS = [
 const MultiSelect = ({ label, options, selected, onChange }: { label: string, options: string[], selected: string[], onChange: (val: string[]) => void }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [searchTerm, setSearchTerm] = useState("");
-    const dropdownRef = useRef < HTMLDivElement > (null);
+    const dropdownRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
@@ -127,28 +126,31 @@ const MultiSelect = ({ label, options, selected, onChange }: { label: string, op
 export default function PlotPage() {
     const router = useRouter();
     const [loading, setLoading] = useState(true);
-    const [rawData, setRawData] = useState < any[] > ([]);
+    const [rawData, setRawData] = useState<any[]>([]);
 
-    // --- CONFIGURAZIONE GRAFICO (DEFAULTS) ---
+    // --- STATE VISUALIZZAZIONE (Line vs Pie) ---
+    const [chartType, setChartType] = useState<'line' | 'pie'>('line');
+    const [pieDate, setPieDate] = useState<string>(''); // Data specifica per la torta
+
     const [config, setConfig] = useState({
         x: 'operation_date',
-        y: 'cumulative_cost', // DEFAULT: Cumulative Cost
-        groupBy: 'ticker'     // DEFAULT: Ticker
+        y: 'cumulative_cost', 
+        groupBy: 'ticker'     
     });
 
-    const [filters, setFilters] = useState < {
+    const [filters, setFilters] = useState<{
         person: string[];
         ticker: string[];
         sector: string[];
         category: string[];
-    } > ({
+    }>({
         person: [],
         ticker: [],
         sector: [],
-        category: ['Buy', 'Sell']
+        category: ['Acquisto', 'Vendita'] // Default Categories
     });
 
-    // Stato Date Range
+    // Stato Date Range (Per il Line Chart)
     const [dateRange, setDateRange] = useState({
         start: '',
         end: ''
@@ -165,7 +167,6 @@ export default function PlotPage() {
 
             if (error) throw error;
 
-            // Calcolo Cumulative Cost
             const enrichedData = (data || []).map(t => ({
                 ...t,
                 cumulative_cost: (t.cumulative_shares_count || 0) * (t.average_price || 0)
@@ -179,22 +180,18 @@ export default function PlotPage() {
         }
     };
 
-    // 2. SET DEFAULT PERSON (Alias Utente Loggato)
+    // 2. SET DEFAULT PERSON
     useEffect(() => {
         const setDefaultPerson = async () => {
             try {
-                // 1. Ottieni utente loggato
                 const { data: { user } } = await supabase.auth.getUser();
                 if (!user) return;
-
-                // 2. Cerca il suo alias nella tabella 'users'
                 const { data: userProfile } = await supabase
                     .from('users')
                     .select('alias')
                     .eq('user_id', user.id)
                     .maybeSingle();
 
-                // 3. Se trovato, impostalo come filtro di default
                 if (userProfile && userProfile.alias) {
                     setFilters(prev => ({
                         ...prev,
@@ -202,14 +199,12 @@ export default function PlotPage() {
                     }));
                 }
             } catch (e) {
-                console.error("Errore nel recupero alias utente:", e);
+                console.error("Errore user:", e);
             }
         };
-
-        // Chiama fetch dati e poi imposta utente
         fetchData();
         setDefaultPerson();
-    }, []); // Esegui solo al mount
+    }, []);
 
     // 3. UNIQUE VALUES
     const uniqueValues = useMemo(() => {
@@ -222,7 +217,7 @@ export default function PlotPage() {
         };
     }, [rawData]);
 
-    // 4. AUTO-UPDATE DATE RANGE
+    // 4. AUTO-UPDATE DATE RANGES
     useEffect(() => {
         if (rawData.length === 0) return;
 
@@ -239,20 +234,24 @@ export default function PlotPage() {
             const minDate = new Date(Math.min(...dates)).toISOString().split('T')[0];
             const maxDate = new Date(Math.max(...dates)).toISOString().split('T')[0];
             const today = new Date().toISOString().split('T')[0];
+            
+            const endDate = today > maxDate ? today : maxDate;
 
             setDateRange({
                 start: minDate,
-                end: today > maxDate ? today : maxDate
+                end: endDate
             });
+            
+            // Imposta anche la data default per il Pie Chart (l'ultimo giorno)
+            if (!pieDate) setPieDate(endDate);
         }
     }, [rawData, filters]);
 
 
-    // 5. MOTORE DI CALCOLO PORTFOLIO (State-Based Aggregation)
+    // 5. MOTORE DI CALCOLO (LINE CHART)
     const { chartData, lines } = useMemo(() => {
         if (!rawData.length || !dateRange.start || !dateRange.end) return { chartData: [], lines: [] };
 
-        // A. Filter Raw Data
         let filtered = rawData.filter(item => {
             if (filters.person.length > 0 && !filters.person.includes(item.person)) return false;
             if (filters.ticker.length > 0 && !filters.ticker.includes(item.ticker)) return false;
@@ -265,7 +264,6 @@ export default function PlotPage() {
         const endDateMs = new Date(dateRange.end).getTime();
         const oneDay = 24 * 60 * 60 * 1000;
 
-        // B. Raggruppa Transazioni per Data
         const txByDate: Record<string, any[]> = {};
         filtered.forEach(t => {
             const dateKey = new Date(t[config.x]).toISOString().split('T')[0];
@@ -273,29 +271,25 @@ export default function PlotPage() {
             txByDate[dateKey].push(t);
         });
 
-        // C. DEFINIZIONE STATO DEL PORTAFOGLIO (POSIZIONI)
-        const positionState: Record<string, any> = {};
+        const positionState: Record<string, any> = {}; 
         const getPositionKey = (t: any) => `${t.person || 'Unknown'}-${t.ticker || 'Unknown'}`;
 
-        // D. PRE-SCAN (Fino alla Start Date)
         filtered.forEach(t => {
             const tDate = new Date(t[config.x]).getTime();
             if (tDate < startDateMs) {
                 const key = getPositionKey(t);
-                positionState[key] = t;
+                positionState[key] = t; 
             }
         });
 
-        // E. TIME TRAVEL (Giorno per Giorno)
         const denseData = [];
-        const foundGroups = new Set < string > ();
+        const foundGroups = new Set<string>();
 
         for (let time = startDateMs; time <= endDateMs; time += oneDay) {
             const dateObj = new Date(time);
             const dateKey = dateObj.toISOString().split('T')[0];
             const displayX = dateObj.toLocaleDateString();
 
-            // 1. Aggiorna lo stato delle posizioni con le transazioni di OGGI
             const todaysTxs = txByDate[dateKey];
             if (todaysTxs) {
                 todaysTxs.forEach(t => {
@@ -304,34 +298,44 @@ export default function PlotPage() {
                 });
             }
 
-            // 2. AGGREGAZIONE
             const dayValues: Record<string, number> = {};
 
             Object.values(positionState).forEach(pos => {
                 const groupName = config.groupBy ? (pos[config.groupBy] || 'Other') : 'value';
                 const val = Number(pos[config.y]) || 0;
-
-                // Somma al gruppo
                 dayValues[groupName] = (dayValues[groupName] || 0) + val;
-
                 foundGroups.add(groupName);
             });
 
-            // 3. Costruisci la riga dati
-            const row: any = {
-                displayX,
-                rawX: time,
-                ...dayValues
-            };
-
-            denseData.push(row);
+            denseData.push({ displayX, rawX: time, dateKey, ...dayValues });
         }
 
         return { chartData: denseData, lines: Array.from(foundGroups).sort() };
 
     }, [rawData, config, filters, dateRange]);
 
-    // 6. CALCOLO TICKS
+    // 6. MOTORE DI CALCOLO (PIE CHART) - Dati puntuali
+    const pieChartData = useMemo(() => {
+        if (!pieDate || chartData.length === 0) return [];
+
+        // 1. Trova la riga corrispondente alla data selezionata nel dataset "dense" (già calcolato)
+        // Usiamo chartData perché contiene già i valori aggregati corretti (cumulative) per quel giorno
+        const targetRow = chartData.find(row => row.dateKey === pieDate);
+
+        if (!targetRow) return [];
+
+        // 2. Trasforma la riga in array per la torta: [{name: 'AAPL', value: 100}, ...]
+        return lines
+            .map(lineKey => ({
+                name: lineKey,
+                value: targetRow[lineKey] || 0
+            }))
+            .filter(item => item.value > 0) // Nascondi fette a zero
+            .sort((a, b) => b.value - a.value); // Ordina decrescente
+
+    }, [chartData, pieDate, lines]);
+
+    // 7. TICKS ASSE X
     const xAxisTicks = useMemo(() => {
         if (chartData.length === 0) return [];
         const MAX_TICKS = 8;
@@ -348,7 +352,7 @@ export default function PlotPage() {
     };
 
     const clearFilters = () => {
-        setFilters({ person: [], ticker: [], sector: [], category: [] });
+        setFilters({ person: [], ticker: [], sector: [], category: ['Acquisto', 'Vendita'] });
     };
 
     const hasActiveFilters = filters.person.length > 0 || filters.ticker.length > 0 || filters.sector.length > 0 || filters.category.length > 0;
@@ -371,10 +375,10 @@ export default function PlotPage() {
             </div>
 
             <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-4 gap-6 p-6">
-
+                
                 {/* SIDEBAR */}
                 <div className="lg:col-span-1 space-y-6">
-
+                    
                     {/* AXIS SETUP */}
                     <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
                         <div className="flex items-center gap-2 mb-4 text-slate-800 font-semibold border-b border-slate-100 pb-2">
@@ -414,11 +418,11 @@ export default function PlotPage() {
                         <div className="grid grid-cols-2 gap-3">
                             <div>
                                 <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">From</label>
-                                <input type="date" className="w-full p-1.5 border border-slate-300 rounded text-xs outline-none focus:border-purple-500" value={dateRange.start} onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })} />
+                                <input type="date" className="w-full p-1.5 border border-slate-300 rounded text-xs outline-none focus:border-purple-500" value={dateRange.start} onChange={(e) => setDateRange({...dateRange, start: e.target.value})} />
                             </div>
                             <div>
                                 <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">To</label>
-                                <input type="date" className="w-full p-1.5 border border-slate-300 rounded text-xs outline-none focus:border-purple-500" value={dateRange.end} onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })} />
+                                <input type="date" className="w-full p-1.5 border border-slate-300 rounded text-xs outline-none focus:border-purple-500" value={dateRange.end} onChange={(e) => setDateRange({...dateRange, end: e.target.value})} />
                             </div>
                         </div>
                     </div>
@@ -441,63 +445,124 @@ export default function PlotPage() {
                 {/* CHART */}
                 <div className="lg:col-span-3">
                     <div className="bg-white p-6 rounded-xl shadow-lg border border-slate-200 flex flex-col relative">
-                        {loading && (
-                            <div className="absolute inset-0 bg-white/80 z-20 flex flex-col items-center justify-center text-slate-400">
-                                <RefreshCw className="animate-spin mb-2" size={32} /> <p>Loading data...</p>
+                        
+                        {/* CHART TYPE TOGGLE & PIE DATE */}
+                        <div className="flex flex-col items-center justify-center mb-6 gap-3">
+                            <div className="flex items-center bg-slate-100 p-1 rounded-lg">
+                                <button 
+                                    onClick={() => setChartType('line')}
+                                    className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all ${chartType === 'line' ? 'bg-white text-purple-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                                >
+                                    <LineIcon size={16} /> Line
+                                </button>
+                                <button 
+                                    onClick={() => setChartType('pie')}
+                                    className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all ${chartType === 'pie' ? 'bg-white text-purple-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                                >
+                                    <PieIcon size={16} /> Pie
+                                </button>
                             </div>
-                        )}
-                        {!loading && chartData.length === 0 ? (
-                            <div className="flex-1 flex flex-col items-center justify-center text-slate-400 border-2 border-dashed border-slate-100 rounded-lg py-20">
-                                <BarChart3 size={48} className="mb-4 opacity-20" />
-                                <p>No data found matching your filters.</p>
-                                <button onClick={clearFilters} className="mt-4 text-blue-600 font-medium hover:underline">Clear Filters</button>
-                            </div>
-                        ) : (
-                            <>
-                                <div className="mb-6 text-center">
-                                    <h2 className="text-lg font-bold text-slate-800">{COLUMNS.find(c => c.key === config.y)?.label} over Time</h2>
-                                    <p className="text-sm text-slate-500">Grouped by <span className="font-semibold text-purple-600 uppercase">{config.groupBy || 'Total'}</span></p>
+
+                            {/* SELECTOR DATA SOLO PER PIE CHART */}
+                            {chartType === 'pie' && (
+                                <div className="flex items-center gap-2 animate-in fade-in slide-in-from-top-1">
+                                    <label className="text-xs font-bold text-slate-400 uppercase">Snapshot Date:</label>
+                                    <input 
+                                        type="date" 
+                                        className="p-1.5 border border-slate-300 rounded text-sm outline-none focus:border-purple-500"
+                                        value={pieDate}
+                                        min={dateRange.start}
+                                        max={dateRange.end}
+                                        onChange={(e) => setPieDate(e.target.value)}
+                                    />
                                 </div>
-                                <div className="w-full h-[500px]" style={{ height: '500px' }}>
-                                    <ResponsiveContainer width="100%" height="100%">
-                                        <LineChart data={chartData} margin={{ top: 10, right: 30, left: 10, bottom: 20 }}>
-                                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                                            <XAxis
-                                                dataKey="displayX"
-                                                ticks={xAxisTicks}
-                                                interval={0}
-                                                tick={{ fontSize: 12, fill: '#64748b' }}
-                                                axisLine={false}
-                                                tickLine={false}
-                                                dy={10}
-                                                angle={0}
-                                                textAnchor="middle"
+                            )}
+                        </div>
+
+                        {/* CONTENT */}
+                        <div className="w-full h-[500px]" style={{ height: '500px' }}>
+                            {loading ? (
+                                <div className="h-full flex flex-col items-center justify-center text-slate-400">
+                                    <RefreshCw className="animate-spin mb-2" size={32} /> <p>Loading data...</p>
+                                </div>
+                            ) : chartData.length === 0 ? (
+                                <div className="h-full flex flex-col items-center justify-center text-slate-400 border-2 border-dashed border-slate-100 rounded-lg">
+                                    <BarChart3 size={48} className="mb-4 opacity-20" />
+                                    <p>No data found matching your filters.</p>
+                                </div>
+                            ) : chartType === 'line' ? (
+                                /* --- LINE CHART --- */
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <LineChart data={chartData} margin={{ top: 10, right: 30, left: 10, bottom: 20 }}>
+                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                                        <XAxis 
+                                            dataKey="displayX" 
+                                            ticks={xAxisTicks}
+                                            interval={0} 
+                                            tick={{ fontSize: 12, fill: '#64748b' }} 
+                                            axisLine={false} 
+                                            tickLine={false} 
+                                            dy={10} 
+                                            angle={0} 
+                                            textAnchor="middle" 
+                                        />
+                                        <YAxis tick={{ fontSize: 12, fill: '#64748b' }} axisLine={false} tickLine={false} tickFormatter={(val) => val >= 1000 ? `${(val / 1000).toFixed(1)}k` : val} />
+                                        <Tooltip contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.95)', borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)', padding: '12px' }} />
+                                        <Legend wrapperStyle={{ paddingTop: '20px' }} />
+                                        {lines.map((lineKey, index) => (
+                                            <Line
+                                                key={lineKey}
+                                                type="monotone"
+                                                dataKey={lineKey}
+                                                name={lineKey === 'value' ? 'Total Value' : lineKey}
+                                                stroke={lines.length === 1 ? '#8b5cf6' : COLORS[index % COLORS.length]}
+                                                strokeWidth={2.5}
+                                                dot={false}
+                                                activeDot={{ r: 6 }}
+                                                connectNulls={true}
                                             />
-                                            <YAxis tick={{ fontSize: 12, fill: '#64748b' }} axisLine={false} tickLine={false} tickFormatter={(val) => val >= 1000 ? `${(val / 1000).toFixed(1)}k` : val} />
-                                            <Tooltip contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.95)', borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)', padding: '12px' }} />
-                                            <Legend wrapperStyle={{ paddingTop: '20px' }} />
-                                            {lines.map((lineKey, index) => (
-                                                <Line
-                                                    key={lineKey}
-                                                    type="monotone"
-                                                    dataKey={lineKey}
-                                                    name={lineKey === 'value' ? 'Total Value' : lineKey}
-                                                    stroke={lines.length === 1 ? '#8b5cf6' : COLORS[index % COLORS.length]}
-                                                    strokeWidth={2.5}
-                                                    dot={false}
-                                                    activeDot={{ r: 6 }}
-                                                    connectNulls={true}
-                                                />
-                                            ))}
-                                        </LineChart>
-                                    </ResponsiveContainer>
-                                </div>
-                                <div className="mt-4 pt-4 border-t border-slate-100 flex justify-between items-center text-xs text-slate-400">
-                                    <span>Showing {chartData.length} daily points (aggregated)</span>
-                                    <span>{lines.length} lines plotted</span>
-                                </div>
-                            </>
-                        )}
+                                        ))}
+                                    </LineChart>
+                                </ResponsiveContainer>
+                            ) : (
+                                /* --- PIE CHART --- */
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <PieChart>
+                                        <Pie
+                                            data={pieChartData}
+                                            cx="50%"
+                                            cy="50%"
+                                            innerRadius={100} // Donut style (più moderno)
+                                            outerRadius={160}
+                                            paddingAngle={2}
+                                            dataKey="value"
+                                        >
+                                            {pieChartData.map((entry, index) => {
+                                                // Trova il colore coerente con le linee (usando l'indice nella lista lines)
+                                                const colorIndex = lines.indexOf(entry.name);
+                                                const color = colorIndex >= 0 ? COLORS[colorIndex % COLORS.length] : COLORS[index % COLORS.length];
+                                                return <Cell key={`cell-${index}`} fill={color} stroke="white" strokeWidth={2} />;
+                                            })}
+                                        </Pie>
+                                        <Tooltip 
+                                            formatter={(value: number) => value.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                            contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.95)', borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)', padding: '12px' }}
+                                        />
+                                        <Legend wrapperStyle={{ paddingTop: '20px' }} />
+                                    </PieChart>
+                                </ResponsiveContainer>
+                            )}
+                        </div>
+
+                        {/* FOOTER */}
+                        <div className="mt-4 pt-4 border-t border-slate-100 flex justify-between items-center text-xs text-slate-400">
+                            {chartType === 'line' ? (
+                                <span>Showing {chartData.length} daily points</span>
+                            ) : (
+                                <span>Snapshot of {pieDate ? new Date(pieDate).toLocaleDateString() : 'selected date'}</span>
+                            )}
+                            <span>{lines.length} groups analyzed</span>
+                        </div>
                     </div>
                 </div>
             </div>
