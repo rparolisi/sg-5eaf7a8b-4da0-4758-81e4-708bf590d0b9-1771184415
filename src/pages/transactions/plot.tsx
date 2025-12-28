@@ -2,7 +2,7 @@ import { useRouter } from 'next/router';
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import {
-    ArrowLeft, BarChart3, Settings, Filter, RefreshCw, XCircle, ChevronDown, Check
+    ArrowLeft, BarChart3, Settings, Filter, RefreshCw, XCircle, ChevronDown, Check, Search
 } from 'lucide-react';
 import {
     LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
@@ -25,7 +25,7 @@ const COLUMNS = [
     { key: 'ticker', label: 'Ticker', type: 'text' },
     { key: 'person', label: 'Person', type: 'text' },
     { key: 'sector', label: 'Sector', type: 'text' },
-    { key: 'category', label: 'Category', type: 'text' }, // Aggiunta Categoria
+    { key: 'category', label: 'Category', type: 'text' },
     { key: 'total_outlay_eur', label: 'Total Amount (€)', type: 'number' },
     { key: 'purchase_price_per_share_eur', label: 'Price per Share (€)', type: 'number' },
     { key: 'shares_count', label: 'Shares Count', type: 'number' },
@@ -34,10 +34,10 @@ const COLUMNS = [
     { key: 'effective_average_price', label: 'Eff. Avg Price', type: 'number' }
 ];
 
-// --- COMPONENTE MULTI-SELECT ---
-// Un menu a tendina personalizzato per selezionare più voci con checkbox
+// --- COMPONENTE MULTI-SELECT CON RICERCA ---
 const MultiSelect = ({ label, options, selected, onChange }: { label: string, options: string[], selected: string[], onChange: (val: string[]) => void }) => {
     const [isOpen, setIsOpen] = useState(false);
+    const [searchTerm, setSearchTerm] = useState(""); // Stato per la ricerca
     const dropdownRef = useRef < HTMLDivElement > (null);
 
     // Chiude il menu se clicchi fuori
@@ -45,6 +45,7 @@ const MultiSelect = ({ label, options, selected, onChange }: { label: string, op
         const handleClickOutside = (event: MouseEvent) => {
             if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
                 setIsOpen(false);
+                setSearchTerm(""); // Resetta la ricerca quando chiudi
             }
         };
         document.addEventListener("mousedown", handleClickOutside);
@@ -58,6 +59,11 @@ const MultiSelect = ({ label, options, selected, onChange }: { label: string, op
             onChange([...selected, option]);
         }
     };
+
+    // Filtra le opzioni in base al testo inserito
+    const filteredOptions = options.filter(opt =>
+        opt.toLowerCase().includes(searchTerm.toLowerCase())
+    );
 
     return (
         <div className="relative" ref={dropdownRef}>
@@ -73,26 +79,47 @@ const MultiSelect = ({ label, options, selected, onChange }: { label: string, op
             </button>
 
             {isOpen && (
-                <div className="absolute top-full left-0 w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-xl z-50 max-h-60 overflow-y-auto">
-                    {options.length > 0 ? (
-                        options.map(option => {
-                            const isSelected = selected.includes(option);
-                            return (
-                                <div
-                                    key={option}
-                                    onClick={() => toggleOption(option)}
-                                    className="px-3 py-2 flex items-center gap-2 cursor-pointer hover:bg-purple-50 transition-colors text-sm text-slate-700"
-                                >
-                                    <div className={`w-4 h-4 border rounded flex items-center justify-center flex-shrink-0 transition-colors ${isSelected ? 'bg-purple-600 border-purple-600' : 'border-slate-300'}`}>
-                                        {isSelected && <Check size={12} className="text-white" />}
+                <div className="absolute top-full left-0 w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-xl z-50 overflow-hidden flex flex-col max-h-80">
+
+                    {/* BARRA DI RICERCA (Sticky in alto) */}
+                    <div className="p-2 border-b border-slate-100 bg-white sticky top-0 z-10">
+                        <div className="relative">
+                            <Search size={14} className="absolute left-2.5 top-2.5 text-slate-400" />
+                            <input
+                                type="text"
+                                autoFocus
+                                placeholder={`Search ${label}...`}
+                                className="w-full pl-8 pr-3 py-1.5 text-sm border border-slate-200 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none bg-slate-50"
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                            />
+                        </div>
+                    </div>
+
+                    {/* LISTA OPZIONI (Scrollabile) */}
+                    <div className="overflow-y-auto flex-1 custom-scrollbar">
+                        {filteredOptions.length > 0 ? (
+                            filteredOptions.map(option => {
+                                const isSelected = selected.includes(option);
+                                return (
+                                    <div
+                                        key={option}
+                                        onClick={() => toggleOption(option)}
+                                        className="px-3 py-2 flex items-center gap-2 cursor-pointer hover:bg-purple-50 transition-colors text-sm text-slate-700 border-l-2 border-transparent hover:border-purple-500"
+                                    >
+                                        <div className={`w-4 h-4 border rounded flex items-center justify-center flex-shrink-0 transition-colors ${isSelected ? 'bg-purple-600 border-purple-600' : 'border-slate-300'}`}>
+                                            {isSelected && <Check size={12} className="text-white" />}
+                                        </div>
+                                        <span className="truncate">{option}</span>
                                     </div>
-                                    <span className="truncate">{option}</span>
-                                </div>
-                            );
-                        })
-                    ) : (
-                        <div className="px-3 py-2 text-xs text-slate-400 italic">No options available</div>
-                    )}
+                                );
+                            })
+                        ) : (
+                            <div className="px-4 py-3 text-xs text-slate-400 italic text-center">
+                                No results found for "{searchTerm}"
+                            </div>
+                        )}
+                    </div>
                 </div>
             )}
         </div>
@@ -112,12 +139,12 @@ export default function PlotPage() {
         groupBy: 'ticker'
     });
 
-    // --- STATO FILTRI (Ora sono ARRAY di stringhe) ---
+    // --- STATO FILTRI ---
     const [filters, setFilters] = useState < {
         person: string[];
         ticker: string[];
         sector: string[];
-        category: string[]; // Nuovo filtro Categoria
+        category: string[];
     } > ({
         person: [],
         ticker: [],
@@ -154,7 +181,7 @@ export default function PlotPage() {
             people: getUnique('person'),
             tickers: getUnique('ticker'),
             sectors: getUnique('sector'),
-            categories: getUnique('category') // Estrai categorie uniche
+            categories: getUnique('category')
         };
     }, [rawData]);
 
@@ -162,9 +189,8 @@ export default function PlotPage() {
     const { chartData, lines } = useMemo(() => {
         if (!rawData.length) return { chartData: [], lines: [] };
 
-        // A. FILTRAGGIO (Logica Multipla)
+        // A. FILTRAGGIO
         let filtered = rawData.filter(item => {
-            // Se il filtro ha elementi, controlla se il valore dell'item è incluso nella lista selezionata
             if (filters.person.length > 0 && !filters.person.includes(item.person)) return false;
             if (filters.ticker.length > 0 && !filters.ticker.includes(item.ticker)) return false;
             if (filters.sector.length > 0 && !filters.sector.includes(item.sector)) return false;
@@ -301,7 +327,7 @@ export default function PlotPage() {
                         </div>
                     </div>
 
-                    {/* FILTERS MULTIPLI */}
+                    {/* FILTERS MULTIPLI CON CERCA */}
                     <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
                         <div className="flex items-center justify-between mb-4 border-b border-slate-100 pb-2">
                             <div className="flex items-center gap-2 text-slate-800 font-semibold">
