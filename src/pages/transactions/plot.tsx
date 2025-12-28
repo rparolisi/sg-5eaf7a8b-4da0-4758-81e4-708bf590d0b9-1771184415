@@ -11,7 +11,7 @@ import {
 // --- CONFIGURAZIONE SUPABASE ---
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
 const SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
-// Istanza unica del client
+// Creiamo il client UNA sola volta qui fuori
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // --- PALETTE COLORI ---
@@ -36,7 +36,9 @@ const COLUMNS = [
 
 export default function PlotPage() {
     const router = useRouter();
-    // RIMOSSO: const [supabase, setSupabase] = useState<any>(null);  <-- CAUSA DELL'ERRORE
+
+    // RIMOSSO il doppio useState per supabase che causava problemi
+    // const [supabase, setSupabase] = useState < any > (null); 
 
     const [loading, setLoading] = useState(true);
     const [rawData, setRawData] = useState < any[] > ([]);
@@ -45,7 +47,7 @@ export default function PlotPage() {
     const [config, setConfig] = useState({
         x: 'operation_date',
         y: 'total_outlay_eur',
-        groupBy: 'ticker'
+        groupBy: 'ticker' // Default
     });
 
     // --- STATO FILTRI ---
@@ -55,11 +57,10 @@ export default function PlotPage() {
         sector: ''
     });
 
-    // 1. FETCH DATA DA SUPABASE
+    // 1. FETCH DATA
     const fetchData = async () => {
         setLoading(true);
         try {
-            // Usa la variabile 'supabase' globale definita a riga 14
             const { data, error } = await supabase
                 .from('transactions')
                 .select('*')
@@ -69,7 +70,7 @@ export default function PlotPage() {
             setRawData(data || []);
         } catch (err: any) {
             console.error("Errore fetch:", err);
-            // alert("Errore caricamento dati: " + err.message); // Commentato per evitare popup fastidiosi in dev
+            // alert("Errore caricamento dati"); // Opzionale
         } finally {
             setLoading(false);
         }
@@ -89,7 +90,7 @@ export default function PlotPage() {
         };
     }, [rawData]);
 
-    // 3. ELABORAZIONE DATI (Filter -> Group -> Format)
+    // 3. ELABORAZIONE DATI
     const { chartData, lines } = useMemo(() => {
         if (!rawData.length) return { chartData: [], lines: [] };
 
@@ -101,7 +102,7 @@ export default function PlotPage() {
             return true;
         });
 
-        // B. RAGGRUPPAMENTO E FORMATTAZIONE
+        // B. RAGGRUPPAMENTO
         if (!config.groupBy) {
             const data = filtered.map(t => ({
                 xAxis: t[config.x],
@@ -167,7 +168,7 @@ export default function PlotPage() {
                         </button>
                         <h1 className="text-xl font-bold text-slate-800 flex items-center gap-2">
                             <BarChart3 className="text-purple-600" />
-                            Analytics & Plotting
+                            Plotting {/* CORRETTO: Titolo accorciato */}
                         </h1>
                     </div>
                     <div className="text-sm text-slate-500">
@@ -181,7 +182,7 @@ export default function PlotPage() {
                 {/* --- LEFT SIDEBAR: CONTROLS & FILTERS --- */}
                 <div className="lg:col-span-1 space-y-6">
 
-                    {/* 1. AXIS CONFIGURATION */}
+                    {/* AXIS CONFIG */}
                     <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
                         <div className="flex items-center gap-2 mb-4 text-slate-800 font-semibold border-b border-slate-100 pb-2">
                             <Settings size={18} /> Axes Setup
@@ -227,7 +228,7 @@ export default function PlotPage() {
                         </div>
                     </div>
 
-                    {/* 2. DATA FILTERS */}
+                    {/* FILTERS */}
                     <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
                         <div className="flex items-center justify-between mb-4 border-b border-slate-100 pb-2">
                             <div className="flex items-center gap-2 text-slate-800 font-semibold">
@@ -286,7 +287,7 @@ export default function PlotPage() {
 
                 {/* --- RIGHT SIDE: CHART --- */}
                 <div className="lg:col-span-3">
-                    <div className="bg-white p-6 rounded-xl shadow-lg border border-slate-200 min-h-[600px] flex flex-col relative">
+                    <div className="bg-white p-6 rounded-xl shadow-lg border border-slate-200 flex flex-col relative">
 
                         {loading && (
                             <div className="absolute inset-0 bg-white/80 z-20 flex flex-col items-center justify-center text-slate-400">
@@ -296,7 +297,7 @@ export default function PlotPage() {
                         )}
 
                         {!loading && chartData.length === 0 ? (
-                            <div className="flex-1 flex flex-col items-center justify-center text-slate-400 border-2 border-dashed border-slate-100 rounded-lg">
+                            <div className="flex-1 flex flex-col items-center justify-center text-slate-400 border-2 border-dashed border-slate-100 rounded-lg py-20">
                                 <BarChart3 size={48} className="mb-4 opacity-20" />
                                 <p>No data found matching your filters.</p>
                                 <button onClick={clearFilters} className="mt-4 text-blue-600 font-medium hover:underline">
@@ -314,7 +315,8 @@ export default function PlotPage() {
                                     </p>
                                 </div>
 
-                                <div className="flex-1 w-full" style={{ minHeight: '450px' }}>
+                                {/* FIX: ALTEZZA FISSA E DEFINITA PER IL GRAFICO */}
+                                <div className="w-full h-[500px]" style={{ height: '500px' }}>
                                     <ResponsiveContainer width="100%" height="100%">
                                         <LineChart data={chartData} margin={{ top: 10, right: 30, left: 10, bottom: 20 }}>
                                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
