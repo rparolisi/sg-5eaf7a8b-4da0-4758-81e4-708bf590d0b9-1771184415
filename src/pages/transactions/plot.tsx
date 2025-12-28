@@ -153,10 +153,9 @@ export default function PlotPage() {
         person: [],
         ticker: [],
         sector: [],
-        category: [] // Partiamo vuoti, li riempiamo automaticamente dopo
+        category: []
     });
 
-    // Stato Date Range
     const [dateRange, setDateRange] = useState({
         start: '',
         end: ''
@@ -189,7 +188,6 @@ export default function PlotPage() {
     // 2. INITIALIZE DEFAULTS (Person & Categories)
     useEffect(() => {
         const initializeDefaults = async () => {
-            // A. Imposta Persona (Utente Loggato)
             try {
                 const { data: { user } } = await supabase.auth.getUser();
                 if (user) {
@@ -294,7 +292,6 @@ export default function PlotPage() {
         const positionState: Record<string, any> = {};
         const getPositionKey = (t: any) => `${t.person || 'Unknown'}-${t.ticker || 'Unknown'}`;
 
-        // Pre-Scan
         filtered.forEach(t => {
             const tDate = new Date(t[config.x]).getTime();
             if (tDate < startDateMs) {
@@ -372,7 +369,7 @@ export default function PlotPage() {
     };
 
     const clearFilters = () => {
-        setFilters({ person: [], ticker: [], sector: [], category: [] });
+        setFilters({ person: [], ticker: [], sector: [], category: uniqueValues.categories });
     };
 
     const hasActiveFilters = filters.person.length > 0 || filters.ticker.length > 0 || filters.sector.length > 0;
@@ -383,11 +380,9 @@ export default function PlotPage() {
         if (!dataToExport || dataToExport.length === 0) return;
 
         const filename = `invest_monitor_data_${new Date().toISOString().split('T')[0]}`;
+        const worksheet = XLSX.utils.json_to_sheet(dataToExport);
 
         if (format === 'csv') {
-            // Genera il foglio di lavoro
-            const worksheet = XLSX.utils.json_to_sheet(dataToExport);
-            // Genera il contenuto CSV
             const csvOutput = XLSX.utils.sheet_to_csv(worksheet);
             const blob = new Blob([csvOutput], { type: 'text/csv;charset=utf-8;' });
             const url = URL.createObjectURL(blob);
@@ -398,13 +393,8 @@ export default function PlotPage() {
             link.click();
             document.body.removeChild(link);
         } else {
-            // Crea un nuovo workbook (file Excel)
             const wb = XLSX.utils.book_new();
-            // Converte i dati in un foglio Excel
-            const ws = XLSX.utils.json_to_sheet(dataToExport);
-            // Aggiunge il foglio al workbook
-            XLSX.utils.book_append_sheet(wb, ws, "Dati Grafico");
-            // Scrive il file e avvia il download
+            XLSX.utils.book_append_sheet(wb, worksheet, "Dati Grafico");
             XLSX.writeFile(wb, `${filename}.xlsx`);
         }
         setIsDownloadOpen(false);
@@ -414,15 +404,12 @@ export default function PlotPage() {
         if (!chartContainerRef.current) return;
 
         try {
-            // Genera l'immagine PNG direttamente dal contenitore HTML
-            // Questo cattura TUTTO quello che vedi nel div (grafico, legenda, etichette)
             const dataUrl = await htmlToImage.toPng(chartContainerRef.current, {
-                backgroundColor: '#ffffff', // Forza lo sfondo bianco
+                backgroundColor: '#ffffff',
                 quality: 1.0,
-                pixelRatio: 2, // Alta definizione
+                pixelRatio: 2,
             });
 
-            // Crea il link per il download
             const link = document.createElement('a');
             link.download = `invest_monitor_plot_${new Date().toISOString().split('T')[0]}.png`;
             link.href = dataUrl;
@@ -452,49 +439,16 @@ export default function PlotPage() {
                 </div>
             </div>
 
-            <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-4 gap-6 p-6">
+            <div className="max-w-[1600px] mx-auto grid grid-cols-1 lg:grid-cols-5 gap-6 p-6">
 
-                {/* SIDEBAR */}
+                {/* --- LEFT COLUMN: TIME HORIZON & FILTERS (1 Colonna) --- */}
                 <div className="lg:col-span-1 space-y-6">
-
-                    {/* AXIS SETUP */}
-                    <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
-                        <div className="flex items-center gap-2 mb-4 text-slate-800 font-semibold border-b border-slate-100 pb-2">
-                            <Settings size={18} /> Axes Setup
-                        </div>
-                        <div className="space-y-4">
-                            <div>
-                                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">X Axis (Time)</label>
-                                <select className="w-full p-2 border border-slate-300 rounded-lg text-sm bg-slate-50 outline-none focus:ring-2 focus:ring-purple-500" value={config.x} onChange={(e) => setConfig({ ...config, x: e.target.value })}>
-                                    {COLUMNS.filter(c => c.type === 'date').map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
-                                </select>
-                            </div>
-                            <div>
-                                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Y Axis (Value)</label>
-                                <select className="w-full p-2 border border-slate-300 rounded-lg text-sm bg-slate-50 outline-none focus:ring-2 focus:ring-purple-500" value={config.y} onChange={(e) => setConfig({ ...config, y: e.target.value })}>
-                                    {COLUMNS.filter(c => c.type === 'number').map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
-                                </select>
-                            </div>
-                            <div>
-                                <label className="block text-xs font-bold text-purple-600 uppercase mb-1">Group By</label>
-                                <select className="w-full p-2 border border-purple-200 bg-purple-50 rounded-lg text-sm text-purple-900 font-medium outline-none focus:ring-2 focus:ring-purple-500" value={config.groupBy} onChange={(e) => setConfig({ ...config, groupBy: e.target.value })}>
-                                    <option value="">(None - Single Line)</option>
-                                    <option value="ticker">Ticker</option>
-                                    <option value="person">Person</option>
-                                    <option value="sector">Sector</option>
-                                    <option value="category">Category</option>
-                                </select>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* DATE RANGE - REDESIGNED */}
+                    {/* TIME HORIZON */}
                     <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
                         <div className="flex items-center gap-2 mb-4 text-slate-800 font-semibold border-b border-slate-100 pb-2">
                             <Clock size={18} className="text-purple-600" /> Time Horizon
                         </div>
                         <div className="flex flex-col gap-4">
-                            {/* Start Date */}
                             <div className="relative">
                                 <div className="relative group">
                                     <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -508,7 +462,6 @@ export default function PlotPage() {
                                     />
                                 </div>
                             </div>
-                            {/* End Date */}
                             <div className="relative">
                                 <div className="relative group">
                                     <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -540,24 +493,19 @@ export default function PlotPage() {
                     </div>
                 </div>
 
-                {/* CHART */}
+                {/* --- CENTER COLUMN: CHART (3 Colonne) --- */}
                 <div className="lg:col-span-3">
                     <div className="bg-white p-6 rounded-xl shadow-lg border border-slate-200 flex flex-col relative">
 
-                        {/* CHART TYPE TOGGLE & PIE DATE */}
-                        {/* --- TOP CONTROL BAR --- */}
+                        {/* TOP CONTROL BAR */}
                         <div className="flex items-center justify-between mb-8 border-b border-slate-50 pb-4">
-                            <div className="w-24"></div> {/* Spacer per bilanciare la riga */}
-
-                            {/* Toggle Centrale (quello che avevi già, ma pulito) */}
+                            <div className="w-24"></div>
                             <div className="flex flex-col items-center gap-3">
                                 <div className="flex items-center bg-slate-100 p-1 rounded-xl shadow-inner">
                                     <button onClick={() => setChartType('line')} className={`flex items-center gap-2 px-6 py-2 rounded-lg text-sm font-bold transition-all ${chartType === 'line' ? 'bg-white text-purple-600 shadow-md' : 'text-slate-500 hover:text-slate-800'}`}><LineIcon size={16} /> Line</button>
                                     <button onClick={() => setChartType('pie')} className={`flex items-center gap-2 px-6 py-2 rounded-lg text-sm font-bold transition-all ${chartType === 'pie' ? 'bg-white text-purple-600 shadow-md' : 'text-slate-500 hover:text-slate-800'}`}><PieIcon size={16} /> Pie</button>
                                 </div>
                             </div>
-
-                            {/* Tasto Download a Destra */}
                             <div className="relative" ref={downloadMenuRef}>
                                 <button
                                     onClick={() => setIsDownloadOpen(!isDownloadOpen)}
@@ -565,7 +513,6 @@ export default function PlotPage() {
                                 >
                                     <Download size={18} /> Export
                                 </button>
-
                                 {isDownloadOpen && (
                                     <div className="absolute right-0 mt-2 w-56 bg-white rounded-xl shadow-2xl border border-slate-100 z-50 p-2 animate-in fade-in slide-in-from-top-2">
                                         <button onClick={exportImage} className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-slate-50 rounded-lg text-sm font-medium text-slate-700">
@@ -583,7 +530,6 @@ export default function PlotPage() {
                             </div>
                         </div>
 
-                        {/* Il selettore della Snapshot Date rimane subito sotto se chartType === 'pie' */}
                         {chartType === 'pie' && (
                             <div className="flex justify-center mb-6 animate-in zoom-in-95">
                                 <div className="relative group max-w-[220px]">
@@ -593,13 +539,7 @@ export default function PlotPage() {
                             </div>
                         )}
 
-                        {/* CONTENT */}
-                        {/* Aggiunto bg-white e p-4 per garantire che l'export abbia uno sfondo e margini corretti */}
-                        <div
-                            ref={chartContainerRef}
-                            className="w-full h-[500px] bg-white p-4"
-                            style={{ height: '540px'}} // Min-width aiuta la stabilità dell'export
-                        >
+                        <div ref={chartContainerRef} className="w-full h-[540px] bg-white p-4">
                             {loading ? (
                                 <div className="h-full flex flex-col items-center justify-center text-slate-400">
                                     <RefreshCw className="animate-spin mb-2" size={32} /> <p>Loading data...</p>
@@ -643,7 +583,7 @@ export default function PlotPage() {
                                                 dot={false}
                                                 activeDot={{ r: 6 }}
                                                 connectNulls={true}
-                                                isAnimationActive={false} // Disattivare l'animazione migliora la cattura dell'immagine
+                                                isAnimationActive={false}
                                             />
                                         ))}
                                     </LineChart>
@@ -659,7 +599,7 @@ export default function PlotPage() {
                                             outerRadius={140}
                                             paddingAngle={2}
                                             dataKey="value"
-                                            isAnimationActive={false} // Fondamentale per l'export istantaneo
+                                            isAnimationActive={false}
                                         >
                                             {pieChartData.map((entry, index) => {
                                                 const colorIndex = lines.indexOf(entry.name);
@@ -688,6 +628,40 @@ export default function PlotPage() {
                         </div>
                     </div>
                 </div>
+
+                {/* --- RIGHT COLUMN: AXES SETUP (1 Colonna) --- */}
+                <div className="lg:col-span-1 space-y-6">
+                    <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+                        <div className="flex items-center gap-2 mb-4 text-slate-800 font-semibold border-b border-slate-100 pb-2">
+                            <Settings size={18} /> Axes Setup
+                        </div>
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">X Axis (Time)</label>
+                                <select className="w-full p-2 border border-slate-300 rounded-lg text-sm bg-slate-50 outline-none focus:ring-2 focus:ring-purple-500" value={config.x} onChange={(e) => setConfig({ ...config, x: e.target.value })}>
+                                    {COLUMNS.filter(c => c.type === 'date').map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Y Axis (Value)</label>
+                                <select className="w-full p-2 border border-slate-300 rounded-lg text-sm bg-slate-50 outline-none focus:ring-2 focus:ring-purple-500" value={config.y} onChange={(e) => setConfig({ ...config, y: e.target.value })}>
+                                    {COLUMNS.filter(c => c.type === 'number').map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-purple-600 uppercase mb-1">Group By</label>
+                                <select className="w-full p-2 border border-purple-200 bg-purple-50 rounded-lg text-sm text-purple-900 font-medium outline-none focus:ring-2 focus:ring-purple-500" value={config.groupBy} onChange={(e) => setConfig({ ...config, groupBy: e.target.value })}>
+                                    <option value="">(None - Single Line)</option>
+                                    <option value="ticker">Ticker</option>
+                                    <option value="person">Person</option>
+                                    <option value="sector">Sector</option>
+                                    <option value="category">Category</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
             </div>
         </div>
     );
