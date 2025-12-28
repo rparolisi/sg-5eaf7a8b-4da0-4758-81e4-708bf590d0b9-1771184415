@@ -580,7 +580,12 @@ export default function PlotPage() {
                         )}
 
                         {/* CONTENT */}
-                        <div ref={chartContainerRef} className="w-full h-[500px]" style={{ height: '500px' }}>
+                        {/* Aggiunto bg-white e p-4 per garantire che l'export abbia uno sfondo e margini corretti */}
+                        <div
+                            ref={chartContainerRef}
+                            className="w-full h-[500px] bg-white p-4"
+                            style={{ height: '540px', minWidth: '800px' }} // Min-width aiuta la stabilità dell'export
+                        >
                             {loading ? (
                                 <div className="h-full flex flex-col items-center justify-center text-slate-400">
                                     <RefreshCw className="animate-spin mb-2" size={32} /> <p>Loading data...</p>
@@ -592,22 +597,27 @@ export default function PlotPage() {
                                 </div>
                             ) : chartType === 'line' ? (
                                 <ResponsiveContainer width="100%" height="100%">
-                                    <LineChart data={chartData} margin={{ top: 10, right: 30, left: 10, bottom: 20 }}>
+                                    <LineChart data={chartData} margin={{ top: 10, right: 30, left: 10, bottom: 40 }}>
                                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                                         <XAxis
                                             dataKey="displayX"
                                             ticks={xAxisTicks}
                                             interval={0}
                                             tick={{ fontSize: 12, fill: '#64748b' }}
-                                            axisLine={false}
+                                            axisLine={{ stroke: '#e2e8f0' }}
                                             tickLine={false}
                                             dy={10}
                                             angle={0}
                                             textAnchor="middle"
                                         />
-                                        <YAxis tick={{ fontSize: 12, fill: '#64748b' }} axisLine={false} tickLine={false} tickFormatter={(val) => val >= 1000 ? `${(val / 1000).toFixed(1)}k` : val} />
+                                        <YAxis
+                                            tick={{ fontSize: 12, fill: '#64748b' }}
+                                            axisLine={{ stroke: '#e2e8f0' }}
+                                            tickLine={false}
+                                            tickFormatter={(val) => val >= 1000 ? `${(val / 1000).toFixed(1)}k` : val}
+                                        />
                                         <Tooltip contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.95)', borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)', padding: '12px' }} />
-                                        <Legend wrapperStyle={{ paddingTop: '20px' }} />
+                                        <Legend verticalAlign="bottom" height={36} wrapperStyle={{ paddingTop: '20px' }} />
                                         {lines.map((lineKey, index) => (
                                             <Line
                                                 key={lineKey}
@@ -619,6 +629,7 @@ export default function PlotPage() {
                                                 dot={false}
                                                 activeDot={{ r: 6 }}
                                                 connectNulls={true}
+                                                isAnimationActive={false} // Disattivare l'animazione migliora la cattura dell'immagine
                                             />
                                         ))}
                                     </LineChart>
@@ -630,22 +641,23 @@ export default function PlotPage() {
                                             data={pieChartData}
                                             cx="50%"
                                             cy="50%"
-                                            innerRadius={100}
-                                            outerRadius={160}
+                                            innerRadius={80}
+                                            outerRadius={140}
                                             paddingAngle={2}
                                             dataKey="value"
+                                            isAnimationActive={false} // Fondamentale per l'export istantaneo
                                         >
                                             {pieChartData.map((entry, index) => {
                                                 const colorIndex = lines.indexOf(entry.name);
                                                 const color = colorIndex >= 0 ? COLORS[colorIndex % COLORS.length] : COLORS[index % COLORS.length];
-                                                return <Cell key={`cell-${index}`} fill={color} stroke="white" strokeWidth={2} />;
+                                                return <Cell key={`cell-${index}`} fill={color} stroke="#fff" strokeWidth={2} />;
                                             })}
                                         </Pie>
                                         <Tooltip
-                                            formatter={(value: number) => value.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                            formatter={(value: number) => value.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €'}
                                             contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.95)', borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)', padding: '12px' }}
                                         />
-                                        <Legend wrapperStyle={{ paddingTop: '20px' }} />
+                                        <Legend verticalAlign="bottom" wrapperStyle={{ paddingTop: '20px' }} />
                                     </PieChart>
                                 </ResponsiveContainer>
                             )}
