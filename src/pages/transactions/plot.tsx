@@ -454,10 +454,93 @@ export default function PlotPage() {
 
             <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-4 gap-6 p-6">
 
-                {/* SIDEBAR */}
-                <div className="lg:col-span-1 space-y-6">
+                {/* --- LEFT SIDE: CHART (Occupa 3 colonne) --- */}
+                <div className="lg:col-span-3">
+                    <div className="bg-white p-6 rounded-xl shadow-lg border border-slate-200 flex flex-col relative">
 
-                    {/* AXIS SETUP */}
+                        {/* --- TOP CONTROL BAR --- */}
+                        <div className="flex items-center justify-between mb-8 border-b border-slate-50 pb-4">
+                            <div className="w-24"></div>
+                            <div className="flex flex-col items-center gap-3">
+                                <div className="flex items-center bg-slate-100 p-1 rounded-xl shadow-inner">
+                                    <button onClick={() => setChartType('line')} className={`flex items-center gap-2 px-6 py-2 rounded-lg text-sm font-bold transition-all ${chartType === 'line' ? 'bg-white text-purple-600 shadow-md' : 'text-slate-500 hover:text-slate-800'}`}><LineIcon size={16} /> Line</button>
+                                    <button onClick={() => setChartType('pie')} className={`flex items-center gap-2 px-6 py-2 rounded-lg text-sm font-bold transition-all ${chartType === 'pie' ? 'bg-white text-purple-600 shadow-md' : 'text-slate-500 hover:text-slate-800'}`}><PieIcon size={16} /> Pie</button>
+                                </div>
+                            </div>
+                            <div className="relative" ref={downloadMenuRef}>
+                                <button onClick={() => setIsDownloadOpen(!isDownloadOpen)} className="flex items-center gap-2 px-4 py-2 bg-slate-800 text-white rounded-lg text-sm font-bold hover:bg-slate-700 transition-all shadow-md active:scale-95"><Download size={18} /> Export</button>
+                                {isDownloadOpen && (
+                                    <div className="absolute right-0 mt-2 w-56 bg-white rounded-xl shadow-2xl border border-slate-100 z-50 p-2 animate-in fade-in slide-in-from-top-2">
+                                        <button onClick={exportImage} className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-slate-50 rounded-lg text-sm font-medium text-slate-700"><ImageIcon size={16} className="text-blue-500" /> Download Image (PNG)</button>
+                                        <div className="h-px bg-slate-100 my-1"></div>
+                                        <button onClick={() => exportData('csv')} className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-slate-50 rounded-lg text-sm font-medium text-slate-700"><FileText size={16} className="text-green-500" /> Export Data (CSV)</button>
+                                        <button onClick={() => exportData('xlsx')} className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-slate-50 rounded-lg text-sm font-medium text-slate-700"><FileSpreadsheet size={16} className="text-emerald-600" /> Export Data (XLSX)</button>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        {chartType === 'pie' && (
+                            <div className="flex justify-center mb-6 animate-in zoom-in-95">
+                                <div className="relative group max-w-[220px]">
+                                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><span className="text-slate-400 text-[10px] font-bold tracking-wider">DATE</span></div>
+                                    <input type="date" className="w-full pl-12 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-700 outline-none focus:bg-white focus:border-purple-500 transition-all shadow-sm" value={pieDate} min={dateRange.start} max={dateRange.end} onChange={(e) => setPieDate(e.target.value)} />
+                                </div>
+                            </div>
+                        )}
+
+                        {/* CONTENT */}
+                        <div ref={chartContainerRef} className="w-full h-[500px] bg-white p-4" style={{ height: '540px' }}>
+                            {loading ? (
+                                <div className="h-full flex flex-col items-center justify-center text-slate-400">
+                                    <RefreshCw className="animate-spin mb-2" size={32} /> <p>Loading data...</p>
+                                </div>
+                            ) : chartData.length === 0 ? (
+                                <div className="h-full flex flex-col items-center justify-center text-slate-400 border-2 border-dashed border-slate-100 rounded-lg">
+                                    <BarChart3 size={48} className="mb-4 opacity-20" />
+                                    <p>No data found matching your filters.</p>
+                                </div>
+                            ) : chartType === 'line' ? (
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <LineChart data={chartData} margin={{ top: 10, right: 30, left: 10, bottom: 40 }}>
+                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                                        <XAxis dataKey="displayX" ticks={xAxisTicks} interval={0} tick={{ fontSize: 12, fill: '#64748b' }} axisLine={{ stroke: '#e2e8f0' }} tickLine={false} dy={10} textAnchor="middle" />
+                                        <YAxis tick={{ fontSize: 12, fill: '#64748b' }} axisLine={{ stroke: '#e2e8f0' }} tickLine={false} tickFormatter={(val) => val >= 1000 ? `${(val / 1000).toFixed(1)}k` : val} />
+                                        <Tooltip contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.95)', borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)', padding: '12px' }} />
+                                        <Legend verticalAlign="bottom" height={36} wrapperStyle={{ paddingTop: '20px' }} />
+                                        {lines.map((lineKey, index) => (
+                                            <Line key={lineKey} type="monotone" dataKey={lineKey} name={lineKey === 'value' ? 'Total Value' : lineKey} stroke={lines.length === 1 ? '#8b5cf6' : COLORS[index % COLORS.length]} strokeWidth={2.5} dot={false} activeDot={{ r: 6 }} connectNulls={true} isAnimationActive={false} />
+                                        ))}
+                                    </LineChart>
+                                </ResponsiveContainer>
+                            ) : (
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <PieChart>
+                                        <Pie data={pieChartData} cx="50%" cy="50%" innerRadius={80} outerRadius={140} paddingAngle={2} dataKey="value" isAnimationActive={false}>
+                                            {pieChartData.map((entry, index) => {
+                                                const colorIndex = lines.indexOf(entry.name);
+                                                const color = colorIndex >= 0 ? COLORS[colorIndex % COLORS.length] : COLORS[index % COLORS.length];
+                                                return <Cell key={`cell-${index}`} fill={color} stroke="#fff" strokeWidth={2} />;
+                                            })}
+                                        </Pie>
+                                        <Tooltip formatter={(value: number) => value.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €'} contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.95)', borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)', padding: '12px' }} />
+                                        <Legend verticalAlign="bottom" wrapperStyle={{ paddingTop: '20px' }} />
+                                    </PieChart>
+                                </ResponsiveContainer>
+                            )}
+                        </div>
+
+                        {/* FOOTER */}
+                        <div className="mt-4 pt-4 border-t border-slate-100 flex justify-between items-center text-xs text-slate-400">
+                            {chartType === 'line' ? <span>Showing {chartData.length} daily points</span> : <span>Snapshot of {pieDate ? new Date(pieDate).toLocaleDateString() : 'selected date'}</span>}
+                            <span>{lines.length} groups analyzed</span>
+                        </div>
+                    </div>
+                </div>
+
+                {/* --- RIGHT SIDEBAR: CONTROLS & FILTERS (Occupa 1 colonna) --- */}
+                <div className="lg:col-span-1 space-y-6">
+                    {/* AXES SETUP */}
                     <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
                         <div className="flex items-center gap-2 mb-4 text-slate-800 font-semibold border-b border-slate-100 pb-2">
                             <Settings size={18} /> Axes Setup
@@ -488,38 +571,22 @@ export default function PlotPage() {
                         </div>
                     </div>
 
-                    {/* DATE RANGE - REDESIGNED */}
+                    {/* TIME HORIZON */}
                     <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
                         <div className="flex items-center gap-2 mb-4 text-slate-800 font-semibold border-b border-slate-100 pb-2">
                             <Clock size={18} className="text-purple-600" /> Time Horizon
                         </div>
                         <div className="flex flex-col gap-4">
-                            {/* Start Date */}
                             <div className="relative">
                                 <div className="relative group">
-                                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                        <span className="text-slate-400 text-[10px] font-bold tracking-wider">FROM</span>
-                                    </div>
-                                    <input
-                                        type="date"
-                                        className="w-full pl-12 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-700 outline-none focus:bg-white focus:border-purple-500 focus:ring-2 focus:ring-purple-100 transition-all shadow-sm group-hover:border-purple-300"
-                                        value={dateRange.start}
-                                        onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })}
-                                    />
+                                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><span className="text-slate-400 text-[10px] font-bold tracking-wider">FROM</span></div>
+                                    <input type="date" className="w-full pl-12 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-700 outline-none focus:bg-white focus:border-purple-500 focus:ring-2 focus:ring-purple-100 transition-all shadow-sm group-hover:border-purple-300" value={dateRange.start} onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })} />
                                 </div>
                             </div>
-                            {/* End Date */}
                             <div className="relative">
                                 <div className="relative group">
-                                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                        <span className="text-slate-400 text-[10px] font-bold tracking-wider">TO</span>
-                                    </div>
-                                    <input
-                                        type="date"
-                                        className="w-full pl-10 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-700 outline-none focus:bg-white focus:border-purple-500 focus:ring-2 focus:ring-purple-100 transition-all shadow-sm group-hover:border-purple-300"
-                                        value={dateRange.end}
-                                        onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })}
-                                    />
+                                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><span className="text-slate-400 text-[10px] font-bold tracking-wider">TO</span></div>
+                                    <input type="date" className="w-full pl-10 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-700 outline-none focus:bg-white focus:border-purple-500 focus:ring-2 focus:ring-purple-100 transition-all shadow-sm group-hover:border-purple-300" value={dateRange.end} onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })} />
                                 </div>
                             </div>
                         </div>
@@ -536,155 +603,6 @@ export default function PlotPage() {
                             <MultiSelect label="Ticker" options={uniqueValues.tickers} selected={filters.ticker} onChange={(val) => handleFilterChange('ticker', val)} />
                             <MultiSelect label="Category" options={uniqueValues.categories} selected={filters.category} onChange={(val) => handleFilterChange('category', val)} />
                             <MultiSelect label="Sector" options={uniqueValues.sectors} selected={filters.sector} onChange={(val) => handleFilterChange('sector', val)} />
-                        </div>
-                    </div>
-                </div>
-
-                {/* CHART */}
-                <div className="lg:col-span-3">
-                    <div className="bg-white p-6 rounded-xl shadow-lg border border-slate-200 flex flex-col relative">
-
-                        {/* CHART TYPE TOGGLE & PIE DATE */}
-                        {/* --- TOP CONTROL BAR --- */}
-                        <div className="flex items-center justify-between mb-8 border-b border-slate-50 pb-4">
-                            <div className="w-24"></div> {/* Spacer per bilanciare la riga */}
-
-                            {/* Toggle Centrale (quello che avevi già, ma pulito) */}
-                            <div className="flex flex-col items-center gap-3">
-                                <div className="flex items-center bg-slate-100 p-1 rounded-xl shadow-inner">
-                                    <button onClick={() => setChartType('line')} className={`flex items-center gap-2 px-6 py-2 rounded-lg text-sm font-bold transition-all ${chartType === 'line' ? 'bg-white text-purple-600 shadow-md' : 'text-slate-500 hover:text-slate-800'}`}><LineIcon size={16} /> Line</button>
-                                    <button onClick={() => setChartType('pie')} className={`flex items-center gap-2 px-6 py-2 rounded-lg text-sm font-bold transition-all ${chartType === 'pie' ? 'bg-white text-purple-600 shadow-md' : 'text-slate-500 hover:text-slate-800'}`}><PieIcon size={16} /> Pie</button>
-                                </div>
-                            </div>
-
-                            {/* Tasto Download a Destra */}
-                            <div className="relative" ref={downloadMenuRef}>
-                                <button
-                                    onClick={() => setIsDownloadOpen(!isDownloadOpen)}
-                                    className="flex items-center gap-2 px-4 py-2 bg-slate-800 text-white rounded-lg text-sm font-bold hover:bg-slate-700 transition-all shadow-md active:scale-95"
-                                >
-                                    <Download size={18} /> Export
-                                </button>
-
-                                {isDownloadOpen && (
-                                    <div className="absolute right-0 mt-2 w-56 bg-white rounded-xl shadow-2xl border border-slate-100 z-50 p-2 animate-in fade-in slide-in-from-top-2">
-                                        <button onClick={exportImage} className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-slate-50 rounded-lg text-sm font-medium text-slate-700">
-                                            <ImageIcon size={16} className="text-blue-500" /> Download Image (PNG)
-                                        </button>
-                                        <div className="h-px bg-slate-100 my-1"></div>
-                                        <button onClick={() => exportData('csv')} className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-slate-50 rounded-lg text-sm font-medium text-slate-700">
-                                            <FileText size={16} className="text-green-500" /> Export Data (CSV)
-                                        </button>
-                                        <button onClick={() => exportData('xlsx')} className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-slate-50 rounded-lg text-sm font-medium text-slate-700">
-                                            <FileSpreadsheet size={16} className="text-emerald-600" /> Export Data (XLSX)
-                                        </button>
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-
-                        {/* Il selettore della Snapshot Date rimane subito sotto se chartType === 'pie' */}
-                        {chartType === 'pie' && (
-                            <div className="flex justify-center mb-6 animate-in zoom-in-95">
-                                <div className="relative group max-w-[220px]">
-                                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><span className="text-slate-400 text-[10px] font-bold tracking-wider">DATE</span></div>
-                                    <input type="date" className="w-full pl-12 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-700 outline-none focus:bg-white focus:border-purple-500 transition-all shadow-sm" value={pieDate} min={dateRange.start} max={dateRange.end} onChange={(e) => setPieDate(e.target.value)} />
-                                </div>
-                            </div>
-                        )}
-
-                        {/* CONTENT */}
-                        {/* Aggiunto bg-white e p-4 per garantire che l'export abbia uno sfondo e margini corretti */}
-                        <div
-                            ref={chartContainerRef}
-                            className="w-full h-[500px] bg-white p-4"
-                            style={{ height: '540px'}} // Min-width aiuta la stabilità dell'export
-                        >
-                            {loading ? (
-                                <div className="h-full flex flex-col items-center justify-center text-slate-400">
-                                    <RefreshCw className="animate-spin mb-2" size={32} /> <p>Loading data...</p>
-                                </div>
-                            ) : chartData.length === 0 ? (
-                                <div className="h-full flex flex-col items-center justify-center text-slate-400 border-2 border-dashed border-slate-100 rounded-lg">
-                                    <BarChart3 size={48} className="mb-4 opacity-20" />
-                                    <p>No data found matching your filters.</p>
-                                </div>
-                            ) : chartType === 'line' ? (
-                                <ResponsiveContainer width="100%" height="100%">
-                                    <LineChart data={chartData} margin={{ top: 10, right: 30, left: 10, bottom: 40 }}>
-                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                                        <XAxis
-                                            dataKey="displayX"
-                                            ticks={xAxisTicks}
-                                            interval={0}
-                                            tick={{ fontSize: 12, fill: '#64748b' }}
-                                            axisLine={{ stroke: '#e2e8f0' }}
-                                            tickLine={false}
-                                            dy={10}
-                                            angle={0}
-                                            textAnchor="middle"
-                                        />
-                                        <YAxis
-                                            tick={{ fontSize: 12, fill: '#64748b' }}
-                                            axisLine={{ stroke: '#e2e8f0' }}
-                                            tickLine={false}
-                                            tickFormatter={(val) => val >= 1000 ? `${(val / 1000).toFixed(1)}k` : val}
-                                        />
-                                        <Tooltip contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.95)', borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)', padding: '12px' }} />
-                                        <Legend verticalAlign="bottom" height={36} wrapperStyle={{ paddingTop: '20px' }} />
-                                        {lines.map((lineKey, index) => (
-                                            <Line
-                                                key={lineKey}
-                                                type="monotone"
-                                                dataKey={lineKey}
-                                                name={lineKey === 'value' ? 'Total Value' : lineKey}
-                                                stroke={lines.length === 1 ? '#8b5cf6' : COLORS[index % COLORS.length]}
-                                                strokeWidth={2.5}
-                                                dot={false}
-                                                activeDot={{ r: 6 }}
-                                                connectNulls={true}
-                                                isAnimationActive={false} // Disattivare l'animazione migliora la cattura dell'immagine
-                                            />
-                                        ))}
-                                    </LineChart>
-                                </ResponsiveContainer>
-                            ) : (
-                                <ResponsiveContainer width="100%" height="100%">
-                                    <PieChart>
-                                        <Pie
-                                            data={pieChartData}
-                                            cx="50%"
-                                            cy="50%"
-                                            innerRadius={80}
-                                            outerRadius={140}
-                                            paddingAngle={2}
-                                            dataKey="value"
-                                            isAnimationActive={false} // Fondamentale per l'export istantaneo
-                                        >
-                                            {pieChartData.map((entry, index) => {
-                                                const colorIndex = lines.indexOf(entry.name);
-                                                const color = colorIndex >= 0 ? COLORS[colorIndex % COLORS.length] : COLORS[index % COLORS.length];
-                                                return <Cell key={`cell-${index}`} fill={color} stroke="#fff" strokeWidth={2} />;
-                                            })}
-                                        </Pie>
-                                        <Tooltip
-                                            formatter={(value: number) => value.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €'}
-                                            contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.95)', borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)', padding: '12px' }}
-                                        />
-                                        <Legend verticalAlign="bottom" wrapperStyle={{ paddingTop: '20px' }} />
-                                    </PieChart>
-                                </ResponsiveContainer>
-                            )}
-                        </div>
-
-                        {/* FOOTER */}
-                        <div className="mt-4 pt-4 border-t border-slate-100 flex justify-between items-center text-xs text-slate-400">
-                            {chartType === 'line' ? (
-                                <span>Showing {chartData.length} daily points</span>
-                            ) : (
-                                <span>Snapshot of {pieDate ? new Date(pieDate).toLocaleDateString() : 'selected date'}</span>
-                            )}
-                            <span>{lines.length} groups analyzed</span>
                         </div>
                     </div>
                 </div>
