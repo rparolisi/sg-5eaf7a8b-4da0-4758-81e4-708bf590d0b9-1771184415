@@ -190,12 +190,10 @@ export default function PlotPage() {
         };
     }, [rawData]);
 
-    // 3. AUTO-UPDATE DATE RANGE based on Filters
-    // Questo useEffect aggiorna le date min/max ogni volta che cambiano i filtri categorici
+    // 3. AUTO-UPDATE DATE RANGE
     useEffect(() => {
         if (rawData.length === 0) return;
 
-        // Filtra i dati in base ai filtri categorici correnti
         const filteredForDates = rawData.filter(item => {
             if (filters.person.length > 0 && !filters.person.includes(item.person)) return false;
             if (filters.ticker.length > 0 && !filters.ticker.includes(item.ticker)) return false;
@@ -205,12 +203,9 @@ export default function PlotPage() {
         });
 
         if (filteredForDates.length > 0) {
-            // Trova min e max data tra i dati filtrati
             const dates = filteredForDates.map(d => new Date(d.operation_date).getTime());
             const minDate = new Date(Math.min(...dates)).toISOString().split('T')[0];
             const maxDate = new Date(Math.max(...dates)).toISOString().split('T')[0];
-
-            // Imposta la data finale a "Oggi" se l'ultima transazione è passata, per vedere la linea piatta fino ad oggi
             const today = new Date().toISOString().split('T')[0];
 
             setDateRange({
@@ -221,11 +216,10 @@ export default function PlotPage() {
     }, [rawData, filters]);
 
 
-    // 4. DATA PROCESSING CON "TIME TRAVEL"
+    // 4. DATA PROCESSING CON TIME TRAVEL
     const { chartData, lines } = useMemo(() => {
         if (!rawData.length || !dateRange.start || !dateRange.end) return { chartData: [], lines: [] };
 
-        // A. FILTRAGGIO CATEGORICO (Person, Ticker, etc.)
         let filtered = rawData.filter(item => {
             if (filters.person.length > 0 && !filters.person.includes(item.person)) return false;
             if (filters.ticker.length > 0 && !filters.ticker.includes(item.ticker)) return false;
@@ -234,12 +228,10 @@ export default function PlotPage() {
             return true;
         });
 
-        // B. SETUP TIME RANGE
         const startDateMs = new Date(dateRange.start).getTime();
         const endDateMs = new Date(dateRange.end).getTime();
         const oneDay = 24 * 60 * 60 * 1000;
 
-        // C. GROUP BY DATE (Per lookup veloce)
         const txByDate: Record<string, any[]> = {};
         filtered.forEach(t => {
             const dateKey = new Date(t[config.x]).toISOString().split('T')[0];
@@ -247,15 +239,12 @@ export default function PlotPage() {
             txByDate[dateKey].push(t);
         });
 
-        // D. IDENTIFICA I GRUPPI ATTIVI (Tutte le linee da disegnare)
         const activeGroups = new Set < string > ();
         filtered.forEach(t => {
             const groupName = config.groupBy ? (t[config.groupBy] || 'Other') : 'value';
             activeGroups.add(groupName);
         });
 
-        // E. PRE-SCAN: Calcola lo stato iniziale PRIMA della start date
-        // Se filtro dal 2024, devo sapere quante azioni avevo accumulato fino al 2023.
         const groupState: Record<string, number> = {};
 
         filtered.forEach(t => {
@@ -263,20 +252,17 @@ export default function PlotPage() {
             if (tDate < startDateMs) {
                 const groupName = config.groupBy ? (t[config.groupBy] || 'Other') : 'value';
                 const val = Number(t[config.y]) || 0;
-                // Forward fill: l'ultimo valore prima della start date vince
                 groupState[groupName] = val;
             }
         });
 
-        // F. GENERAZIONE DENSE DATA (Giorno per giorno)
         const denseData = [];
 
         for (let time = startDateMs; time <= endDateMs; time += oneDay) {
             const dateObj = new Date(time);
             const dateKey = dateObj.toISOString().split('T')[0];
-            const displayX = dateObj.toLocaleDateString();
+            const displayX = dateObj.toLocaleDateString(); // Formato locale (es. 25/10/2023)
 
-            // Aggiorna lo stato se ci sono transazioni OGGI
             const todaysTxs = txByDate[dateKey];
             if (todaysTxs) {
                 todaysTxs.forEach(t => {
@@ -286,7 +272,6 @@ export default function PlotPage() {
                 });
             }
 
-            // Crea la riga per il grafico usando lo stato corrente
             const row: any = {
                 displayX,
                 rawX: time
@@ -296,8 +281,6 @@ export default function PlotPage() {
                 if (groupState[g] !== undefined) {
                     row[g] = groupState[g];
                 } else {
-                    // Se non abbiamo uno stato precedente (es. ticker comprato dopo la start date),
-                    // possiamo mettere 0 o null. Per cumulate cost, 0 ha senso.
                     row[g] = 0;
                 }
             });
@@ -307,7 +290,28 @@ export default function PlotPage() {
 
         return { chartData: denseData, lines: Array.from(activeGroups) };
 
-    }, [rawData, config, filters, dateRange]); // Aggiunto dateRange alle dipendenze
+    }, [rawData, config, filters, dateRange]);
+
+    // 5. CALCOLO TICKS ASSE X (Ottimizzazione Leggibilità)
+    const xAxisTicks = useMemo(() => {
+        if (chartData.length === 0) return [];
+
+        const MAX_TICKS = 8; // Principio: Massimo 8 etichette sull'asse
+        const interval = Math.ceil(chartData.length / MAX_TICKS);
+
+        // Seleziona solo le etichette a intervalli regolari
+        const ticks = chartData
+            .filter((_, index) => index % interval === 0)
+            .map(d => d.displayX);
+
+        // Assicurati che l'ultima data sia sempre visibile
+        const lastDate = chartData[chartData.length - 1].displayX;
+        if (ticks[ticks.length - 1] !== lastDate) {
+            ticks.push(lastDate);
+        }
+
+        return ticks;
+    }, [chartData]);
 
     // --- HANDLERS ---
     const handleFilterChange = (key: keyof typeof filters, value: string[]) => {
@@ -373,7 +377,7 @@ export default function PlotPage() {
                         </div>
                     </div>
 
-                    {/* DATE RANGE FILTER (NUOVO) */}
+                    {/* DATE RANGE FILTER */}
                     <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
                         <div className="flex items-center gap-2 mb-4 text-slate-800 font-semibold border-b border-slate-100 pb-2">
                             <Calendar size={18} /> Date Range
@@ -439,7 +443,18 @@ export default function PlotPage() {
                                     <ResponsiveContainer width="100%" height="100%">
                                         <LineChart data={chartData} margin={{ top: 10, right: 30, left: 10, bottom: 20 }}>
                                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                                            <XAxis dataKey="displayX" tick={{ fontSize: 12, fill: '#64748b' }} axisLine={false} tickLine={false} dy={10} angle={-15} textAnchor="end" />
+                                            <XAxis
+                                                dataKey="displayX"
+                                                // 6. APPLICAZIONE DEI TICKS CALCOLATI
+                                                ticks={xAxisTicks}
+                                                interval={0} // Forza a usare solo i nostri ticks, niente auto-hide strano
+                                                tick={{ fontSize: 12, fill: '#64748b' }}
+                                                axisLine={false}
+                                                tickLine={false}
+                                                dy={10}
+                                                angle={0} // Rimesso dritto perché ora c'è spazio!
+                                                textAnchor="middle"
+                                            />
                                             <YAxis tick={{ fontSize: 12, fill: '#64748b' }} axisLine={false} tickLine={false} tickFormatter={(val) => val >= 1000 ? `${(val / 1000).toFixed(1)}k` : val} />
                                             <Tooltip contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.95)', borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)', padding: '12px' }} />
                                             <Legend wrapperStyle={{ paddingTop: '20px' }} />
