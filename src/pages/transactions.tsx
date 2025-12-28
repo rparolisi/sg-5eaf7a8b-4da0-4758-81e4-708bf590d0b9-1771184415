@@ -542,15 +542,20 @@ export default function Transactions() {
                         <h1 className="text-3xl font-bold text-gray-800">Transactions</h1>
                     </div>
 
-                    {/* CENTER: Buttons (Add & Plot) */}
-                    <div className="justify-self-center w-full md:w-auto flex gap-2">
-                        <button onClick={() => setIsModalOpen(true)} className="flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-full font-medium shadow-md hover:shadow-lg transition-all transform hover:-translate-y-0.5">
-                            <Plus size={20} /> <span className="hidden sm:inline">Add</span>
+                    {/* CENTER: Add Transaction Button */}
+                    <div className="justify-self-center w-full md:w-auto flex gap-2"> {/* Aggiungi flex gap-2 */}
+                        <button onClick={() => setIsModalOpen(true)} className="...">
+                            <Plus size={20} /> Add Transaction
                         </button>
-                        {/* NUOVO PULSANTE PLOT */}
-                        <button onClick={() => setIsPlotModalOpen(true)} className="flex items-center justify-center gap-2 bg-white hover:bg-purple-50 text-purple-600 border border-purple-200 px-5 py-2.5 rounded-full font-medium shadow-sm hover:shadow-md transition-all">
-                            <LineChartIcon size={20} /> <span className="hidden sm:inline">Plot</span>
+
+                        {/* --- AGGIUNGI QUESTO PULSANTE --- */}
+                        <button
+                            onClick={() => router.push('/transactions/plot')}
+                            className="flex items-center justify-center gap-2 bg-white hover:bg-purple-50 text-purple-600 border border-purple-200 px-6 py-2.5 rounded-full font-medium shadow-sm hover:shadow-md transition-all"
+                        >
+                            <LineChartIcon size={20} /> Plot
                         </button>
+                        {/* -------------------------------- */}
                     </div>
 
                     {/* RIGHT: Controls (Row Limit, Settings, Download) */}
