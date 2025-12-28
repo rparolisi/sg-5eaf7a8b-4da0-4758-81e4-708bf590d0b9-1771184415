@@ -26,7 +26,9 @@ const COLUMNS = [
     { key: 'person', label: 'Person', type: 'text' },
     { key: 'sector', label: 'Sector', type: 'text' },
     { key: 'category', label: 'Category', type: 'text' },
+    // Colonne Calcolate
     { key: 'cumulative_cost', label: 'Cumulative Cost (€)', type: 'number' },
+    // Colonne DB
     { key: 'total_outlay_eur', label: 'Total Amount (€)', type: 'number' },
     { key: 'purchase_price_per_share_eur', label: 'Price per Share (€)', type: 'number' },
     { key: 'shares_count', label: 'Shares Count', type: 'number' },
@@ -129,7 +131,7 @@ export default function PlotPage() {
 
     const [config, setConfig] = useState({
         x: 'operation_date',
-        y: 'total_outlay_eur',
+        y: 'total_outlay_eur', // Default Y
         groupBy: 'ticker'
     });
 
@@ -145,7 +147,7 @@ export default function PlotPage() {
         category: []
     });
 
-    // Stato Date Range (Start/End)
+    // Stato Date Range
     const [dateRange, setDateRange] = useState({
         start: '',
         end: ''
@@ -162,6 +164,7 @@ export default function PlotPage() {
 
             if (error) throw error;
 
+            // Calcolo Cumulative Cost = Cumul.Shares * Avg.Price
             const enrichedData = (data || []).map(t => ({
                 ...t,
                 cumulative_cost: (t.cumulative_shares_count || 0) * (t.average_price || 0)
@@ -179,7 +182,7 @@ export default function PlotPage() {
         fetchData();
     }, []);
 
-    // 2. UNIQUE VALUES FOR FILTERS
+    // 2. UNIQUE VALUES
     const uniqueValues = useMemo(() => {
         const getUnique = (key: string) => Array.from(new Set(rawData.map(item => item[key]).filter(Boolean))).sort();
         return {
@@ -216,10 +219,11 @@ export default function PlotPage() {
     }, [rawData, filters]);
 
 
-    // 4. DATA PROCESSING CON TIME TRAVEL
+    // 4. MOTORE DI CALCOLO PORTFOLIO (State-Based Aggregation)
     const { chartData, lines } = useMemo(() => {
         if (!rawData.length || !dateRange.start || !dateRange.end) return { chartData: [], lines: [] };
 
+        // A. Filter Raw Data
         let filtered = rawData.filter(item => {
             if (filters.person.length > 0 && !filters.person.includes(item.person)) return false;
             if (filters.ticker.length > 0 && !filters.ticker.includes(item.ticker)) return false;
@@ -232,6 +236,7 @@ export default function PlotPage() {
         const endDateMs = new Date(dateRange.end).getTime();
         const oneDay = 24 * 60 * 60 * 1000;
 
+        // B. Raggruppa Transazioni per Data
         const txByDate: Record<string, any[]> = {};
         filtered.forEach(t => {
             const dateKey = new Date(t[config.x]).toISOString().split('T')[0];
@@ -239,77 +244,87 @@ export default function PlotPage() {
             txByDate[dateKey].push(t);
         });
 
-        const activeGroups = new Set < string > ();
-        filtered.forEach(t => {
-            const groupName = config.groupBy ? (t[config.groupBy] || 'Other') : 'value';
-            activeGroups.add(groupName);
-        });
+        // C. DEFINIZIONE STATO DEL PORTAFOGLIO (POSIZIONI)
+        // La chiave unica di una posizione è "Ticker-Persona". 
+        // Monitoriamo lo stato di ogni posizione separatamente.
+        const positionState: Record<string, any> = {};
 
-        const groupState: Record<string, number> = {};
+        // Helper per generare la chiave univoca della posizione
+        const getPositionKey = (t: any) => `${t.person || 'Unknown'}-${t.ticker || 'Unknown'}`;
 
+        // D. PRE-SCAN (Fino alla Start Date)
+        // Aggiorniamo lo stato delle posizioni con tutto ciò che è successo PRIMA della data di inizio grafico
         filtered.forEach(t => {
             const tDate = new Date(t[config.x]).getTime();
             if (tDate < startDateMs) {
-                const groupName = config.groupBy ? (t[config.groupBy] || 'Other') : 'value';
-                const val = Number(t[config.y]) || 0;
-                groupState[groupName] = val;
+                const key = getPositionKey(t);
+                // L'ultima transazione vince e definisce lo stato attuale della posizione
+                positionState[key] = t;
             }
         });
 
+        // E. TIME TRAVEL (Giorno per Giorno)
         const denseData = [];
+        const foundGroups = new Set < string > (); // Per la legenda
 
         for (let time = startDateMs; time <= endDateMs; time += oneDay) {
             const dateObj = new Date(time);
             const dateKey = dateObj.toISOString().split('T')[0];
-            const displayX = dateObj.toLocaleDateString(); // Formato locale (es. 25/10/2023)
+            const displayX = dateObj.toLocaleDateString();
 
+            // 1. Aggiorna lo stato delle posizioni con le transazioni di OGGI
             const todaysTxs = txByDate[dateKey];
             if (todaysTxs) {
                 todaysTxs.forEach(t => {
-                    const groupName = config.groupBy ? (t[config.groupBy] || 'Other') : 'value';
-                    const val = Number(t[config.y]) || 0;
-                    groupState[groupName] = val;
+                    const key = getPositionKey(t);
+                    positionState[key] = t;
                 });
             }
 
+            // 2. AGGREGAZIONE (La parte cruciale)
+            // Sommiamo i valori di TUTTE le posizioni attive in base al raggruppamento scelto
+            const dayValues: Record<string, number> = {};
+            let dayTotal = 0;
+
+            Object.values(positionState).forEach(pos => {
+                // Determina a quale gruppo appartiene questa posizione (es. "Ale" o "Tech")
+                const groupName = config.groupBy ? (pos[config.groupBy] || 'Other') : 'value';
+                const val = Number(pos[config.y]) || 0;
+
+                // Somma al gruppo
+                dayValues[groupName] = (dayValues[groupName] || 0) + val;
+
+                // Traccia i gruppi visti per la legenda
+                foundGroups.add(groupName);
+            });
+
+            // 3. Costruisci la riga dati
             const row: any = {
                 displayX,
-                rawX: time
+                rawX: time,
+                ...dayValues
             };
 
-            activeGroups.forEach(g => {
-                if (groupState[g] !== undefined) {
-                    row[g] = groupState[g];
-                } else {
-                    row[g] = 0;
-                }
-            });
+            // Se non ci sono raggruppamenti, salva il totale come 'value'
+            if (!config.groupBy && Object.keys(positionState).length > 0) {
+                // Somma di tutto (già calcolata nel loop sopra sotto key 'value' se groupBy è null)
+            }
 
             denseData.push(row);
         }
 
-        return { chartData: denseData, lines: Array.from(activeGroups) };
+        return { chartData: denseData, lines: Array.from(foundGroups).sort() };
 
     }, [rawData, config, filters, dateRange]);
 
-    // 5. CALCOLO TICKS ASSE X (Ottimizzazione Leggibilità)
+    // 5. CALCOLO TICKS
     const xAxisTicks = useMemo(() => {
         if (chartData.length === 0) return [];
-
-        const MAX_TICKS = 8; // Principio: Massimo 8 etichette sull'asse
+        const MAX_TICKS = 8;
         const interval = Math.ceil(chartData.length / MAX_TICKS);
-
-        // Seleziona solo le etichette a intervalli regolari
-        const ticks = chartData
-            .filter((_, index) => index % interval === 0)
-            .map(d => d.displayX);
-
-        // Assicurati che l'ultima data sia sempre visibile
+        const ticks = chartData.filter((_, index) => index % interval === 0).map(d => d.displayX);
         const lastDate = chartData[chartData.length - 1].displayX;
-        if (ticks[ticks.length - 1] !== lastDate) {
-            ticks.push(lastDate);
-        }
-
+        if (ticks[ticks.length - 1] !== lastDate) ticks.push(lastDate);
         return ticks;
     }, [chartData]);
 
@@ -377,7 +392,7 @@ export default function PlotPage() {
                         </div>
                     </div>
 
-                    {/* DATE RANGE FILTER */}
+                    {/* DATE RANGE */}
                     <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
                         <div className="flex items-center gap-2 mb-4 text-slate-800 font-semibold border-b border-slate-100 pb-2">
                             <Calendar size={18} /> Date Range
@@ -385,21 +400,11 @@ export default function PlotPage() {
                         <div className="grid grid-cols-2 gap-3">
                             <div>
                                 <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">From</label>
-                                <input
-                                    type="date"
-                                    className="w-full p-1.5 border border-slate-300 rounded text-xs outline-none focus:border-purple-500"
-                                    value={dateRange.start}
-                                    onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })}
-                                />
+                                <input type="date" className="w-full p-1.5 border border-slate-300 rounded text-xs outline-none focus:border-purple-500" value={dateRange.start} onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })} />
                             </div>
                             <div>
                                 <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">To</label>
-                                <input
-                                    type="date"
-                                    className="w-full p-1.5 border border-slate-300 rounded text-xs outline-none focus:border-purple-500"
-                                    value={dateRange.end}
-                                    onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })}
-                                />
+                                <input type="date" className="w-full p-1.5 border border-slate-300 rounded text-xs outline-none focus:border-purple-500" value={dateRange.end} onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })} />
                             </div>
                         </div>
                     </div>
@@ -445,14 +450,13 @@ export default function PlotPage() {
                                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                                             <XAxis
                                                 dataKey="displayX"
-                                                // 6. APPLICAZIONE DEI TICKS CALCOLATI
                                                 ticks={xAxisTicks}
-                                                interval={0} // Forza a usare solo i nostri ticks, niente auto-hide strano
+                                                interval={0}
                                                 tick={{ fontSize: 12, fill: '#64748b' }}
                                                 axisLine={false}
                                                 tickLine={false}
                                                 dy={10}
-                                                angle={0} // Rimesso dritto perché ora c'è spazio!
+                                                angle={0}
                                                 textAnchor="middle"
                                             />
                                             <YAxis tick={{ fontSize: 12, fill: '#64748b' }} axisLine={false} tickLine={false} tickFormatter={(val) => val >= 1000 ? `${(val / 1000).toFixed(1)}k` : val} />
@@ -475,7 +479,7 @@ export default function PlotPage() {
                                     </ResponsiveContainer>
                                 </div>
                                 <div className="mt-4 pt-4 border-t border-slate-100 flex justify-between items-center text-xs text-slate-400">
-                                    <span>Showing {chartData.length} daily points (filled)</span>
+                                    <span>Showing {chartData.length} daily points (aggregated)</span>
                                     <span>{lines.length} lines plotted</span>
                                 </div>
                             </>
