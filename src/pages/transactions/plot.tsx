@@ -2,24 +2,24 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { useRouter } from 'next/router';
 import {
-    ArrowLeft, BarChart3, Settings, Filter, X
+    ArrowLeft, BarChart3, Settings, Filter, RefreshCw, XCircle
 } from 'lucide-react';
 import {
     LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
 } from 'recharts';
 
-// --- CONFIGURAZIONE ---
+// --- CONFIGURAZIONE SUPABASE ---
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
 const SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-// --- COLORI PER LE LINEE (Palette vivace) ---
+// --- PALETTE COLORI (Per le linee multiple) ---
 const COLORS = [
     "#2563eb", "#dc2626", "#16a34a", "#d97706", "#9333ea",
     "#0891b2", "#db2777", "#4b5563", "#84cc16", "#7c3aed"
 ];
 
-// --- COLONNE UTILIZZABILI ---
+// --- DEFINIZIONE COLONNE ---
 const COLUMNS = [
     { key: 'operation_date', label: 'Date', type: 'date' },
     { key: 'ticker', label: 'Ticker', type: 'text' },
@@ -29,63 +29,95 @@ const COLUMNS = [
     { key: 'purchase_price_per_share_eur', label: 'Price per Share (€)', type: 'number' },
     { key: 'shares_count', label: 'Shares Count', type: 'number' },
     { key: 'cumulative_shares_count', label: 'Cumul. Shares', type: 'number' },
-    { key: 'average_price', label: 'Avg Price', type: 'number' }
+    { key: 'average_price', label: 'Avg Price', type: 'number' },
+    { key: 'effective_average_price', label: 'Eff. Avg Price', type: 'number' }
 ];
 
 export default function PlotPage() {
     const router = useRouter();
     const [loading, setLoading] = useState(true);
-    const [transactions, setTransactions] = useState < any[] > ([]);
+    const [rawData, setRawData] = useState < any[] > ([]);
 
-    // Configurazione Grafico
+    // --- STATO CONFIGURAZIONE GRAFICO ---
     const [config, setConfig] = useState({
         x: 'operation_date',
         y: 'total_outlay_eur',
         groupBy: 'ticker' // Default: raggruppa per Ticker
     });
 
-    // 1. FETCH DATA
-    useEffect(() => {
-        const fetchData = async () => {
-            setLoading(true);
+    // --- STATO FILTRI ---
+    const [filters, setFilters] = useState({
+        person: '',
+        ticker: '',
+        sector: ''
+    });
+
+    // 1. FETCH DATA DA SUPABASE
+    const fetchData = async () => {
+        setLoading(true);
+        try {
             const { data, error } = await supabase
                 .from('transactions')
                 .select('*')
-                .order('operation_date', { ascending: true }); // Importante: ordinato per data
+                .order('operation_date', { ascending: true }); // Ordine cronologico fondamentale per i grafici
 
-            if (error) console.error(error);
-            setTransactions(data || []);
+            if (error) throw error;
+            setRawData(data || []);
+        } catch (err: any) {
+            console.error("Errore fetch:", err);
+            alert("Errore caricamento dati");
+        } finally {
             setLoading(false);
-        };
+        }
+    };
+
+    useEffect(() => {
         fetchData();
     }, []);
 
-    // 2. PREPARE CHART DATA (Logica "Wide Format")
-    const { chartData, lines } = useMemo(() => {
-        if (!transactions.length) return { chartData: [], lines: [] };
+    // 2. ESTRAZIONE VALORI UNICI PER I FILTRI (Popola le select)
+    const uniqueValues = useMemo(() => {
+        const getUnique = (key: string) => Array.from(new Set(rawData.map(item => item[key]).filter(Boolean))).sort();
+        return {
+            people: getUnique('person'),
+            tickers: getUnique('ticker'),
+            sectors: getUnique('sector')
+        };
+    }, [rawData]);
 
-        // A. Se non c'è raggruppamento (Singola linea)
+    // 3. ELABORAZIONE DATI (Filter -> Group -> Format)
+    const { chartData, lines } = useMemo(() => {
+        if (!rawData.length) return { chartData: [], lines: [] };
+
+        // A. FILTRAGGIO
+        let filtered = rawData.filter(item => {
+            if (filters.person && item.person !== filters.person) return false;
+            if (filters.ticker && item.ticker !== filters.ticker) return false;
+            if (filters.sector && item.sector !== filters.sector) return false;
+            return true;
+        });
+
+        // B. RAGGRUPPAMENTO E FORMATTAZIONE
+        // Se non c'è raggruppamento (Singola linea "Total")
         if (!config.groupBy) {
-            const data = transactions.map(t => ({
-                xAxis: t[config.x], // Valore asse X (es. data)
-                displayX: new Date(t[config.x]).toLocaleDateString(), // Label leggibile
-                value: t[config.y] // Valore asse Y
+            const data = filtered.map(t => ({
+                xAxis: t[config.x],
+                displayX: new Date(t[config.x]).toLocaleDateString(),
+                value: Number(t[config.y]) || 0
             }));
             return { chartData: data, lines: ['value'] };
         }
 
-        // B. Raggruppamento (Multiple Linee)
-        // Dobbiamo trasformare:
-        // [ {date: '2023', ticker: 'AAPL', val: 100}, {date: '2023', ticker: 'TSLA', val: 50} ]
-        // Diventa:
-        // [ {xAxis: '2023', AAPL: 100, TSLA: 50} ]
-
+        // Se c'è raggruppamento (Multiple Linee)
         const groupedMap: Record<string, any> = {};
         const allGroups = new Set < string > ();
 
-        transactions.forEach(t => {
-            const xVal = t[config.x]; // Es. "2023-01-01"
-            const groupName = t[config.groupBy] || 'Unknown'; // Es. "AAPL"
+        filtered.forEach(t => {
+            const xVal = t[config.x];
+            // Se xVal è nullo, saltiamo
+            if (!xVal) return;
+
+            const groupName = t[config.groupBy] || 'Other';
             const yVal = Number(t[config.y]) || 0;
 
             allGroups.add(groupName);
@@ -93,15 +125,15 @@ export default function PlotPage() {
             if (!groupedMap[xVal]) {
                 groupedMap[xVal] = {
                     xAxis: xVal,
-                    displayX: new Date(xVal).toLocaleDateString(), // Formatta se è data
-                    // Manteniamo il valore raw per il sorting
-                    rawX: t[config.x]
+                    displayX: new Date(xVal).toLocaleDateString(), // Formatta data
+                    rawX: t[config.x] // Utile per ordinamento
                 };
             }
+            // Assegna valore: { "2023-01-01": { AAPL: 150, MSFT: 200 } }
             groupedMap[xVal][groupName] = yVal;
         });
 
-        // Convertiamo l'oggetto mappa in un array ordinato
+        // Converti mappa in array e ordina per X
         const finalData = Object.values(groupedMap).sort((a: any, b: any) => {
             if (a.rawX < b.rawX) return -1;
             if (a.rawX > b.rawX) return 1;
@@ -110,161 +142,239 @@ export default function PlotPage() {
 
         return { chartData: finalData, lines: Array.from(allGroups) };
 
-    }, [transactions, config]);
+    }, [rawData, config, filters]);
+
+    // --- HANDLERS ---
+    const handleFilterChange = (key: string, value: string) => {
+        setFilters(prev => ({ ...prev, [key]: value }));
+    };
+
+    const clearFilters = () => {
+        setFilters({ person: '', ticker: '', sector: '' });
+    };
 
     return (
-        <div className="min-h-screen bg-gray-50 p-6 font-sans text-slate-900">
+        <div className="min-h-screen bg-slate-50 font-sans text-slate-900 pb-10">
 
-            {/* Header Navigation */}
-            <div className="max-w-6xl mx-auto mb-6 flex items-center gap-4">
-                <button
-                    onClick={() => router.back()}
-                    className="p-2 bg-white border border-gray-300 rounded-full hover:bg-gray-100 transition shadow-sm"
-                >
-                    <ArrowLeft size={20} className="text-gray-600" />
-                </button>
-                <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
-                    <BarChart3 className="text-purple-600" />
-                    Data Analytics
-                </h1>
+            {/* --- HEADER --- */}
+            <div className="bg-white border-b border-slate-200 px-6 py-4 sticky top-0 z-10 shadow-sm">
+                <div className="max-w-7xl mx-auto flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                        <button
+                            onClick={() => router.back()}
+                            className="p-2 hover:bg-slate-100 rounded-full transition-colors text-slate-500"
+                        >
+                            <ArrowLeft size={20} />
+                        </button>
+                        <h1 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                            <BarChart3 className="text-purple-600" />
+                            Analytics & Plotting
+                        </h1>
+                    </div>
+                    <div className="text-sm text-slate-500">
+                        {rawData.length} records loaded
+                    </div>
+                </div>
             </div>
 
-            <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-4 gap-6">
+            <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-4 gap-6 p-6">
 
-                {/* --- LEFT SIDEBAR: CONTROLS --- */}
-                <div className="lg:col-span-1 bg-white p-5 rounded-xl shadow-sm border border-gray-200 h-fit sticky top-6">
-                    <div className="flex items-center gap-2 mb-4 text-gray-800 font-semibold border-b pb-2">
-                        <Settings size={18} /> Configuration
-                    </div>
+                {/* --- LEFT SIDEBAR: CONTROLS & FILTERS --- */}
+                <div className="lg:col-span-1 space-y-6">
 
-                    <div className="space-y-4">
-                        {/* X AXIS */}
-                        <div>
-                            <label className="block text-xs font-bold text-gray-500 uppercase mb-1">X Axis (Time)</label>
-                            <select
-                                className="w-full p-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 outline-none"
-                                value={config.x}
-                                onChange={(e) => setConfig({ ...config, x: e.target.value })}
-                            >
-                                {COLUMNS.filter(c => c.type === 'date' || c.type === 'datetime').map(c => (
-                                    <option key={c.key} value={c.key}>{c.label}</option>
-                                ))}
-                            </select>
+                    {/* 1. AXIS CONFIGURATION */}
+                    <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+                        <div className="flex items-center gap-2 mb-4 text-slate-800 font-semibold border-b border-slate-100 pb-2">
+                            <Settings size={18} /> Axes Setup
                         </div>
-
-                        {/* Y AXIS */}
-                        <div>
-                            <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Y Axis (Value)</label>
-                            <select
-                                className="w-full p-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 outline-none"
-                                value={config.y}
-                                onChange={(e) => setConfig({ ...config, y: e.target.value })}
-                            >
-                                {COLUMNS.filter(c => c.type === 'number').map(c => (
-                                    <option key={c.key} value={c.key}>{c.label}</option>
-                                ))}
-                            </select>
-                        </div>
-
-                        {/* GROUP BY */}
-                        <div>
-                            <label className="block text-xs font-bold text-gray-500 uppercase mb-1 text-purple-600">Group Lines By</label>
-                            <div className="relative">
-                                <Filter size={14} className="absolute left-2.5 top-3 text-purple-400" />
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">X Axis (Time)</label>
                                 <select
-                                    className="w-full pl-8 p-2 border border-purple-200 bg-purple-50 rounded-lg text-sm text-purple-800 font-medium focus:ring-2 focus:ring-purple-500 outline-none"
+                                    className="w-full p-2 border border-slate-300 rounded-lg text-sm bg-slate-50 outline-none focus:ring-2 focus:ring-purple-500"
+                                    value={config.x}
+                                    onChange={(e) => setConfig({ ...config, x: e.target.value })}
+                                >
+                                    {COLUMNS.filter(c => c.type === 'date').map(c => (
+                                        <option key={c.key} value={c.key}>{c.label}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Y Axis (Value)</label>
+                                <select
+                                    className="w-full p-2 border border-slate-300 rounded-lg text-sm bg-slate-50 outline-none focus:ring-2 focus:ring-purple-500"
+                                    value={config.y}
+                                    onChange={(e) => setConfig({ ...config, y: e.target.value })}
+                                >
+                                    {COLUMNS.filter(c => c.type === 'number').map(c => (
+                                        <option key={c.key} value={c.key}>{c.label}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-purple-600 uppercase mb-1">Group By</label>
+                                <select
+                                    className="w-full p-2 border border-purple-200 bg-purple-50 rounded-lg text-sm text-purple-900 font-medium outline-none focus:ring-2 focus:ring-purple-500"
                                     value={config.groupBy}
                                     onChange={(e) => setConfig({ ...config, groupBy: e.target.value })}
                                 >
-                                    <option value="">(No Grouping - Total)</option>
-                                    <option value="ticker">Ticker (Security)</option>
+                                    <option value="">(None - Single Line)</option>
+                                    <option value="ticker">Ticker</option>
                                     <option value="person">Person</option>
                                     <option value="sector">Sector</option>
-                                    <option value="category">Category</option>
                                 </select>
                             </div>
                         </div>
                     </div>
 
-                    <div className="mt-8 p-4 bg-blue-50 rounded-lg text-xs text-blue-700 border border-blue-100">
-                        <strong>Info:</strong><br />
-                        Grouping splits the data into multiple lines. Points are connected automatically even if dates differ.
+                    {/* 2. DATA FILTERS */}
+                    <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+                        <div className="flex items-center justify-between mb-4 border-b border-slate-100 pb-2">
+                            <div className="flex items-center gap-2 text-slate-800 font-semibold">
+                                <Filter size={18} /> Filters
+                            </div>
+                            {(filters.person || filters.ticker || filters.sector) && (
+                                <button onClick={clearFilters} className="text-xs text-red-500 hover:underline flex items-center gap-1">
+                                    <XCircle size={12} /> Clear
+                                </button>
+                            )}
+                        </div>
+
+                        <div className="space-y-4">
+                            {/* Person Filter */}
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Person</label>
+                                <select
+                                    className="w-full p-2 border border-slate-300 rounded-lg text-sm outline-none focus:border-blue-500"
+                                    value={filters.person}
+                                    onChange={(e) => handleFilterChange('person', e.target.value)}
+                                >
+                                    <option value="">All People</option>
+                                    {uniqueValues.people.map((p: any) => (
+                                        <option key={p} value={p}>{p}</option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            {/* Ticker Filter */}
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Ticker</label>
+                                <select
+                                    className="w-full p-2 border border-slate-300 rounded-lg text-sm outline-none focus:border-blue-500"
+                                    value={filters.ticker}
+                                    onChange={(e) => handleFilterChange('ticker', e.target.value)}
+                                >
+                                    <option value="">All Tickers</option>
+                                    {uniqueValues.tickers.map((t: any) => (
+                                        <option key={t} value={t}>{t}</option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            {/* Sector Filter */}
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Sector</label>
+                                <select
+                                    className="w-full p-2 border border-slate-300 rounded-lg text-sm outline-none focus:border-blue-500"
+                                    value={filters.sector}
+                                    onChange={(e) => handleFilterChange('sector', e.target.value)}
+                                >
+                                    <option value="">All Sectors</option>
+                                    {uniqueValues.sectors.map((s: any) => (
+                                        <option key={s} value={s}>{s}</option>
+                                    ))}
+                                </select>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
                 {/* --- RIGHT SIDE: CHART --- */}
-                <div className="lg:col-span-3 bg-white p-6 rounded-xl shadow-lg border border-gray-200 min-h-[500px] flex flex-col">
+                <div className="lg:col-span-3">
+                    <div className="bg-white p-6 rounded-xl shadow-lg border border-slate-200 min-h-[600px] flex flex-col relative">
 
-                    {loading ? (
-                        <div className="flex-1 flex flex-col items-center justify-center text-gray-400">
-                            <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-purple-600 mb-3"></div>
-                            Loading data...
-                        </div>
-                    ) : chartData.length > 0 ? (
-                        <>
-                            <h3 className="text-lg font-semibold text-gray-700 mb-6 text-center">
-                                {COLUMNS.find(c => c.key === config.y)?.label} by {COLUMNS.find(c => c.key === config.x)?.label}
-                            </h3>
-
-                            <div className="flex-1 w-full h-96">
-                                <ResponsiveContainer width="100%" height="100%">
-                                    <LineChart data={chartData} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
-                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
-
-                                        <XAxis
-                                            dataKey="displayX"
-                                            tick={{ fontSize: 12, fill: '#9ca3af' }}
-                                            axisLine={false}
-                                            tickLine={false}
-                                            dy={10}
-                                        />
-
-                                        <YAxis
-                                            tick={{ fontSize: 12, fill: '#9ca3af' }}
-                                            axisLine={false}
-                                            tickLine={false}
-                                            tickFormatter={(val) => val >= 1000 ? `${(val / 1000).toFixed(1)}k` : val}
-                                        />
-
-                                        <Tooltip
-                                            contentStyle={{
-                                                backgroundColor: 'rgba(255, 255, 255, 0.95)',
-                                                borderRadius: '8px',
-                                                border: 'none',
-                                                boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)'
-                                            }}
-                                        />
-
-                                        <Legend wrapperStyle={{ paddingTop: '20px' }} />
-
-                                        {/* Dynamic Lines Generation */}
-                                        {lines.map((lineKey, index) => (
-                                            <Line
-                                                key={lineKey}
-                                                type="monotone"
-                                                dataKey={lineKey}
-                                                name={lineKey === 'value' ? 'Total' : lineKey}
-                                                stroke={lines.length === 1 ? '#8b5cf6' : COLORS[index % COLORS.length]}
-                                                strokeWidth={2}
-                                                dot={{ r: 3, fill: lines.length === 1 ? '#8b5cf6' : COLORS[index % COLORS.length] }}
-                                                activeDot={{ r: 6 }}
-                                                connectNulls={true} // Collega i punti anche se mancano date intermedie
-                                            />
-                                        ))}
-
-                                    </LineChart>
-                                </ResponsiveContainer>
+                        {loading && (
+                            <div className="absolute inset-0 bg-white/80 z-20 flex flex-col items-center justify-center text-slate-400">
+                                <RefreshCw className="animate-spin mb-2" size={32} />
+                                <p>Loading data...</p>
                             </div>
+                        )}
 
-                            <p className="text-center text-xs text-gray-400 mt-4">
-                                Displaying {chartData.length} time points across {lines.length} groups.
-                            </p>
-                        </>
-                    ) : (
-                        <div className="flex-1 flex items-center justify-center text-gray-400">
-                            No data available for this configuration.
-                        </div>
-                    )}
+                        {!loading && chartData.length === 0 ? (
+                            <div className="flex-1 flex flex-col items-center justify-center text-slate-400 border-2 border-dashed border-slate-100 rounded-lg">
+                                <BarChart3 size={48} className="mb-4 opacity-20" />
+                                <p>No data found matching your filters.</p>
+                                <button onClick={clearFilters} className="mt-4 text-blue-600 font-medium hover:underline">
+                                    Clear Filters
+                                </button>
+                            </div>
+                        ) : (
+                            <>
+                                <div className="mb-6 text-center">
+                                    <h2 className="text-lg font-bold text-slate-800">
+                                        {COLUMNS.find(c => c.key === config.y)?.label} over Time
+                                    </h2>
+                                    <p className="text-sm text-slate-500">
+                                        Grouped by <span className="font-semibold text-purple-600 uppercase">{config.groupBy || 'Total'}</span>
+                                    </p>
+                                </div>
+
+                                <div className="flex-1 w-full" style={{ minHeight: '450px' }}>
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <LineChart data={chartData} margin={{ top: 10, right: 30, left: 10, bottom: 20 }}>
+                                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                                            <XAxis
+                                                dataKey="displayX"
+                                                tick={{ fontSize: 12, fill: '#64748b' }}
+                                                axisLine={false}
+                                                tickLine={false}
+                                                dy={10}
+                                                angle={-15}
+                                                textAnchor="end"
+                                            />
+                                            <YAxis
+                                                tick={{ fontSize: 12, fill: '#64748b' }}
+                                                axisLine={false}
+                                                tickLine={false}
+                                                tickFormatter={(val) => val >= 1000 ? `${(val / 1000).toFixed(1)}k` : val}
+                                            />
+                                            <Tooltip
+                                                contentStyle={{
+                                                    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                                                    borderRadius: '12px',
+                                                    border: 'none',
+                                                    boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)',
+                                                    padding: '12px'
+                                                }}
+                                            />
+                                            <Legend wrapperStyle={{ paddingTop: '20px' }} />
+
+                                            {/* RENDER LINES DYNAMICALLY */}
+                                            {lines.map((lineKey, index) => (
+                                                <Line
+                                                    key={lineKey}
+                                                    type="monotone" // Curva morbida
+                                                    dataKey={lineKey}
+                                                    name={lineKey === 'value' ? 'Total Value' : lineKey}
+                                                    stroke={lines.length === 1 ? '#8b5cf6' : COLORS[index % COLORS.length]}
+                                                    strokeWidth={2.5}
+                                                    dot={{ r: 3, strokeWidth: 0, fill: lines.length === 1 ? '#8b5cf6' : COLORS[index % COLORS.length] }}
+                                                    activeDot={{ r: 7, strokeWidth: 0 }}
+                                                    connectNulls={true} // Fondamentale per i buchi nelle date
+                                                />
+                                            ))}
+                                        </LineChart>
+                                    </ResponsiveContainer>
+                                </div>
+
+                                <div className="mt-4 pt-4 border-t border-slate-100 flex justify-between items-center text-xs text-slate-400">
+                                    <span>Showing {chartData.length} time points</span>
+                                    <span>{lines.length} lines plotted</span>
+                                </div>
+                            </>
+                        )}
+                    </div>
                 </div>
 
             </div>
