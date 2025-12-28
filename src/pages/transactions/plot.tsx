@@ -1,3 +1,4 @@
+import { useRouter } from 'next/router';
 import React, { useEffect, useState, useMemo } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { useRouter } from 'next/router';
@@ -35,6 +36,7 @@ const COLUMNS = [
 
 export default function PlotPage() {
     const router = useRouter();
+    const [supabase, setSupabase] = useState < any > (null);
     const [loading, setLoading] = useState(true);
     const [rawData, setRawData] = useState < any[] > ([]);
 
