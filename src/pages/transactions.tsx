@@ -179,6 +179,17 @@ export default function Transactions() {
         loadScripts();
     }, []);
 
+    useEffect(() => {
+        // router.isReady garantisce che i parametri query siano stati letti
+        if (router.isReady && router.query.add === 'true') {
+            setIsModalOpen(true);
+
+            // Pulizia dell'URL: rimuove ?add=true senza ricaricare la pagina
+            // Questo evita che il modale si riapra se l'utente preme F5
+            router.replace('/transactions', undefined, { shallow: true });
+        }
+    }, [router.isReady, router.query.add]);
+
     // Fetch data appena il client è pronto
     useEffect(() => {
         if (supabase) {
