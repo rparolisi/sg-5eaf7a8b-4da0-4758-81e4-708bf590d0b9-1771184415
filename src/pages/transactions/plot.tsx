@@ -400,25 +400,56 @@ export default function PlotPage() {
     };
 
     const exportImage = () => {
-        const svg = chartContainerRef.current?.querySelector('svg');
-        if (!svg) return;
+        // Seleziona l'elemento SVG dentro il container
+        const svgElement = chartContainerRef.current?.querySelector('svg');
+        if (!svgElement) return;
+
+        // Clona l'elemento per non sporcare quello visibile
+        const clonedSvg = svgElement.cloneNode(true) as SVGElement;
+
+        // Forza lo sfondo bianco e dimensioni esplicite nel clone
+        clonedSvg.setAttribute('style', 'background-color: white; font-family: sans-serif;');
+        const width = svgElement.getBoundingClientRect().width;
+        const height = svgElement.getBoundingClientRect().height;
+        clonedSvg.setAttribute('width', width.toString());
+        clonedSvg.setAttribute('height', height.toString());
+
+        // Serializzazione
         const serializer = new XMLSerializer();
-        const source = '<?xml version="1.0" standalone="no"?>\r\n' + serializer.serializeToString(svg);
+        const svgString = serializer.serializeToString(clonedSvg);
+        const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
+        const url = URL.createObjectURL(svgBlob);
+
         const canvas = document.createElement('canvas');
-        canvas.width = svg.getBoundingClientRect().width * 2;
-        canvas.height = svg.getBoundingClientRect().height * 2;
+        // Fattore 2 per alta definizione (Retina)
+        const scale = 2;
+        canvas.width = width * scale;
+        canvas.height = height * scale;
         const ctx = canvas.getContext('2d');
-        const img = new Image();
-        img.src = 'data:image/svg+xml;base64,' + window.btoa(unescape(encodeURIComponent(source)));
-        img.onload = () => {
-            ctx?.scale(2, 2);
-            ctx?.drawImage(img, 0, 0);
-            const link = document.createElement('a');
-            link.download = `plot_${new Date().toISOString().split('T')[0]}.png`;
-            link.href = canvas.toDataURL('image/png');
-            link.click();
-        };
-        setIsDownloadOpen(false);
+
+        if (ctx) {
+            ctx.fillStyle = "white";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            const img = new Image();
+            img.onload = () => {
+                ctx.scale(scale, scale);
+                ctx.drawImage(img, 0, 0);
+
+                const pngUrl = canvas.toDataURL('image/png');
+                const downloadLink = document.createElement('a');
+                downloadLink.href = pngUrl;
+                downloadLink.download = `invest_monitor_plot_${new Date().toISOString().split('T')[0]}.png`;
+                document.body.appendChild(downloadLink);
+                downloadLink.click();
+                document.body.removeChild(downloadLink);
+
+                // Pulizia
+                URL.revokeObjectURL(url);
+                setIsDownloadOpen(false);
+            };
+            img.src = url;
+        }
     };
 
     return (
