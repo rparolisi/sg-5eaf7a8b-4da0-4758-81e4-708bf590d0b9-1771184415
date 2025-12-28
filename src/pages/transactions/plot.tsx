@@ -1,8 +1,8 @@
 import { useRouter } from 'next/router';
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import {
-    ArrowLeft, BarChart3, Settings, Filter, RefreshCw, XCircle
+    ArrowLeft, BarChart3, Settings, Filter, RefreshCw, XCircle, ChevronDown, Check
 } from 'lucide-react';
 import {
     LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
@@ -11,7 +11,6 @@ import {
 // --- CONFIGURAZIONE SUPABASE ---
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
 const SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
-// Creiamo il client UNA sola volta qui fuori
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // --- PALETTE COLORI ---
@@ -26,6 +25,7 @@ const COLUMNS = [
     { key: 'ticker', label: 'Ticker', type: 'text' },
     { key: 'person', label: 'Person', type: 'text' },
     { key: 'sector', label: 'Sector', type: 'text' },
+    { key: 'category', label: 'Category', type: 'text' }, // Aggiunta Categoria
     { key: 'total_outlay_eur', label: 'Total Amount (€)', type: 'number' },
     { key: 'purchase_price_per_share_eur', label: 'Price per Share (€)', type: 'number' },
     { key: 'shares_count', label: 'Shares Count', type: 'number' },
@@ -34,12 +34,74 @@ const COLUMNS = [
     { key: 'effective_average_price', label: 'Eff. Avg Price', type: 'number' }
 ];
 
+// --- COMPONENTE MULTI-SELECT ---
+// Un menu a tendina personalizzato per selezionare più voci con checkbox
+const MultiSelect = ({ label, options, selected, onChange }: { label: string, options: string[], selected: string[], onChange: (val: string[]) => void }) => {
+    const [isOpen, setIsOpen] = useState(false);
+    const dropdownRef = useRef < HTMLDivElement > (null);
+
+    // Chiude il menu se clicchi fuori
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+                setIsOpen(false);
+            }
+        };
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, []);
+
+    const toggleOption = (option: string) => {
+        if (selected.includes(option)) {
+            onChange(selected.filter(item => item !== option));
+        } else {
+            onChange([...selected, option]);
+        }
+    };
+
+    return (
+        <div className="relative" ref={dropdownRef}>
+            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">{label}</label>
+            <button
+                onClick={() => setIsOpen(!isOpen)}
+                className="w-full p-2 border border-slate-300 rounded-lg text-sm bg-slate-50 flex justify-between items-center outline-none focus:ring-2 focus:ring-purple-500 hover:bg-white transition-colors"
+            >
+                <span className={`truncate ${selected.length === 0 ? 'text-slate-400' : 'text-slate-800'}`}>
+                    {selected.length === 0 ? `Select ${label}...` : `${selected.length} selected`}
+                </span>
+                <ChevronDown size={16} className={`text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+            </button>
+
+            {isOpen && (
+                <div className="absolute top-full left-0 w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-xl z-50 max-h-60 overflow-y-auto">
+                    {options.length > 0 ? (
+                        options.map(option => {
+                            const isSelected = selected.includes(option);
+                            return (
+                                <div
+                                    key={option}
+                                    onClick={() => toggleOption(option)}
+                                    className="px-3 py-2 flex items-center gap-2 cursor-pointer hover:bg-purple-50 transition-colors text-sm text-slate-700"
+                                >
+                                    <div className={`w-4 h-4 border rounded flex items-center justify-center flex-shrink-0 transition-colors ${isSelected ? 'bg-purple-600 border-purple-600' : 'border-slate-300'}`}>
+                                        {isSelected && <Check size={12} className="text-white" />}
+                                    </div>
+                                    <span className="truncate">{option}</span>
+                                </div>
+                            );
+                        })
+                    ) : (
+                        <div className="px-3 py-2 text-xs text-slate-400 italic">No options available</div>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+};
+
+// --- PAGINA PRINCIPALE ---
 export default function PlotPage() {
     const router = useRouter();
-
-    // RIMOSSO il doppio useState per supabase che causava problemi
-    // const [supabase, setSupabase] = useState < any > (null); 
-
     const [loading, setLoading] = useState(true);
     const [rawData, setRawData] = useState < any[] > ([]);
 
@@ -47,14 +109,20 @@ export default function PlotPage() {
     const [config, setConfig] = useState({
         x: 'operation_date',
         y: 'total_outlay_eur',
-        groupBy: 'ticker' // Default
+        groupBy: 'ticker'
     });
 
-    // --- STATO FILTRI ---
-    const [filters, setFilters] = useState({
-        person: '',
-        ticker: '',
-        sector: ''
+    // --- STATO FILTRI (Ora sono ARRAY di stringhe) ---
+    const [filters, setFilters] = useState < {
+        person: string[];
+        ticker: string[];
+        sector: string[];
+        category: string[]; // Nuovo filtro Categoria
+    } > ({
+        person: [],
+        ticker: [],
+        sector: [],
+        category: []
     });
 
     // 1. FETCH DATA
@@ -70,7 +138,6 @@ export default function PlotPage() {
             setRawData(data || []);
         } catch (err: any) {
             console.error("Errore fetch:", err);
-            // alert("Errore caricamento dati"); // Opzionale
         } finally {
             setLoading(false);
         }
@@ -86,19 +153,22 @@ export default function PlotPage() {
         return {
             people: getUnique('person'),
             tickers: getUnique('ticker'),
-            sectors: getUnique('sector')
+            sectors: getUnique('sector'),
+            categories: getUnique('category') // Estrai categorie uniche
         };
     }, [rawData]);
 
-    // 3. ELABORAZIONE DATI
+    // 3. ELABORAZIONE DATI (Filter -> Group -> Format)
     const { chartData, lines } = useMemo(() => {
         if (!rawData.length) return { chartData: [], lines: [] };
 
-        // A. FILTRAGGIO
+        // A. FILTRAGGIO (Logica Multipla)
         let filtered = rawData.filter(item => {
-            if (filters.person && item.person !== filters.person) return false;
-            if (filters.ticker && item.ticker !== filters.ticker) return false;
-            if (filters.sector && item.sector !== filters.sector) return false;
+            // Se il filtro ha elementi, controlla se il valore dell'item è incluso nella lista selezionata
+            if (filters.person.length > 0 && !filters.person.includes(item.person)) return false;
+            if (filters.ticker.length > 0 && !filters.ticker.includes(item.ticker)) return false;
+            if (filters.sector.length > 0 && !filters.sector.includes(item.sector)) return false;
+            if (filters.category.length > 0 && !filters.category.includes(item.category)) return false;
             return true;
         });
 
@@ -145,13 +215,15 @@ export default function PlotPage() {
     }, [rawData, config, filters]);
 
     // --- HANDLERS ---
-    const handleFilterChange = (key: string, value: string) => {
+    const handleFilterChange = (key: keyof typeof filters, value: string[]) => {
         setFilters(prev => ({ ...prev, [key]: value }));
     };
 
     const clearFilters = () => {
-        setFilters({ person: '', ticker: '', sector: '' });
+        setFilters({ person: [], ticker: [], sector: [], category: [] });
     };
+
+    const hasActiveFilters = filters.person.length > 0 || filters.ticker.length > 0 || filters.sector.length > 0 || filters.category.length > 0;
 
     return (
         <div className="min-h-screen bg-slate-50 font-sans text-slate-900 pb-10">
@@ -168,7 +240,7 @@ export default function PlotPage() {
                         </button>
                         <h1 className="text-xl font-bold text-slate-800 flex items-center gap-2">
                             <BarChart3 className="text-purple-600" />
-                            Plotting {/* CORRETTO: Titolo accorciato */}
+                            Plotting
                         </h1>
                     </div>
                     <div className="text-sm text-slate-500">
@@ -223,18 +295,19 @@ export default function PlotPage() {
                                     <option value="ticker">Ticker</option>
                                     <option value="person">Person</option>
                                     <option value="sector">Sector</option>
+                                    <option value="category">Category</option>
                                 </select>
                             </div>
                         </div>
                     </div>
 
-                    {/* FILTERS */}
+                    {/* FILTERS MULTIPLI */}
                     <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
                         <div className="flex items-center justify-between mb-4 border-b border-slate-100 pb-2">
                             <div className="flex items-center gap-2 text-slate-800 font-semibold">
                                 <Filter size={18} /> Filters
                             </div>
-                            {(filters.person || filters.ticker || filters.sector) && (
+                            {hasActiveFilters && (
                                 <button onClick={clearFilters} className="text-xs text-red-500 hover:underline flex items-center gap-1">
                                     <XCircle size={12} /> Clear
                                 </button>
@@ -242,45 +315,30 @@ export default function PlotPage() {
                         </div>
 
                         <div className="space-y-4">
-                            <div>
-                                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Person</label>
-                                <select
-                                    className="w-full p-2 border border-slate-300 rounded-lg text-sm outline-none focus:border-blue-500"
-                                    value={filters.person}
-                                    onChange={(e) => handleFilterChange('person', e.target.value)}
-                                >
-                                    <option value="">All People</option>
-                                    {uniqueValues.people.map((p: any) => (
-                                        <option key={p} value={p}>{p}</option>
-                                    ))}
-                                </select>
-                            </div>
-                            <div>
-                                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Ticker</label>
-                                <select
-                                    className="w-full p-2 border border-slate-300 rounded-lg text-sm outline-none focus:border-blue-500"
-                                    value={filters.ticker}
-                                    onChange={(e) => handleFilterChange('ticker', e.target.value)}
-                                >
-                                    <option value="">All Tickers</option>
-                                    {uniqueValues.tickers.map((t: any) => (
-                                        <option key={t} value={t}>{t}</option>
-                                    ))}
-                                </select>
-                            </div>
-                            <div>
-                                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Sector</label>
-                                <select
-                                    className="w-full p-2 border border-slate-300 rounded-lg text-sm outline-none focus:border-blue-500"
-                                    value={filters.sector}
-                                    onChange={(e) => handleFilterChange('sector', e.target.value)}
-                                >
-                                    <option value="">All Sectors</option>
-                                    {uniqueValues.sectors.map((s: any) => (
-                                        <option key={s} value={s}>{s}</option>
-                                    ))}
-                                </select>
-                            </div>
+                            <MultiSelect
+                                label="Person"
+                                options={uniqueValues.people}
+                                selected={filters.person}
+                                onChange={(val) => handleFilterChange('person', val)}
+                            />
+                            <MultiSelect
+                                label="Ticker"
+                                options={uniqueValues.tickers}
+                                selected={filters.ticker}
+                                onChange={(val) => handleFilterChange('ticker', val)}
+                            />
+                            <MultiSelect
+                                label="Category"
+                                options={uniqueValues.categories}
+                                selected={filters.category}
+                                onChange={(val) => handleFilterChange('category', val)}
+                            />
+                            <MultiSelect
+                                label="Sector"
+                                options={uniqueValues.sectors}
+                                selected={filters.sector}
+                                onChange={(val) => handleFilterChange('sector', val)}
+                            />
                         </div>
                     </div>
                 </div>
@@ -315,7 +373,7 @@ export default function PlotPage() {
                                     </p>
                                 </div>
 
-                                {/* FIX: ALTEZZA FISSA E DEFINITA PER IL GRAFICO */}
+                                {/* Grafico con altezza fissa */}
                                 <div className="w-full h-[500px]" style={{ height: '500px' }}>
                                     <ResponsiveContainer width="100%" height="100%">
                                         <LineChart data={chartData} margin={{ top: 10, right: 30, left: 10, bottom: 20 }}>
