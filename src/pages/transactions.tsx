@@ -1,15 +1,22 @@
 import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 // ICONE
-import { Filter, ArrowUp, ArrowDown, Search, Check, Plus, X, Calendar, TrendingUp, TrendingDown, Settings, AlertTriangle, GripVertical, List, Download, FileText, FileSpreadsheet } from 'lucide-react';
+import {
+    Filter, ArrowUp, ArrowDown, Search, Check, Plus, X, Calendar,
+    TrendingUp, TrendingDown, Settings, AlertTriangle, GripVertical,
+    List, Download, FileText, FileSpreadsheet, LineChart as LineChartIcon, BarChart3
+} from 'lucide-react';
+
+// RECHARTS (Libreria per i grafici)
+import {
+    LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+    ScatterChart, Scatter, ZAxis
+} from 'recharts';
 
 /* NOTA PER L'USO LOCALE (Next.js / React):
-   1. Installa la libreria: npm install @supabase/supabase-js xlsx
+   1. Installa: npm install @supabase/supabase-js xlsx recharts
    2. Decommenta la riga qui sotto:
    import { createClient } from '@supabase/supabase-js';
    import * as XLSX from 'xlsx';
-   3. Rimuovi le parti relative al caricamento CDN di Supabase e XLSX.
-   4. Inizializza il client normalmente:
-      const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!);
 */
 
 // --- CONFIGURAZIONE ---
@@ -22,7 +29,7 @@ const PYTHON_API_URL = "https://invest-monitor-api.onrender.com";
 // --- COSTANTI ---
 const PEOPLE_OPTIONS = ["Ale", "Peppe", "Raff"];
 
-// Definizione completa di tutte le colonne (Mappatura fornita dall'utente)
+// Definizione completa di tutte le colonne
 const ALL_COLUMNS = [
     { key: 'transaction_id', label: 'Transaction ID', type: 'text' },
     { key: 'ticker', label: 'Ticker', type: 'text' },
@@ -73,7 +80,7 @@ type SortConfig = {
 };
 
 export default function Transactions() {
-    // Client Supabase (Stato necessario solo per l'anteprima CDN, in locale usa const globale)
+    // Client Supabase
     const [supabase, setSupabase] = useState < any > (null);
 
     const [transactions, setTransactions] = useState < Transaction[] > ([]);
@@ -99,8 +106,12 @@ export default function Transactions() {
     const [isColumnMenuOpen, setIsColumnMenuOpen] = useState(false);
     const columnMenuRef = useRef < HTMLDivElement > (null);
 
-    // --- STATI MODALE ---
+    // --- STATI MODALE ADD ---
     const [isModalOpen, setIsModalOpen] = useState(false);
+
+    // --- STATI MODALE PLOT (NUOVO) ---
+    const [isPlotModalOpen, setIsPlotModalOpen] = useState(false);
+    const [plotConfig, setPlotConfig] = useState({ x: 'operation_date', y: 'total_outlay_eur' });
 
     // --- STATI DOWNLOAD ---
     const [isDownloadMenuOpen, setIsDownloadMenuOpen] = useState(false);
@@ -195,19 +206,11 @@ export default function Transactions() {
 
     // --- EXPORT LOGIC ---
     const exportToCSV = () => {
-        // Usa visibleColumns per esportare solo ciò che si vede, o ALL_COLUMNS per tutto
-        // Solitamente si preferisce esportare ciò che l'utente vede, ma con tutte le colonne disponibili è meglio
-        // Usiamo i dati filtrati (processedData)
-
         if (processedData.length === 0) return;
-
-        // Genera headers usando i label
         const headers = ALL_COLUMNS.map(c => c.label).join(',');
-
         const rows = processedData.map(t => {
             return ALL_COLUMNS.map(col => {
                 let val = t[col.key];
-                // Gestione escape per CSV (virgolette e virgole)
                 if (val === null || val === undefined) return '';
                 val = String(val);
                 if (val.includes(',') || val.includes('"') || val.includes('\n')) {
@@ -216,7 +219,6 @@ export default function Transactions() {
                 return val;
             }).join(',');
         }).join('\n');
-
         const csvContent = "data:text/csv;charset=utf-8," + headers + '\n' + rows;
         const encodedUri = encodeURI(csvContent);
         const link = document.createElement("a");
@@ -234,8 +236,6 @@ export default function Transactions() {
             return;
         }
         if (processedData.length === 0) return;
-
-        // Mappa i dati usando le etichette delle colonne
         const dataForExport = processedData.map(t => {
             const row: any = {};
             ALL_COLUMNS.forEach(col => {
@@ -243,7 +243,6 @@ export default function Transactions() {
             });
             return row;
         });
-
         const worksheet = (window as any).XLSX.utils.json_to_sheet(dataForExport);
         const workbook = (window as any).XLSX.utils.book_new();
         (window as any).XLSX.utils.book_append_sheet(workbook, worksheet, "Transactions");
@@ -255,16 +254,13 @@ export default function Transactions() {
     const startResize = (e: React.MouseEvent, colKey: string) => {
         e.preventDefault();
         e.stopPropagation();
-
         const thElement = (e.target as HTMLElement).closest('th');
         const currentWidth = thElement ? thElement.getBoundingClientRect().width : 100;
-
         resizingRef.current = {
             startX: e.pageX,
             startWidth: colWidths[colKey] || currentWidth,
             colKey: colKey
         };
-
         document.addEventListener('mousemove', handleMouseMove);
         document.addEventListener('mouseup', handleMouseUp);
         document.body.style.cursor = 'col-resize';
@@ -272,11 +268,9 @@ export default function Transactions() {
 
     const handleMouseMove = useCallback((e: MouseEvent) => {
         if (!resizingRef.current) return;
-
         const { startX, startWidth, colKey } = resizingRef.current;
         const deltaX = e.pageX - startX;
         const newWidth = Math.max(50, startWidth + deltaX);
-
         setColWidths(prev => ({
             ...prev,
             [colKey]: newWidth
@@ -300,31 +294,25 @@ export default function Transactions() {
 
     const handleDragOver = (e: React.DragEvent, colKey: string) => {
         e.preventDefault();
-        if (draggedColKey !== colKey) {
-            // Placeholder per feedback visivo
-        }
+        if (draggedColKey !== colKey) { }
     };
 
     const handleDrop = (e: React.DragEvent, targetColKey: string) => {
         e.preventDefault();
         if (!draggedColKey || draggedColKey === targetColKey) return;
-
         const newOrder = [...visibleColumns];
         const dragIndex = newOrder.indexOf(draggedColKey);
         const hoverIndex = newOrder.indexOf(targetColKey);
-
         if (dragIndex > -1 && hoverIndex > -1) {
             newOrder.splice(dragIndex, 1);
             newOrder.splice(hoverIndex, 0, draggedColKey);
             setVisibleColumns(newOrder);
         }
-
         setDraggedColKey(null);
     };
 
     async function fetchTransactions() {
         if (!supabase) return;
-
         try {
             setLoading(true);
             const { data, error } = await supabase
@@ -386,26 +374,19 @@ export default function Transactions() {
             alert("Please fill in all required fields.");
             return;
         }
-
         setLoading(true);
-
         try {
             console.log("⏳ Sending data to Python API...", formData);
-
             const response = await fetch(`${PYTHON_API_URL}/process_transaction`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(formData)
             });
-
             const result = await response.json();
-
             if (!response.ok) {
                 throw new Error(result.detail || "Error connecting to Python server");
             }
-
             alert(`Transaction processed! ${result.inserted_rows} rows added.`);
-
             setIsModalOpen(false);
             setFormData({
                 type: 'Acquisto',
@@ -414,9 +395,7 @@ export default function Transactions() {
                 shares_multi: {}, platform: '', account_owner: '', regulated: 'Yes',
                 expenses: '0', taxes: '0'
             });
-
             fetchTransactions();
-
         } catch (err: any) {
             console.error("API Error:", err);
             alert(`❌ Error processing transaction: ${err.message}`);
@@ -470,7 +449,24 @@ export default function Transactions() {
         return processedData.slice(0, rowsLimit);
     }, [processedData, rowsLimit]);
 
-    const handlePasteInSearch = (e: React.ClipboardEvent<HTMLInputElement>, columnKey: string) => { /* ... */ };
+    // --- PREPARE DATA FOR PLOT ---
+    const chartData = useMemo(() => {
+        if (!processedData.length) return [];
+        // Clona e ordina i dati per asse X (utile se X è una data o numero) per evitare linee ingarbugliate
+        const data = [...processedData].map(item => ({
+            ...item,
+            // Format for display if needed
+            displayX: formatValue(plotConfig.x, item[plotConfig.x]),
+            valX: item[plotConfig.x],
+            valY: Number(item[plotConfig.y]) || 0
+        })).sort((a, b) => {
+            if (a.valX < b.valX) return -1;
+            if (a.valX > b.valX) return 1;
+            return 0;
+        });
+        return data;
+    }, [processedData, plotConfig]);
+
     const toggleFilterValue = (columnKey: string, value: string) => {
         setFilters(prev => {
             const current = prev[columnKey] || [];
@@ -487,6 +483,8 @@ export default function Transactions() {
             direction: current.key === key && current.direction === 'asc' ? 'desc' : 'asc'
         }));
     };
+
+    const handlePasteInSearch = (e: React.ClipboardEvent<HTMLInputElement>, columnKey: string) => { /* ... */ };
 
     const renderCellContent = (t: Transaction, colKey: string) => {
         const val = t[colKey];
@@ -527,14 +525,6 @@ export default function Transactions() {
             case 'exchange_rate_at_purchase':
             case 'ratio':
                 return <div className="text-right text-gray-500 text-xs">{val ? Number(val).toFixed(4) : '-'}</div>;
-            case 'sector':
-            case 'asset_currency':
-            case 'category':
-            case 'platform':
-            case 'account_owner':
-            case 'regulated_market_or_mtf':
-            case 'person':
-                return val || '-';
             default:
                 return val || '-';
         }
@@ -544,23 +534,26 @@ export default function Transactions() {
         <main className="min-h-screen p-8 bg-gray-50 font-sans" onClick={() => setActiveColumn(null)}>
             <div className="max-w-6xl mx-auto" onClick={(e) => e.stopPropagation()}>
 
-                {/* --- HEADER GRID LAYOUT (Modificato) --- */}
+                {/* --- HEADER GRID LAYOUT --- */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-center mb-6">
                     {/* LEFT: Title */}
                     <div className="justify-self-start">
                         <h1 className="text-3xl font-bold text-gray-800">Transactions</h1>
                     </div>
 
-                    {/* CENTER: Add Transaction Button */}
-                    <div className="justify-self-center w-full md:w-auto">
-                        <button onClick={() => setIsModalOpen(true)} className="w-full md:w-auto flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-full font-medium shadow-md hover:shadow-lg transition-all transform hover:-translate-y-0.5">
-                            <Plus size={20} /> Add Transaction
+                    {/* CENTER: Buttons (Add & Plot) */}
+                    <div className="justify-self-center w-full md:w-auto flex gap-2">
+                        <button onClick={() => setIsModalOpen(true)} className="flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-full font-medium shadow-md hover:shadow-lg transition-all transform hover:-translate-y-0.5">
+                            <Plus size={20} /> <span className="hidden sm:inline">Add</span>
+                        </button>
+                        {/* NUOVO PULSANTE PLOT */}
+                        <button onClick={() => setIsPlotModalOpen(true)} className="flex items-center justify-center gap-2 bg-white hover:bg-purple-50 text-purple-600 border border-purple-200 px-5 py-2.5 rounded-full font-medium shadow-sm hover:shadow-md transition-all">
+                            <LineChartIcon size={20} /> <span className="hidden sm:inline">Plot</span>
                         </button>
                     </div>
 
                     {/* RIGHT: Controls (Row Limit, Settings, Download) */}
                     <div className="flex items-center gap-3 justify-self-end">
-
                         {/* Row Limiter */}
                         <div className="flex items-center gap-2 bg-white border border-gray-300 rounded-lg px-3 py-1.5 shadow-sm">
                             <List size={16} className="text-gray-400" />
@@ -617,7 +610,7 @@ export default function Transactions() {
                             )}
                         </div>
 
-                        {/* Download Button (Replacing Add Button position) */}
+                        {/* Download Button */}
                         <div className="relative" ref={downloadMenuRef}>
                             <button
                                 onClick={() => setIsDownloadMenuOpen(!isDownloadMenuOpen)}
@@ -653,7 +646,6 @@ export default function Transactions() {
                         <div>
                             <p className="font-semibold">Connection Error</p>
                             <p className="text-sm">{error}</p>
-                            {error.includes("URL") && <p className="text-xs mt-1 text-red-500">Note: In this preview environment, you must hardcode keys in the <code>SUPABASE_URL</code> constants above.</p>}
                         </div>
                     </div>
                 )}
@@ -713,7 +705,6 @@ export default function Transactions() {
                                                                 className="w-full pl-8 pr-3 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none"
                                                                 value={menuSearchTerm}
                                                                 onChange={(e) => setMenuSearchTerm(e.target.value)}
-                                                                onPaste={(e) => handlePasteInSearch(e, col.key)}
                                                             />
                                                         </div>
                                                         <div className="max-h-48 overflow-y-auto space-y-1">
@@ -761,7 +752,98 @@ export default function Transactions() {
                     </div>
                 )}
 
-                {/* --- MODAL ADD TRANSACTION --- */}
+                {/* --- MODAL PLOT DATA (NUOVO) --- */}
+                {isPlotModalOpen && (
+                    <div className="fixed inset-0 z-[100] bg-black/50 flex items-center justify-center p-4 backdrop-blur-sm">
+                        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
+                            {/* Header */}
+                            <div className="flex justify-between items-center p-6 border-b border-gray-100 shrink-0">
+                                <div className="flex items-center gap-3">
+                                    <div className="bg-purple-100 p-2 rounded-lg text-purple-600">
+                                        <BarChart3 size={24} />
+                                    </div>
+                                    <h2 className="text-2xl font-bold text-gray-800">Plot Data</h2>
+                                </div>
+                                <button onClick={() => setIsPlotModalOpen(false)} className="text-gray-400 hover:text-gray-600 transition-colors">
+                                    <X size={24} />
+                                </button>
+                            </div>
+
+                            {/* Controls */}
+                            <div className="p-4 bg-gray-50 border-b border-gray-100 grid grid-cols-1 md:grid-cols-2 gap-4 shrink-0">
+                                <div>
+                                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1">X Axis (Horizontal)</label>
+                                    <select
+                                        className="w-full p-2 border border-gray-300 rounded-lg text-sm"
+                                        value={plotConfig.x}
+                                        onChange={(e) => setPlotConfig(prev => ({ ...prev, x: e.target.value }))}
+                                    >
+                                        {ALL_COLUMNS.map(col => (
+                                            <option key={col.key} value={col.key}>{col.label}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Y Axis (Vertical)</label>
+                                    <select
+                                        className="w-full p-2 border border-gray-300 rounded-lg text-sm"
+                                        value={plotConfig.y}
+                                        onChange={(e) => setPlotConfig(prev => ({ ...prev, y: e.target.value }))}
+                                    >
+                                        {ALL_COLUMNS.filter(c => c.type === 'number').map(col => (
+                                            <option key={col.key} value={col.key}>{col.label}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            </div>
+
+                            {/* Chart Area */}
+                            <div className="p-6 flex-grow min-h-[400px]">
+                                {chartData.length > 0 ? (
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <LineChart data={chartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+                                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
+                                            <XAxis
+                                                dataKey="displayX"
+                                                angle={-45}
+                                                textAnchor="end"
+                                                height={70}
+                                                tick={{ fontSize: 12, fill: '#6b7280' }}
+                                            />
+                                            <YAxis
+                                                tick={{ fontSize: 12, fill: '#6b7280' }}
+                                                tickFormatter={(value) => value.toLocaleString()}
+                                            />
+                                            <Tooltip
+                                                contentStyle={{ backgroundColor: 'white', borderRadius: '8px', border: '1px solid #e5e7eb', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                                            />
+                                            <Legend />
+                                            <Line
+                                                type="monotone"
+                                                dataKey="valY"
+                                                name={ALL_COLUMNS.find(c => c.key === plotConfig.y)?.label || 'Value'}
+                                                stroke="#8b5cf6"
+                                                strokeWidth={2}
+                                                dot={{ r: 3, fill: '#8b5cf6' }}
+                                                activeDot={{ r: 6 }}
+                                            />
+                                        </LineChart>
+                                    </ResponsiveContainer>
+                                ) : (
+                                    <div className="h-full flex items-center justify-center text-gray-400">
+                                        No data to display
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="px-6 py-3 bg-gray-50 text-xs text-gray-500 text-center border-t border-gray-100">
+                                Displaying {chartData.length} data points based on current table filters.
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* --- MODAL ADD TRANSACTION (ESISTENTE) --- */}
                 {isModalOpen && (
                     <div className="fixed inset-0 z-[100] bg-black/50 flex items-center justify-center p-4 backdrop-blur-sm">
                         <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
