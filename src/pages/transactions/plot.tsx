@@ -1,7 +1,6 @@
 import { useRouter } from 'next/router';
 import React, { useEffect, useState, useMemo } from 'react';
 import { createClient } from '@supabase/supabase-js';
-import { useRouter } from 'next/router';
 import {
     ArrowLeft, BarChart3, Settings, Filter, RefreshCw, XCircle
 } from 'lucide-react';
