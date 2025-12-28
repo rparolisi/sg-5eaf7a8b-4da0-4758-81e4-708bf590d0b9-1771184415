@@ -9,6 +9,7 @@ import {
     LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
     PieChart, Pie, Cell
 } from 'recharts';
+import * as htmlToImage from 'html-to-image';
 
 // --- CONFIGURAZIONE SUPABASE ---
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
@@ -399,56 +400,28 @@ export default function PlotPage() {
         setIsDownloadOpen(false);
     };
 
-    const exportImage = () => {
-        // Seleziona l'elemento SVG dentro il container
-        const svgElement = chartContainerRef.current?.querySelector('svg');
-        if (!svgElement) return;
+    const exportImage = async () => {
+        if (!chartContainerRef.current) return;
 
-        // Clona l'elemento per non sporcare quello visibile
-        const clonedSvg = svgElement.cloneNode(true) as SVGElement;
+        try {
+            // Genera l'immagine PNG direttamente dal contenitore HTML
+            // Questo cattura TUTTO quello che vedi nel div (grafico, legenda, etichette)
+            const dataUrl = await htmlToImage.toPng(chartContainerRef.current, {
+                backgroundColor: '#ffffff', // Forza lo sfondo bianco
+                quality: 1.0,
+                pixelRatio: 2, // Alta definizione
+            });
 
-        // Forza lo sfondo bianco e dimensioni esplicite nel clone
-        clonedSvg.setAttribute('style', 'background-color: white; font-family: sans-serif;');
-        const width = svgElement.getBoundingClientRect().width;
-        const height = svgElement.getBoundingClientRect().height;
-        clonedSvg.setAttribute('width', width.toString());
-        clonedSvg.setAttribute('height', height.toString());
+            // Crea il link per il download
+            const link = document.createElement('a');
+            link.download = `invest_monitor_plot_${new Date().toISOString().split('T')[0]}.png`;
+            link.href = dataUrl;
+            link.click();
 
-        // Serializzazione
-        const serializer = new XMLSerializer();
-        const svgString = serializer.serializeToString(clonedSvg);
-        const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
-        const url = URL.createObjectURL(svgBlob);
-
-        const canvas = document.createElement('canvas');
-        // Fattore 2 per alta definizione (Retina)
-        const scale = 2;
-        canvas.width = width * scale;
-        canvas.height = height * scale;
-        const ctx = canvas.getContext('2d');
-
-        if (ctx) {
-            ctx.fillStyle = "white";
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-            const img = new Image();
-            img.onload = () => {
-                ctx.scale(scale, scale);
-                ctx.drawImage(img, 0, 0);
-
-                const pngUrl = canvas.toDataURL('image/png');
-                const downloadLink = document.createElement('a');
-                downloadLink.href = pngUrl;
-                downloadLink.download = `invest_monitor_plot_${new Date().toISOString().split('T')[0]}.png`;
-                document.body.appendChild(downloadLink);
-                downloadLink.click();
-                document.body.removeChild(downloadLink);
-
-                // Pulizia
-                URL.revokeObjectURL(url);
-                setIsDownloadOpen(false);
-            };
-            img.src = url;
+            setIsDownloadOpen(false);
+        } catch (error) {
+            console.error('Errore durante l\'esportazione dell\'immagine:', error);
+            alert('Impossibile generare l\'immagine. Riprova.');
         }
     };
 
