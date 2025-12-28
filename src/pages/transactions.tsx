@@ -1,4 +1,3 @@
-install recharts
 
 import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 // ICONE
