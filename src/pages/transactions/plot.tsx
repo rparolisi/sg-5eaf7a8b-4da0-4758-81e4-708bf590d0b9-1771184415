@@ -129,10 +129,11 @@ export default function PlotPage() {
     const [loading, setLoading] = useState(true);
     const [rawData, setRawData] = useState < any[] > ([]);
 
+    // --- CONFIGURAZIONE GRAFICO (DEFAULTS) ---
     const [config, setConfig] = useState({
         x: 'operation_date',
-        y: 'total_outlay_eur', // Default Y
-        groupBy: 'ticker'
+        y: 'cumulative_cost', // DEFAULT: Cumulative Cost
+        groupBy: 'ticker'     // DEFAULT: Ticker
     });
 
     const [filters, setFilters] = useState < {
@@ -164,7 +165,7 @@ export default function PlotPage() {
 
             if (error) throw error;
 
-            // Calcolo Cumulative Cost = Cumul.Shares * Avg.Price
+            // Calcolo Cumulative Cost
             const enrichedData = (data || []).map(t => ({
                 ...t,
                 cumulative_cost: (t.cumulative_shares_count || 0) * (t.average_price || 0)
@@ -178,11 +179,39 @@ export default function PlotPage() {
         }
     };
 
+    // 2. SET DEFAULT PERSON (Alias Utente Loggato)
     useEffect(() => {
-        fetchData();
-    }, []);
+        const setDefaultPerson = async () => {
+            try {
+                // 1. Ottieni utente loggato
+                const { data: { user } } = await supabase.auth.getUser();
+                if (!user) return;
 
-    // 2. UNIQUE VALUES
+                // 2. Cerca il suo alias nella tabella 'users'
+                const { data: userProfile } = await supabase
+                    .from('users')
+                    .select('alias')
+                    .eq('user_id', user.id)
+                    .maybeSingle();
+
+                // 3. Se trovato, impostalo come filtro di default
+                if (userProfile && userProfile.alias) {
+                    setFilters(prev => ({
+                        ...prev,
+                        person: [userProfile.alias]
+                    }));
+                }
+            } catch (e) {
+                console.error("Errore nel recupero alias utente:", e);
+            }
+        };
+
+        // Chiama fetch dati e poi imposta utente
+        fetchData();
+        setDefaultPerson();
+    }, []); // Esegui solo al mount
+
+    // 3. UNIQUE VALUES
     const uniqueValues = useMemo(() => {
         const getUnique = (key: string) => Array.from(new Set(rawData.map(item => item[key]).filter(Boolean))).sort();
         return {
@@ -193,7 +222,7 @@ export default function PlotPage() {
         };
     }, [rawData]);
 
-    // 3. AUTO-UPDATE DATE RANGE
+    // 4. AUTO-UPDATE DATE RANGE
     useEffect(() => {
         if (rawData.length === 0) return;
 
@@ -219,7 +248,7 @@ export default function PlotPage() {
     }, [rawData, filters]);
 
 
-    // 4. MOTORE DI CALCOLO PORTFOLIO (State-Based Aggregation)
+    // 5. MOTORE DI CALCOLO PORTFOLIO (State-Based Aggregation)
     const { chartData, lines } = useMemo(() => {
         if (!rawData.length || !dateRange.start || !dateRange.end) return { chartData: [], lines: [] };
 
@@ -245,27 +274,21 @@ export default function PlotPage() {
         });
 
         // C. DEFINIZIONE STATO DEL PORTAFOGLIO (POSIZIONI)
-        // La chiave unica di una posizione è "Ticker-Persona". 
-        // Monitoriamo lo stato di ogni posizione separatamente.
         const positionState: Record<string, any> = {};
-
-        // Helper per generare la chiave univoca della posizione
         const getPositionKey = (t: any) => `${t.person || 'Unknown'}-${t.ticker || 'Unknown'}`;
 
         // D. PRE-SCAN (Fino alla Start Date)
-        // Aggiorniamo lo stato delle posizioni con tutto ciò che è successo PRIMA della data di inizio grafico
         filtered.forEach(t => {
             const tDate = new Date(t[config.x]).getTime();
             if (tDate < startDateMs) {
                 const key = getPositionKey(t);
-                // L'ultima transazione vince e definisce lo stato attuale della posizione
                 positionState[key] = t;
             }
         });
 
         // E. TIME TRAVEL (Giorno per Giorno)
         const denseData = [];
-        const foundGroups = new Set < string > (); // Per la legenda
+        const foundGroups = new Set < string > ();
 
         for (let time = startDateMs; time <= endDateMs; time += oneDay) {
             const dateObj = new Date(time);
@@ -281,20 +304,16 @@ export default function PlotPage() {
                 });
             }
 
-            // 2. AGGREGAZIONE (La parte cruciale)
-            // Sommiamo i valori di TUTTE le posizioni attive in base al raggruppamento scelto
+            // 2. AGGREGAZIONE
             const dayValues: Record<string, number> = {};
-            let dayTotal = 0;
 
             Object.values(positionState).forEach(pos => {
-                // Determina a quale gruppo appartiene questa posizione (es. "Ale" o "Tech")
                 const groupName = config.groupBy ? (pos[config.groupBy] || 'Other') : 'value';
                 const val = Number(pos[config.y]) || 0;
 
                 // Somma al gruppo
                 dayValues[groupName] = (dayValues[groupName] || 0) + val;
 
-                // Traccia i gruppi visti per la legenda
                 foundGroups.add(groupName);
             });
 
@@ -305,11 +324,6 @@ export default function PlotPage() {
                 ...dayValues
             };
 
-            // Se non ci sono raggruppamenti, salva il totale come 'value'
-            if (!config.groupBy && Object.keys(positionState).length > 0) {
-                // Somma di tutto (già calcolata nel loop sopra sotto key 'value' se groupBy è null)
-            }
-
             denseData.push(row);
         }
 
@@ -317,7 +331,7 @@ export default function PlotPage() {
 
     }, [rawData, config, filters, dateRange]);
 
-    // 5. CALCOLO TICKS
+    // 6. CALCOLO TICKS
     const xAxisTicks = useMemo(() => {
         if (chartData.length === 0) return [];
         const MAX_TICKS = 8;
