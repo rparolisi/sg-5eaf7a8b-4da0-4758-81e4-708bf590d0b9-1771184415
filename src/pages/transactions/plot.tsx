@@ -11,9 +11,10 @@ import {
 // --- CONFIGURAZIONE SUPABASE ---
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
 const SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
+// Istanza unica del client
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-// --- PALETTE COLORI (Per le linee multiple) ---
+// --- PALETTE COLORI ---
 const COLORS = [
     "#2563eb", "#dc2626", "#16a34a", "#d97706", "#9333ea",
     "#0891b2", "#db2777", "#4b5563", "#84cc16", "#7c3aed"
@@ -34,7 +35,9 @@ const COLUMNS = [
 ];
 
 export default function PlotPage() {
-    const [supabase, setSupabase] = useState < any > (null);
+    const router = useRouter();
+    // RIMOSSO: const [supabase, setSupabase] = useState<any>(null);  <-- CAUSA DELL'ERRORE
+
     const [loading, setLoading] = useState(true);
     const [rawData, setRawData] = useState < any[] > ([]);
 
@@ -42,7 +45,7 @@ export default function PlotPage() {
     const [config, setConfig] = useState({
         x: 'operation_date',
         y: 'total_outlay_eur',
-        groupBy: 'ticker' // Default: raggruppa per Ticker
+        groupBy: 'ticker'
     });
 
     // --- STATO FILTRI ---
@@ -56,16 +59,17 @@ export default function PlotPage() {
     const fetchData = async () => {
         setLoading(true);
         try {
+            // Usa la variabile 'supabase' globale definita a riga 14
             const { data, error } = await supabase
                 .from('transactions')
                 .select('*')
-                .order('operation_date', { ascending: true }); // Ordine cronologico fondamentale per i grafici
+                .order('operation_date', { ascending: true });
 
             if (error) throw error;
             setRawData(data || []);
         } catch (err: any) {
             console.error("Errore fetch:", err);
-            alert("Errore caricamento dati");
+            // alert("Errore caricamento dati: " + err.message); // Commentato per evitare popup fastidiosi in dev
         } finally {
             setLoading(false);
         }
@@ -75,7 +79,7 @@ export default function PlotPage() {
         fetchData();
     }, []);
 
-    // 2. ESTRAZIONE VALORI UNICI PER I FILTRI (Popola le select)
+    // 2. ESTRAZIONE VALORI UNICI PER I FILTRI
     const uniqueValues = useMemo(() => {
         const getUnique = (key: string) => Array.from(new Set(rawData.map(item => item[key]).filter(Boolean))).sort();
         return {
@@ -98,7 +102,6 @@ export default function PlotPage() {
         });
 
         // B. RAGGRUPPAMENTO E FORMATTAZIONE
-        // Se non c'è raggruppamento (Singola linea "Total")
         if (!config.groupBy) {
             const data = filtered.map(t => ({
                 xAxis: t[config.x],
@@ -108,13 +111,11 @@ export default function PlotPage() {
             return { chartData: data, lines: ['value'] };
         }
 
-        // Se c'è raggruppamento (Multiple Linee)
         const groupedMap: Record<string, any> = {};
         const allGroups = new Set < string > ();
 
         filtered.forEach(t => {
             const xVal = t[config.x];
-            // Se xVal è nullo, saltiamo
             if (!xVal) return;
 
             const groupName = t[config.groupBy] || 'Other';
@@ -125,15 +126,13 @@ export default function PlotPage() {
             if (!groupedMap[xVal]) {
                 groupedMap[xVal] = {
                     xAxis: xVal,
-                    displayX: new Date(xVal).toLocaleDateString(), // Formatta data
-                    rawX: t[config.x] // Utile per ordinamento
+                    displayX: new Date(xVal).toLocaleDateString(),
+                    rawX: t[config.x]
                 };
             }
-            // Assegna valore: { "2023-01-01": { AAPL: 150, MSFT: 200 } }
             groupedMap[xVal][groupName] = yVal;
         });
 
-        // Converti mappa in array e ordina per X
         const finalData = Object.values(groupedMap).sort((a: any, b: any) => {
             if (a.rawX < b.rawX) return -1;
             if (a.rawX > b.rawX) return 1;
@@ -242,7 +241,6 @@ export default function PlotPage() {
                         </div>
 
                         <div className="space-y-4">
-                            {/* Person Filter */}
                             <div>
                                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Person</label>
                                 <select
@@ -256,8 +254,6 @@ export default function PlotPage() {
                                     ))}
                                 </select>
                             </div>
-
-                            {/* Ticker Filter */}
                             <div>
                                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Ticker</label>
                                 <select
@@ -271,8 +267,6 @@ export default function PlotPage() {
                                     ))}
                                 </select>
                             </div>
-
-                            {/* Sector Filter */}
                             <div>
                                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Sector</label>
                                 <select
@@ -350,18 +344,17 @@ export default function PlotPage() {
                                             />
                                             <Legend wrapperStyle={{ paddingTop: '20px' }} />
 
-                                            {/* RENDER LINES DYNAMICALLY */}
                                             {lines.map((lineKey, index) => (
                                                 <Line
                                                     key={lineKey}
-                                                    type="monotone" // Curva morbida
+                                                    type="monotone"
                                                     dataKey={lineKey}
                                                     name={lineKey === 'value' ? 'Total Value' : lineKey}
                                                     stroke={lines.length === 1 ? '#8b5cf6' : COLORS[index % COLORS.length]}
                                                     strokeWidth={2.5}
                                                     dot={{ r: 3, strokeWidth: 0, fill: lines.length === 1 ? '#8b5cf6' : COLORS[index % COLORS.length] }}
                                                     activeDot={{ r: 7, strokeWidth: 0 }}
-                                                    connectNulls={true} // Fondamentale per i buchi nelle date
+                                                    connectNulls={true}
                                                 />
                                             ))}
                                         </LineChart>
