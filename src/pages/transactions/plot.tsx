@@ -2,7 +2,7 @@ import { useRouter } from 'next/router';
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import {
-    ArrowLeft, BarChart3, Settings, Filter, RefreshCw, XCircle, ChevronDown, Check, Search, Calendar, PieChart as PieIcon, LineChart as LineIcon
+    ArrowLeft, BarChart3, Settings, Filter, RefreshCw, XCircle, ChevronDown, Check, Search, Calendar, PieChart as PieIcon, LineChart as LineIcon, Clock
 } from 'lucide-react';
 import {
     LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
@@ -207,13 +207,9 @@ export default function PlotPage() {
     }, []);
 
     // 3. AUTO-SELECT ALL CATEGORIES WHEN DATA LOADS
-    // Questo risolve il problema "No data found": seleziona automaticamente tutte le categorie presenti nel DB
     useEffect(() => {
         if (rawData.length > 0) {
-            // Estrai tutte le categorie uniche dai dati
             const allCategories = Array.from(new Set(rawData.map(item => item.category).filter(Boolean)));
-
-            // Se il filtro categoria è vuoto, selezionale tutte
             setFilters(prev => {
                 if (prev.category.length === 0) {
                     return { ...prev, category: allCategories };
@@ -238,8 +234,6 @@ export default function PlotPage() {
     useEffect(() => {
         if (rawData.length === 0) return;
 
-        // Se i filtri non matchano nulla, usa tutto il dataset come fallback per le date
-        // così il grafico non scompare completamente
         let dataForDates = rawData.filter(item => {
             if (filters.person.length > 0 && !filters.person.includes(item.person)) return false;
             if (filters.ticker.length > 0 && !filters.ticker.includes(item.ticker)) return false;
@@ -247,13 +241,6 @@ export default function PlotPage() {
             if (filters.category.length > 0 && !filters.category.includes(item.category)) return false;
             return true;
         });
-
-        // Fallback: se il filtro restituisce 0 risultati, usa rawData per calcolare almeno un range valido
-        if (dataForDates.length === 0 && rawData.length > 0) {
-            // Non forziamo le date se l'utente ha filtrato tutto via intenzionalmente, 
-            // ma qui serve per inizializzare.
-            // dataForDates = rawData; 
-        }
 
         if (dataForDates.length > 0) {
             const dates = dataForDates.map(d => new Date(d.operation_date).getTime());
@@ -263,7 +250,6 @@ export default function PlotPage() {
 
             const endDate = today > maxDate ? today : maxDate;
 
-            // Aggiorna solo se le date sono diverse per evitare loop
             setDateRange(prev => {
                 if (prev.start !== minDate || prev.end !== endDate) {
                     return { start: minDate, end: endDate };
@@ -273,7 +259,7 @@ export default function PlotPage() {
 
             if (!pieDate) setPieDate(endDate);
         }
-    }, [rawData, filters]); // Dipende da rawData e filters
+    }, [rawData, filters]);
 
 
     // 6. MOTORE DI CALCOLO (LINE CHART)
@@ -380,10 +366,10 @@ export default function PlotPage() {
     };
 
     const clearFilters = () => {
-        setFilters({ person: [], ticker: [], sector: [], category: [] });
+        setFilters({ person: [], ticker: [], sector: [], category: uniqueValues.categories });
     };
 
-    const hasActiveFilters = filters.person.length > 0 || filters.ticker.length > 0 || filters.sector.length > 0 || filters.category.length > 0;
+    const hasActiveFilters = filters.person.length > 0 || filters.ticker.length > 0 || filters.sector.length > 0;
 
     return (
         <div className="min-h-screen bg-slate-50 font-sans text-slate-900 pb-10">
@@ -438,19 +424,39 @@ export default function PlotPage() {
                         </div>
                     </div>
 
-                    {/* DATE RANGE */}
+                    {/* DATE RANGE - REDESIGNED */}
                     <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
                         <div className="flex items-center gap-2 mb-4 text-slate-800 font-semibold border-b border-slate-100 pb-2">
-                            <Calendar size={18} /> Date Range
+                            <Clock size={18} className="text-purple-600" /> Time Horizon
                         </div>
-                        <div className="grid grid-cols-2 gap-3">
-                            <div>
-                                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">From</label>
-                                <input type="date" className="w-full p-1.5 border border-slate-300 rounded text-xs outline-none focus:border-purple-500" value={dateRange.start} onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })} />
+                        <div className="flex flex-col gap-4">
+                            {/* Start Date */}
+                            <div className="relative">
+                                <div className="relative group">
+                                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                        <span className="text-slate-400 text-[10px] font-bold tracking-wider">FROM</span>
+                                    </div>
+                                    <input
+                                        type="date"
+                                        className="w-full pl-12 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-700 outline-none focus:bg-white focus:border-purple-500 focus:ring-2 focus:ring-purple-100 transition-all shadow-sm group-hover:border-purple-300"
+                                        value={dateRange.start}
+                                        onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })}
+                                    />
+                                </div>
                             </div>
-                            <div>
-                                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">To</label>
-                                <input type="date" className="w-full p-1.5 border border-slate-300 rounded text-xs outline-none focus:border-purple-500" value={dateRange.end} onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })} />
+                            {/* End Date */}
+                            <div className="relative">
+                                <div className="relative group">
+                                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                        <span className="text-slate-400 text-[10px] font-bold tracking-wider">TO</span>
+                                    </div>
+                                    <input
+                                        type="date"
+                                        className="w-full pl-10 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-700 outline-none focus:bg-white focus:border-purple-500 focus:ring-2 focus:ring-purple-100 transition-all shadow-sm group-hover:border-purple-300"
+                                        value={dateRange.end}
+                                        onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })}
+                                    />
+                                </div>
                             </div>
                         </div>
                     </div>
