@@ -141,7 +141,7 @@ export default function PortfolioValuation() {
                     {loading && (
                         <div className="absolute inset-0 bg-white/90 z-20 flex flex-col items-center justify-center text-slate-500 backdrop-blur-sm">
                             <Loader2 size={40} className="animate-spin text-blue-600 mb-3" />
-                            <p className="font-medium">Calcolo ponderato e recupero prezzi live...</p>
+                            <p className="font-medium">Retriving prices info...</p>
                         </div>
                     )}
 
