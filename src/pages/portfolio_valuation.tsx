@@ -87,6 +87,7 @@ interface Transaction {
 
 interface PortfolioItem {
     ticker: string;
+    y_ticker: string;
     quantity: number;
     avg_price: number;
     avg_date: string | null;
