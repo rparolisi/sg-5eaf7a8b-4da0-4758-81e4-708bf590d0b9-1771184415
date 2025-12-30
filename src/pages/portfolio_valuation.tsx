@@ -170,16 +170,20 @@ export default function PortfolioValuation() {
     }, [rawTransactions]);
 
     // 3. MOTORE DI CALCOLO LOCALE (Aggiornamento istantaneo tabella)
+    // 3. MOTORE DI CALCOLO LOCALE (Aggiornamento istantaneo tabella)
     const portfolioData = useMemo(() => {
         if (rawTransactions.length === 0) return [];
 
         // A. Filtra Transazioni
         const filtered = rawTransactions.filter(t => {
+            // Normalizzazione dei filtri
             if (filters.person.length > 0 && !filters.person.includes(t.person)) return false;
             if (filters.ticker.length > 0 && !filters.ticker.includes(t.ticker)) return false;
 
-            // Filtro date robusto: se le date non sono settate, passa tutto
-            const tDate = t.operation_date;
+            // FIX DATE: Prendi solo la parte YYYY-MM-DD per il confronto
+            // Alcuni DB ritornano "2023-01-01T00:00:00", noi vogliamo solo "2023-01-01"
+            const tDate = t.operation_date ? String(t.operation_date).split('T')[0] : '';
+
             if (filters.startDate && tDate < filters.startDate) return false;
             if (filters.endDate && tDate > filters.endDate) return false;
 
@@ -193,15 +197,16 @@ export default function PortfolioValuation() {
             const ticker = t.ticker;
             if (!groups[ticker]) groups[ticker] = { qty: 0, cost: 0, dates: [], weights: [] };
 
-            const qty = Number(t.shares_count);
-            const sign = Number(t.operation_sign);
-            const price = Number(t.price_per_share_eur);
-            // Usa total_outlay_eur se presente, altrimenti calcola price * qty
+            // FIX TIPI: Converti tutto in Number per sicurezza (Supabase a volte manda stringhe)
+            const qty = Number(t.shares_count || 0);
+            const sign = Number(t.operation_sign || 0);
+            const price = Number(t.price_per_share_eur || 0);
             const outlay = t.total_outlay_eur !== null ? Number(t.total_outlay_eur) : (price * qty);
 
-            // Logica Semplificata: Consideriamo solo Buy/Sell reali (buy_or_sell = 1)
-            // Ignoriamo le righe di PnL (buy_or_sell = 0) per il calcolo delle posizioni aperte
-            if (t.buy_or_sell === 1) {
+            // FIX LOGICA: buy_or_sell potrebbe arrivare come stringa "1" o numero 1
+            const isRealTransaction = Number(t.buy_or_sell) === 1;
+
+            if (isRealTransaction) {
                 if (sign === 1) { // Acquisto
                     groups[ticker].qty += qty;
                     groups[ticker].cost += outlay;
@@ -210,7 +215,6 @@ export default function PortfolioValuation() {
                     groups[ticker].weights.push(outlay);
                 } else { // Vendita
                     // Riduciamo costo e quantità proporzionalmente
-                    // Calcolo prezzo medio corrente prima della vendita
                     const currentAvg = groups[ticker].qty > 0 ? groups[ticker].cost / groups[ticker].qty : 0;
                     groups[ticker].qty -= qty;
                     groups[ticker].cost -= (currentAvg * qty);
@@ -252,7 +256,7 @@ export default function PortfolioValuation() {
 
             return {
                 ticker,
-                y_ticker: ticker, // Placeholder, il vero ticker yahoo lo sa solo python
+                y_ticker: ticker,
                 quantity,
                 avg_price,
                 avg_date,
