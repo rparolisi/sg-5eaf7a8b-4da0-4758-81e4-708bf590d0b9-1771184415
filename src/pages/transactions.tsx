@@ -112,7 +112,7 @@ export default function Transactions() {
 
     // Stato del Form
     const [formData, setFormData] = useState({
-        type: 'Acquisto',
+        type: 'Buy',
         people: [] as string[],
         security: '',
         date: new Date().toISOString().split('T')[0],
@@ -398,7 +398,7 @@ export default function Transactions() {
 
             setIsModalOpen(false);
             setFormData({
-                type: 'Acquisto',
+                type: 'Buy',
                 people: [], security: '', date: new Date().toISOString().split('T')[0],
                 price: '', currency: 'EUR', exchange_rate: '1', shares_single: '',
                 shares_multi: {}, platform: '', account_owner: '', regulated: 'Yes',
@@ -510,8 +510,8 @@ export default function Transactions() {
             case 'buy_or_sell':
                 return (
                     <span className={`px-2 py-1 rounded-full text-xs font-medium
-                        ${val === 'Acquisto' ? 'bg-green-100 text-green-800' :
-                            val === 'Vendita' ? 'bg-red-100 text-red-800' :
+                        ${val === 'Buy' ? 'bg-green-100 text-green-800' :
+                            val === 'Sell' ? 'bg-red-100 text-red-800' :
                                 'bg-gray-100 text-gray-800'}`}>
                         {t.category || val}
                     </span>
@@ -873,13 +873,13 @@ export default function Transactions() {
                                     <div className="bg-gray-100 p-1 rounded-lg flex">
                                         <button
                                             className={`px-6 py-2 rounded-md text-sm font-medium transition-all flex items-center gap-2 ${formData.type === 'Acquisto' ? 'bg-white text-green-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-                                            onClick={() => setFormData(prev => ({ ...prev, type: 'Acquisto' }))}
+                                            onClick={() => setFormData(prev => ({ ...prev, type: 'Buy' }))}
                                         >
                                             <TrendingUp size={16} /> Buy
                                         </button>
                                         <button
-                                            className={`px-6 py-2 rounded-md text-sm font-medium transition-all flex items-center gap-2 ${formData.type === 'Vendita' ? 'bg-white text-red-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-                                            onClick={() => setFormData(prev => ({ ...prev, type: 'Vendita' }))}
+                                            className={`px-6 py-2 rounded-md text-sm font-medium transition-all flex items-center gap-2 ${formData.type === 'Sell' ? 'bg-white text-red-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                                            onClick={() => setFormData(prev => ({ ...prev, type: 'Sell' }))}
                                         >
                                             <TrendingDown size={16} /> Sale
                                         </button>
