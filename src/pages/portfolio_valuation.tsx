@@ -7,11 +7,11 @@ import Link from 'next/link';
 // --- CONFIGURAZIONE ---
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
 const SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
-const PYTHON_API_BASE_URL = "https://invest-monitor-api.onrender.com"; // Assicurati sia l'URL corretto
+const PYTHON_API_BASE_URL = "https://invest-monitor-api.onrender.com";
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-// --- COMPONENTE MULTI-SELECT (Riutilizzato per coerenza) ---
+// --- COMPONENTE MULTI-SELECT ---
 const MultiSelect = ({ label, options, selected, onChange }: { label: string, options: string[], selected: string[], onChange: (val: string[]) => void }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [searchTerm, setSearchTerm] = useState("");
@@ -77,7 +77,7 @@ interface Transaction {
     ticker: string;
     person: string;
     shares_count: number;
-    price_per_share_eur: number; // o average_price se preferisci il calcolo DB
+    price_per_share_eur: number;
     operation_sign: number;
     buy_or_sell: number;
     operation_date: string;
@@ -92,7 +92,7 @@ interface PortfolioItem {
     avg_price: number;
     avg_date: string | null;
     total_exposure: number;
-    current_price: number | null; // Null finché non si cerca
+    current_price: number | null;
     profit_loss: number | null;
     performance_perc: number | null;
 }
@@ -122,7 +122,8 @@ export default function PortfolioValuation() {
         const initData = async () => {
             setLoadingData(true);
             try {
-                // Scarica tutto lo storico per permettere il calcolo locale
+                console.log("🔄 Fetching transactions from Supabase...");
+                // Scarica tutto lo storico
                 const { data, error } = await supabase
                     .from('transactions')
                     .select('*')
@@ -131,23 +132,27 @@ export default function PortfolioValuation() {
                 if (error) throw error;
 
                 const transactions = data || [];
+                console.log(`✅ Loaded ${transactions.length} transactions.`);
                 setRawTransactions(transactions);
 
-                // Imposta date di default (Min e Max)
+                // Imposta date di default (Min e Max) se ci sono dati
                 if (transactions.length > 0) {
                     const dates = transactions.map(t => new Date(t.operation_date).getTime());
                     const min = new Date(Math.min(...dates)).toISOString().split('T')[0];
                     const max = new Date(Math.max(...dates)).toISOString().split('T')[0];
                     const today = new Date().toISOString().split('T')[0];
 
+                    // Usa la data massima trovata o oggi se successiva
+                    const end = today > max ? today : max;
+
                     setFilters(prev => ({
                         ...prev,
                         startDate: min,
-                        endDate: today > max ? today : max
+                        endDate: end
                     }));
                 }
             } catch (e) {
-                console.error("Error loading transactions:", e);
+                console.error("❌ Error loading transactions:", e);
             } finally {
                 setLoadingData(false);
             }
@@ -173,6 +178,7 @@ export default function PortfolioValuation() {
             if (filters.person.length > 0 && !filters.person.includes(t.person)) return false;
             if (filters.ticker.length > 0 && !filters.ticker.includes(t.ticker)) return false;
 
+            // Filtro date robusto: se le date non sono settate, passa tutto
             const tDate = t.operation_date;
             if (filters.startDate && tDate < filters.startDate) return false;
             if (filters.endDate && tDate > filters.endDate) return false;
@@ -180,7 +186,7 @@ export default function PortfolioValuation() {
             return true;
         });
 
-        // B. Raggruppa e Calcola (Logica WAC semplificata per Preview Locale)
+        // B. Raggruppa e Calcola
         const groups: Record<string, { qty: number, cost: number, dates: number[], weights: number[] }> = {};
 
         filtered.forEach(t => {
@@ -190,11 +196,12 @@ export default function PortfolioValuation() {
             const qty = Number(t.shares_count);
             const sign = Number(t.operation_sign);
             const price = Number(t.price_per_share_eur);
-            // Nota: per precisione massima usiamo total_outlay se disponibile, altrimenti price * qty
-            const outlay = t.total_outlay_eur || (price * qty);
+            // Usa total_outlay_eur se presente, altrimenti calcola price * qty
+            const outlay = t.total_outlay_eur !== null ? Number(t.total_outlay_eur) : (price * qty);
 
-            // Logica Semplificata Ponderata
-            if (t.buy_or_sell === 1) { // Operazione Reale
+            // Logica Semplificata: Consideriamo solo Buy/Sell reali (buy_or_sell = 1)
+            // Ignoriamo le righe di PnL (buy_or_sell = 0) per il calcolo delle posizioni aperte
+            if (t.buy_or_sell === 1) {
                 if (sign === 1) { // Acquisto
                     groups[ticker].qty += qty;
                     groups[ticker].cost += outlay;
@@ -202,7 +209,8 @@ export default function PortfolioValuation() {
                     groups[ticker].dates.push(new Date(t.operation_date).getTime());
                     groups[ticker].weights.push(outlay);
                 } else { // Vendita
-                    // Riduciamo costo e quantità proporzionalmente (FIFO/Avg approssimato per display)
+                    // Riduciamo costo e quantità proporzionalmente
+                    // Calcolo prezzo medio corrente prima della vendita
                     const currentAvg = groups[ticker].qty > 0 ? groups[ticker].cost / groups[ticker].qty : 0;
                     groups[ticker].qty -= qty;
                     groups[ticker].cost -= (currentAvg * qty);
@@ -214,7 +222,7 @@ export default function PortfolioValuation() {
         const items: PortfolioItem[] = Object.keys(groups).map(ticker => {
             const g = groups[ticker];
 
-            // Pulisci floating point errors
+            // Ignora posizioni chiuse (quantità quasi zero)
             if (Math.abs(g.qty) < 0.001) return null;
 
             const quantity = g.qty;
@@ -244,7 +252,7 @@ export default function PortfolioValuation() {
 
             return {
                 ticker,
-                y_ticker: ticker, // Placeholder
+                y_ticker: ticker, // Placeholder, il vero ticker yahoo lo sa solo python
                 quantity,
                 avg_price,
                 avg_date,
@@ -255,7 +263,7 @@ export default function PortfolioValuation() {
             };
         }).filter(item => item !== null) as PortfolioItem[];
 
-        // Ordina per esposizione
+        // Ordina per esposizione decrescente
         return items.sort((a, b) => b.total_exposure - a.total_exposure);
 
     }, [rawTransactions, filters, marketPrices]);
@@ -265,17 +273,16 @@ export default function PortfolioValuation() {
         setLoadingPrices(true);
         setPricesError("");
         try {
-            // Chiamiamo Python per ottenere i prezzi (usiamo l'endpoint esistente che fa anche il lavoro sporco di Yahoo)
-            // Possiamo passare user_id per compatibilità, ma filtreremo i risultati.
+            console.log("🔎 Searching prices via Python API...");
+            // Chiamiamo Python per ottenere i prezzi
             const response = await fetch(`${PYTHON_API_BASE_URL}/api/portfolio?user_id=SEARCH_REQ`);
 
-            if (!response.ok) throw new Error("Errore API Python");
+            if (!response.ok) throw new Error(`API Error: ${response.status}`);
 
             const result = await response.json();
+            console.log("✅ Prices received:", result);
 
-            // Creiamo una mappa { TICKER: PREZZO_CORRENTE } dai dati Python
-            // L'endpoint Python restituisce un array di oggetti portfolio completi. 
-            // Noi estraiamo solo i prezzi freschi da lì.
+            // Estraiamo i prezzi freschi
             const pricesMap: Record<string, number> = {};
             if (Array.isArray(result)) {
                 result.forEach((p: any) => {
@@ -289,7 +296,7 @@ export default function PortfolioValuation() {
 
         } catch (e: any) {
             console.error(e);
-            setPricesError("Failed to fetch market prices via Python.");
+            setPricesError("Failed to fetch market prices. Python backend might be sleeping.");
         } finally {
             setLoadingPrices(false);
         }
@@ -361,7 +368,7 @@ export default function PortfolioValuation() {
                             <div>
                                 <h1 className="text-xl font-bold text-slate-800 flex items-center gap-2"><Wallet className="text-blue-600" /> Portfolio Valuation</h1>
                                 <p className="text-slate-400 text-xs mt-1">
-                                    {loadingData ? "Loading data..." : `Analysis based on ${portfolioData.length} positions.`}
+                                    {loadingData ? "Loading data..." : `Analysis based on ${portfolioData.length} open positions.`}
                                 </p>
                             </div>
                             <div className="flex gap-4 text-right">
@@ -406,7 +413,7 @@ export default function PortfolioValuation() {
                                     </thead>
                                     <tbody className="divide-y divide-slate-100">
                                         {portfolioData.length === 0 && !loadingData ? (
-                                            <tr><td colSpan={8} className="px-6 py-12 text-center text-slate-400">No positions match your filters.</td></tr>
+                                            <tr><td colSpan={8} className="px-6 py-12 text-center text-slate-400">No positions match your filters (or DB is empty).</td></tr>
                                         ) : (
                                             portfolioData.map((item) => {
                                                 const isProfitable = (item.profit_loss || 0) >= 0;
