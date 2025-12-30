@@ -278,8 +278,18 @@ export default function PortfolioValuation() {
         setPricesError("");
         try {
             console.log("🔎 Searching prices via Python API...");
-            // Chiamiamo Python per ottenere i prezzi
-            const response = await fetch(`${PYTHON_API_BASE_URL}/api/portfolio?user_id=SEARCH_REQ`);
+            console.log("📅 Target Date:", filters.endDate);
+
+            // Costruisci URL con data target
+            const url = new URL(`${PYTHON_API_BASE_URL}/api/portfolio`);
+            url.searchParams.append("user_id", "SEARCH_REQ");
+
+            // Se c'è una data di fine, passala come parametro target_date
+            if (filters.endDate) {
+                url.searchParams.append("target_date", filters.endDate);
+            }
+
+            const response = await fetch(url.toString());
 
             if (!response.ok) throw new Error(`API Error: ${response.status}`);
 
