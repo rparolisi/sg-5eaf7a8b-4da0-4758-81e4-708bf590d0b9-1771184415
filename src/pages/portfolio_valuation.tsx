@@ -1,16 +1,17 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { createClient } from '@supabase/supabase-js';
-import { ArrowUpRight, ArrowDownRight, RefreshCw, AlertCircle, Wallet, Loader2, Search, Filter, Check, ChevronDown, Calendar, XCircle, Coins } from 'lucide-react';
+import { ArrowUpRight, ArrowDownRight, RefreshCw, AlertCircle, Wallet, Loader2, Search, Filter, Check, ChevronDown, Calendar, XCircle } from 'lucide-react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
 
 // --- CONFIGURAZIONE ---
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
 const SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
-const PYTHON_API_BASE_URL = "https://invest-monitor-api.onrender.com";
+const PYTHON_API_BASE_URL = "https://invest-monitor-api.onrender.com"; // Assicurati sia l'URL corretto
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
+// --- COMPONENTE MULTI-SELECT ---
 const MultiSelect = ({ label, options, selected, onChange }: { label: string, options: string[], selected: string[], onChange: (val: string[]) => void }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [searchTerm, setSearchTerm] = useState("");
@@ -71,6 +72,7 @@ const MultiSelect = ({ label, options, selected, onChange }: { label: string, op
     );
 };
 
+// --- INTERFACCE ---
 interface Transaction {
     ticker: string;
     person: string;
@@ -93,7 +95,8 @@ interface PortfolioItem {
     current_price: number | null;
     profit_loss: number | null;
     performance_perc: number | null;
-    total_dividends: number | null; // NUOVO CAMPO
+    total_dividends: number | null;
+    is_live_price: boolean; // Flag per indicare se è un prezzo vero o stimato
 }
 
 export default function PortfolioValuation() {
@@ -104,7 +107,7 @@ export default function PortfolioValuation() {
     const [loadingData, setLoadingData] = useState(true);
 
     // Stato Dati da Python (Prezzi + Dividendi)
-    const [pythonData, setPythonData] = useState < Record < string, { price: number, dividends: number }>> ({});
+    const [pythonData, setPythonData] = useState < Record < string, { price: number, dividends: number, is_live: boolean }>> ({});
     const [loadingPrices, setLoadingPrices] = useState(false);
     const [pricesError, setPricesError] = useState("");
 
@@ -144,7 +147,7 @@ export default function PortfolioValuation() {
                     }));
                 }
             } catch (e) {
-                console.error("❌ Error loading transactions:", e);
+                console.error("Error loading transactions:", e);
             } finally {
                 setLoadingData(false);
             }
@@ -223,6 +226,7 @@ export default function PortfolioValuation() {
             const pyData = pythonData[ticker] || null;
             const current_price = pyData ? pyData.price : null;
             const total_dividends = pyData ? pyData.dividends : null;
+            const is_live_price = pyData ? pyData.is_live : false; // Default false se non abbiamo dati
 
             let profit_loss = null;
             let performance_perc = null;
@@ -243,7 +247,8 @@ export default function PortfolioValuation() {
                 current_price,
                 profit_loss,
                 performance_perc,
-                total_dividends
+                total_dividends,
+                is_live_price
             };
         }).filter(item => item !== null) as PortfolioItem[];
 
@@ -251,21 +256,16 @@ export default function PortfolioValuation() {
 
     }, [rawTransactions, filters, pythonData]);
 
-    // 4. FUNZIONE RICERCA PREZZI (Chiama Python)
     const handleSearch = async () => {
         setLoadingPrices(true);
         setPricesError("");
         try {
-            console.log("🔎 Searching prices via Python API...");
+            console.log("🔎 Fetching Prices & Dividends...");
             const url = new URL(`${PYTHON_API_BASE_URL}/api/portfolio`);
             url.searchParams.append("user_id", "SEARCH_REQ");
-
-            // Aggiungi filtri data
             if (filters.endDate) {
                 url.searchParams.append("target_date", filters.endDate);
             }
-
-            // --- MODIFICA CHIAVE: Invia lista persone ---
             if (filters.person.length > 0) {
                 filters.person.forEach(p => url.searchParams.append("people", p));
             }
@@ -276,14 +276,14 @@ export default function PortfolioValuation() {
             const result = await response.json();
             console.log("✅ Data received:", result);
 
-            // Mappiamo sia prezzi che dividendi
-            const dataMap: Record<string, { price: number, dividends: number }> = {};
+            const dataMap: Record<string, { price: number, dividends: number, is_live: boolean }> = {};
             if (Array.isArray(result)) {
                 result.forEach((p: any) => {
                     if (p.ticker) {
                         dataMap[p.ticker] = {
                             price: p.current_price || 0,
-                            dividends: p.total_dividends || 0
+                            dividends: p.total_dividends || 0,
+                            is_live: p.is_live_price !== undefined ? p.is_live_price : false // Leggi il flag
                         };
                     }
                 });
@@ -297,7 +297,7 @@ export default function PortfolioValuation() {
             setLoadingPrices(false);
         }
     };
-    
+
     const handleFilterChange = (key: keyof typeof filters, val: any) => setFilters(prev => ({ ...prev, [key]: val }));
     const clearFilters = () => setFilters(prev => ({ ...prev, person: [], ticker: [] }));
     const fmt = (num: number | null) => num !== null ? new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' }).format(num) : '-';
@@ -305,8 +305,10 @@ export default function PortfolioValuation() {
 
     const totalValue = portfolioData.reduce((acc, item) => acc + ((item.current_price || item.avg_price) * item.quantity), 0);
     const totalPL = portfolioData.reduce((acc, item) => acc + (item.profit_loss || 0), 0);
-    // Totale Dividendi
     const totalDividends = portfolioData.reduce((acc, item) => acc + (item.total_dividends || 0), 0);
+
+    // Controlla se ci sono prezzi stimati per mostrare il footer
+    const hasEstimatedPrices = portfolioData.some(p => p.current_price !== null && !p.is_live_price);
 
     return (
         <div className="min-h-screen bg-slate-50 font-sans text-slate-900 p-6 pb-20">
@@ -376,20 +378,28 @@ export default function PortfolioValuation() {
                                             portfolioData.map((item) => {
                                                 const isProfitable = (item.profit_loss || 0) >= 0;
                                                 const hasPrice = item.current_price !== null;
+                                                // Se il prezzo è "stimato" (non live), mostra un asterisco e un colore diverso
+                                                const isEstimated = !item.is_live_price && hasPrice;
+
                                                 return (
                                                     <tr key={item.ticker} className="hover:bg-slate-50/50 transition-colors">
                                                         <td className="px-6 py-4 font-bold text-slate-800">{item.ticker}</td>
                                                         <td className="px-6 py-4 text-right text-slate-600">{item.quantity.toFixed(2)}</td>
                                                         <td className="px-6 py-4 text-right text-slate-500">{fmt(item.avg_price)}</td>
-                                                        <td className="px-6 py-4 text-right font-bold text-slate-800 bg-blue-50/30">{hasPrice ? fmt(item.current_price!) : <span className="text-slate-300 italic text-xs">...</span>}</td>
-                                                        <td className="px-6 py-4 text-right text-slate-500">{fmt(item.total_exposure)}</td>
-                                                        <td className="px-6 py-4 text-center text-xs text-slate-400">{item.avg_date || '-'}</td>
 
-                                                        {/* DIVIDENDS */}
-                                                        <td className="px-6 py-4 text-right text-blue-700 font-medium bg-yellow-50/30">
-                                                            {hasPrice ? fmt(item.total_dividends!) : '-'}
+                                                        {/* MKT PRICE */}
+                                                        <td className={`px-6 py-4 text-right font-bold bg-blue-50/30 ${isEstimated ? 'text-orange-500' : 'text-slate-800'}`}>
+                                                            {hasPrice ? (
+                                                                <>
+                                                                    {fmt(item.current_price!)}
+                                                                    {isEstimated && <span className="ml-1 text-xs">*</span>}
+                                                                </>
+                                                            ) : <span className="text-slate-300 italic text-xs">...</span>}
                                                         </td>
 
+                                                        <td className="px-6 py-4 text-right text-slate-500">{fmt(item.total_exposure)}</td>
+                                                        <td className="px-6 py-4 text-center text-xs text-slate-400">{item.avg_date || '-'}</td>
+                                                        <td className="px-6 py-4 text-right text-blue-700 font-medium bg-yellow-50/30">{hasPrice ? fmt(item.total_dividends!) : '-'}</td>
                                                         <td className={`px-6 py-4 text-right font-bold ${hasPrice ? (isProfitable ? 'text-emerald-600' : 'text-red-600') : 'text-slate-300'}`}>{hasPrice ? fmt(item.profit_loss!) : '-'}</td>
                                                         <td className="px-6 py-4 text-right">
                                                             {hasPrice ? (
@@ -406,6 +416,13 @@ export default function PortfolioValuation() {
                                 </table>
                             </div>
                         </div>
+
+                        {/* FOOTER NOTE - Solo se ci sono prezzi stimati */}
+                        {hasEstimatedPrices && (
+                            <div className="bg-orange-50 border border-orange-100 p-3 rounded-lg text-xs text-orange-700 mt-2">
+                                <strong>* Note:</strong> Price not available on Yahoo Finance. Estimated using Average Purchase Price. P/L is 0.
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>
