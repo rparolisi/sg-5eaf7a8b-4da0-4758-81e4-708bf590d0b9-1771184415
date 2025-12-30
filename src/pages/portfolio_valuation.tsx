@@ -251,15 +251,23 @@ export default function PortfolioValuation() {
 
     }, [rawTransactions, filters, pythonData]);
 
+    // 4. FUNZIONE RICERCA PREZZI (Chiama Python)
     const handleSearch = async () => {
         setLoadingPrices(true);
         setPricesError("");
         try {
-            console.log("🔎 Fetching Prices & Dividends...");
+            console.log("🔎 Searching prices via Python API...");
             const url = new URL(`${PYTHON_API_BASE_URL}/api/portfolio`);
             url.searchParams.append("user_id", "SEARCH_REQ");
+
+            // Aggiungi filtri data
             if (filters.endDate) {
                 url.searchParams.append("target_date", filters.endDate);
+            }
+
+            // --- MODIFICA CHIAVE: Invia lista persone ---
+            if (filters.person.length > 0) {
+                filters.person.forEach(p => url.searchParams.append("people", p));
             }
 
             const response = await fetch(url.toString());
@@ -289,7 +297,7 @@ export default function PortfolioValuation() {
             setLoadingPrices(false);
         }
     };
-
+    
     const handleFilterChange = (key: keyof typeof filters, val: any) => setFilters(prev => ({ ...prev, [key]: val }));
     const clearFilters = () => setFilters(prev => ({ ...prev, person: [], ticker: [] }));
     const fmt = (num: number | null) => num !== null ? new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' }).format(num) : '-';
