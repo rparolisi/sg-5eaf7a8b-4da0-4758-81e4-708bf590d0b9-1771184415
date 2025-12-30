@@ -3,7 +3,8 @@ import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import {
     ArrowLeft, BarChart3, Settings, Filter, RefreshCw, XCircle, ChevronDown, Check, Search, Calendar,
-    TrendingUp, Activity, DollarSign, PieChart, Download, Image as ImageIcon, FileText, FileSpreadsheet, Clock
+    TrendingUp, Activity, DollarSign, PieChart, Download, Image as ImageIcon, FileText, FileSpreadsheet, Clock,
+    Loader2
 } from 'lucide-react';
 import {
     LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Area, ComposedChart
