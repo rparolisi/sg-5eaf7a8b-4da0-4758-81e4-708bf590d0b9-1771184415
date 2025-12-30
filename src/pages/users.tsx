@@ -5,7 +5,7 @@ import {
     Mail, Globe, CreditCard, Clock, Calendar,
     Shield, XCircle, Settings, Save,
     LogOut, User as UserIcon, MapPin, Hash, Activity,
-    Fingerprint, Key, Trash2
+    Fingerprint, Key, Trash2, Lock
 } from 'lucide-react';
 
 // --- CONFIGURATION ---

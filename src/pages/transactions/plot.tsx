@@ -238,7 +238,7 @@ export default function PlotPage() {
     useEffect(() => {
         if (rawData.length === 0) return;
 
-        let dataForDates = rawData.filter(item => {
+        const dataForDates = rawData.filter(item => {
             if (filters.person.length > 0 && !filters.person.includes(item.person)) return false;
             if (filters.ticker.length > 0 && !filters.ticker.includes(item.ticker)) return false;
             if (filters.sector.length > 0 && !filters.sector.includes(item.sector)) return false;
@@ -265,12 +265,11 @@ export default function PlotPage() {
         }
     }, [rawData, filters]);
 
-
     // 6. MOTORE DI CALCOLO (LINE CHART)
     const { chartData, lines } = useMemo(() => {
         if (!rawData.length || !dateRange.start || !dateRange.end) return { chartData: [], lines: [] };
 
-        let filtered = rawData.filter(item => {
+        const filtered = rawData.filter(item => {
             if (filters.person.length > 0 && !filters.person.includes(item.person)) return false;
             if (filters.ticker.length > 0 && !filters.ticker.includes(item.ticker)) return false;
             if (filters.sector.length > 0 && !filters.sector.includes(item.sector)) return false;
