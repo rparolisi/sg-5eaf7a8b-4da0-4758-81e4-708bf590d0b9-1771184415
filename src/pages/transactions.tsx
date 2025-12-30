@@ -9,23 +9,15 @@ import {
 
 // RECHARTS (Libreria per i grafici)
 import {
-    LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
-    ScatterChart, Scatter, ZAxis
+    LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
 } from 'recharts';
-
-/* NOTA PER L'USO LOCALE (Next.js / React):
-   1. Installa: npm install @supabase/supabase-js xlsx recharts
-   2. Decommenta la riga qui sotto:
-   import { createClient } from '@supabase/supabase-js';
-   import * as XLSX from 'xlsx';
-*/
 
 // --- CONFIGURAZIONE ---
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
 const SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
 
 // --- API CONFIGURATION ---
-const PYTHON_API_URL = "https://invest-monitor-api.onrender.com";
+const PYTHON_API_URL = "https://invest-monitor-api.onrender.com"; // UPDATE THIS WITH YOUR ACTUAL RENDER URL
 
 // --- COSTANTI ---
 const PEOPLE_OPTIONS = ["Ale", "Peppe", "Raff"];
@@ -258,6 +250,7 @@ export default function Transactions() {
         const worksheet = (window as any).XLSX.utils.json_to_sheet(dataForExport);
         const workbook = (window as any).XLSX.utils.book_new();
         (window as any).XLSX.utils.book_append_sheet(workbook, worksheet, "Transactions");
+        (window as any).XLSX.utils.book_append_sheet(workbook, worksheet, "Transactions");
         (window as any).XLSX.writeFile(workbook, `transactions_${new Date().toISOString().split('T')[0]}.xlsx`);
         setIsDownloadMenuOpen(false);
     };
@@ -394,11 +387,15 @@ export default function Transactions() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(formData)
             });
-            const result = await response.json();
+
             if (!response.ok) {
-                throw new Error(result.detail || "Error connecting to Python server");
+                const errorResult = await response.json();
+                throw new Error(errorResult.detail || "Error connecting to Python server");
             }
-            alert(`Transaction processed! ${result.inserted_rows} rows added.`);
+
+            const result = await response.json();
+            alert(result.message || `Transaction processed!`);
+
             setIsModalOpen(false);
             setFormData({
                 type: 'Acquisto',
@@ -407,7 +404,10 @@ export default function Transactions() {
                 shares_multi: {}, platform: '', account_owner: '', regulated: 'Yes',
                 expenses: '0', taxes: '0'
             });
-            fetchTransactions();
+
+            // Aggiorna la tabella
+            await fetchTransactions();
+
         } catch (err: any) {
             console.error("API Error:", err);
             alert(`❌ Error processing transaction: ${err.message}`);
@@ -495,8 +495,6 @@ export default function Transactions() {
             direction: current.key === key && current.direction === 'asc' ? 'desc' : 'asc'
         }));
     };
-
-    const handlePasteInSearch = (e: React.ClipboardEvent<HTMLInputElement>, columnKey: string) => { /* ... */ };
 
     const renderCellContent = (t: Transaction, colKey: string) => {
         const val = t[colKey];
