@@ -91,7 +91,7 @@ export default function PortfolioValuation() {
                             <Wallet className="text-blue-600" /> Portfolio Valuation
                         </h1>
                         <p className="text-slate-500 text-sm mt-1">
-                            Analisi live delle posizioni aperte (prezzi Yahoo Finance)
+                            Live analysis of the open positions (Yahoo Finance prices)
                         </p>
                     </div>
 
