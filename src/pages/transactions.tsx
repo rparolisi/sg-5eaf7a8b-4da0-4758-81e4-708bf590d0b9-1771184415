@@ -317,15 +317,25 @@ export default function Transactions() {
     };
 
     async function fetchTransactions() {
-        if (!supabase) return;
+        if (!supabase) {
+            console.log("⚠️ Client Supabase non ancora pronto.");
+            return;
+        }
         try {
             setLoading(true);
+            console.log("🔄 Tentativo di fetch transazioni...");
+
             const { data, error } = await supabase
                 .from('transactions')
                 .select('*')
                 .order('operation_date', { ascending: false });
 
-            if (error) throw error;
+            if (error) {
+                console.error("❌ Errore Supabase:", error);
+                throw error;
+            }
+
+            console.log("✅ Dati ricevuti da Supabase:", data); // Vedi se è un array vuoto [] o se ci sono dati
             setTransactions(data || []);
             setError(null);
         } catch (err: any) {
