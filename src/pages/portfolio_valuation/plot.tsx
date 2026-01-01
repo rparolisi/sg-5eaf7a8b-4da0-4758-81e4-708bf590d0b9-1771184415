@@ -103,9 +103,10 @@ export default function PortfolioPlotPage() {
                 // FIX: Aggiunto .limit(10000) per evitare che Supabase tagli i dati a 1000 righe
                 const { data } = await supabase
                     .from('transactions')
-                    .select('*')
+                    // Scarichiamo SOLO le colonne che servono per i filtri del grafico
+                    .select('transaction_id, operation_date, ticker, person, category')
                     .order('operation_date')
-                    .limit(10000); // Importante per vedere tutte le transazioni
+                    .limit(10000);
 
                 if (data) {
                     setTransactions(data);
