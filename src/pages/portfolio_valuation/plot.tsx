@@ -2,8 +2,8 @@ import { useRouter } from 'next/router';
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import {
-    ArrowLeft, BarChart3, Settings, Filter, RefreshCw, XCircle, ChevronDown, Check, Search, Calendar,
-    TrendingUp, Activity, DollarSign, PieChart, Download, Image as ImageIcon, FileText, FileSpreadsheet, Clock, Loader2
+    ArrowLeft, BarChart3, Settings, Filter, ChevronDown, Check, Search,
+    TrendingUp, Download, Image as ImageIcon, FileText, FileSpreadsheet, Loader2
 } from 'lucide-react';
 import {
     LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Area, ComposedChart
@@ -85,9 +85,9 @@ export default function PortfolioPlotPage() {
         dividends: false
     });
 
-    // Filtri
-    const [filters, setFilters] = useState < { person: string[], ticker: string[], category: string[], startDate: string, endDate: string } > ({
-        person: [], ticker: [], category: [], startDate: '', endDate: ''
+    // Filtri (Rimosso category)
+    const [filters, setFilters] = useState < { person: string[], ticker: string[], startDate: string, endDate: string } > ({
+        person: [], ticker: [], startDate: '', endDate: ''
     });
 
     const [chartData, setChartData] = useState < any[] > ([]);
@@ -95,12 +95,18 @@ export default function PortfolioPlotPage() {
     const [isDownloadOpen, setIsDownloadOpen] = useState(false);
     const downloadMenuRef = useRef < HTMLDivElement > (null);
 
-    // 1. Fetch Iniziale Transazioni (Solo per popolare i filtri e le date default)
+    // 1. Fetch Iniziale Transazioni
     useEffect(() => {
         const loadData = async () => {
             setLoading(true);
             try {
-                const { data } = await supabase.from('transactions').select('*').order('operation_date').limit(10000);
+                // FIX: Aggiunto .limit(10000) per evitare che Supabase tagli i dati a 1000 righe
+                const { data } = await supabase
+                    .from('transactions')
+                    .select('*')
+                    .order('operation_date')
+                    .limit(10000); // Importante per vedere tutte le transazioni
+
                 if (data) {
                     setTransactions(data);
                     const dates = data.map(t => new Date(t.operation_date).getTime());
@@ -129,7 +135,10 @@ export default function PortfolioPlotPage() {
     // 2. Opzioni per i filtri (Uniche)
     const options = useMemo(() => {
         const getU = (k: string) => Array.from(new Set(transactions.map(t => t[k]).filter(Boolean))).sort();
-        return { people: getU('person'), tickers: getU('ticker'), categories: getU('category') };
+        return {
+            people: getU('person'),
+            tickers: getU('ticker')
+        };
     }, [transactions]);
 
     // 3. Calcolo e Fetch Dati Storici (CHIAMATA AL BACKEND)
@@ -140,7 +149,6 @@ export default function PortfolioPlotPage() {
             const filteredTxs = transactions.filter(t => {
                 if (filters.person.length && !filters.person.includes(t.person)) return false;
                 if (filters.ticker.length && !filters.ticker.includes(t.ticker)) return false;
-                if (filters.category.length && !filters.category.includes(t.category)) return false;
                 return true;
             });
 
@@ -154,15 +162,17 @@ export default function PortfolioPlotPage() {
             // B. Identifica Ticker unici nel filtro
             const uniqueTickers = Array.from(new Set(filteredTxs.map(t => t.ticker)));
 
-            // C. Richiedi storico completo a Python (che fa tutto il lavoro sporco)
+            // C. Richiedi storico completo a Python
             console.log("Calling Python API for Portfolio History...");
+
             const pyRes = await fetch(`${PYTHON_API_BASE_URL}/api/portfolio_history`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     tickers: uniqueTickers,
-                    people: filters.person.length > 0 ? filters.person : null, // Se vuoto manda null (tutti)
-                    categories: filters.category.length > 0 ? filters.category : null,
+                    people: filters.person.length > 0 ? filters.person : null,
+                    // NON inviamo categories, così il backend usa il default (tutte)
+                    // per garantire il calcolo corretto delle giacenze.
                     start_date: filters.startDate,
                     end_date: filters.endDate
                 })
@@ -266,7 +276,8 @@ export default function PortfolioPlotPage() {
                         <div className="space-y-4">
                             <MultiSelect label="Person" options={options.people} selected={filters.person} onChange={v => setFilters({ ...filters, person: v })} />
                             <MultiSelect label="Ticker" options={options.tickers} selected={filters.ticker} onChange={v => setFilters({ ...filters, ticker: v })} />
-                            <MultiSelect label="Category" options={options.categories} selected={filters.category} onChange={v => setFilters({ ...filters, category: v })} />
+
+                            {/* Rimosso filtro Categorie per evitare errori di calcolo */}
 
                             <div className="pt-2 border-t border-slate-100">
                                 <label className="block text-xs font-bold text-slate-500 mb-2 uppercase">Date Range</label>
