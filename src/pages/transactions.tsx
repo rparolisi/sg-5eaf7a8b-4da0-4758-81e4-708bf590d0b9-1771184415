@@ -558,7 +558,7 @@ export default function Transactions() {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-center mb-6">
                     {/* LEFT: Title */}
                     <div className="justify-self-start">
-                        <h1 className="text-3xl font-bold text-gray-800">Transactions</h1>
+                        <h1 className="text-3xl font-bold text-gray-800">Transactions-Sendbox</h1>
                     </div>
 
                     {/* CENTER: Buttons (Add & Plot) */}
