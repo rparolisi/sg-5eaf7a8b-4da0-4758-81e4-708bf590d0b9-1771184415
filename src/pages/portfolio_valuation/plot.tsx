@@ -100,7 +100,7 @@ export default function PortfolioPlotPage() {
         const loadData = async () => {
             setLoading(true);
             try {
-                const { data } = await supabase.from('transactions').select('*').order('operation_date');
+                const { data } = await supabase.from('transactions').select('*').order('operation_date').limit(10000);
                 if (data) {
                     setTransactions(data);
                     const dates = data.map(t => new Date(t.operation_date).getTime());
