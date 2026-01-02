@@ -4,7 +4,7 @@ import {
     ArrowUpRight, ArrowDownRight, Wallet, Loader2, Search, Filter,
     ChevronDown, Calendar, XCircle, TrendingUp, Settings, Download,
     FileText, FileSpreadsheet, Check, ArrowUp, ArrowDown, ChevronRight,
-    AlertCircle, ChevronLeft, ChevronsLeft, ChevronsRight
+    AlertCircle, ChevronLeft, ChevronsLeft, ChevronsRight, RefreshCw
 } from 'lucide-react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
@@ -96,6 +96,7 @@ export default function PortfolioValuation() {
     const [pythonData, setPythonData] = useState < Record < string, { price: number, dividends: number, is_live: boolean }>> ({});
     const [loadingPrices, setLoadingPrices] = useState(false);
     const [pricesError, setPricesError] = useState("");
+    const [isUpdatingMarket, setIsUpdatingMarket] = useState(false); // Nuovo stato per il bottone Update
 
     // Filtri Sidebar
     const [filters, setFilters] = useState({ person: [] as string[], ticker: [] as string[], startDate: '', endDate: '' });
@@ -105,14 +106,6 @@ export default function PortfolioValuation() {
     const downloadRef = useRef < HTMLDivElement > (null);
 
     // Filtri Rapidi Header
-    // (Nota: Column filters non sono usati direttamente qui ma passati all'hook se supportati,
-    // altrimenti gestiti internamente. L'hook useTableLogic non accetta columnFilters come argomento
-    // nel codice precedente, quindi li gestiamo nell'hook o qui se necessario.
-    // Assumiamo che l'hook NON prenda columnFilters per ora, o se lo fa, va aggiornato.)
-    // Se l'hook non gestisce i filtri per colonna "rapidi" (quelli dell'header),
-    // dovresti aggiungerli alla logica dell'hook o pre-filtrare i dati.
-    // Per semplicità qui li lascio ma non sono collegati all'hook se non modificato.
-    // Se vuoi usarli, dovresti aggiornare useTableLogic per accettare initialFilters o simile.
     const [columnFilters, setColumnFilters] = useState < Record < string, string[]>> ({});
     const [activeFilterCol, setActiveFilterCol] = useState < string | null > (null);
     const [filterSearchTerm, setFilterSearchTerm] = useState("");
@@ -128,31 +121,32 @@ export default function PortfolioValuation() {
     }, []);
 
     // --- INIT DATA ---
-    useEffect(() => {
-        const initData = async () => {
-            setLoadingData(true);
-            try {
-                const { data, error } = await supabase.from('transactions').select('*').order('operation_date', { ascending: true });
-                if (error) throw error;
-                setRawTransactions(data || []);
+    const initData = useCallback(async () => {
+        setLoadingData(true);
+        try {
+            const { data, error } = await supabase.from('transactions').select('*').order('operation_date', { ascending: true });
+            if (error) throw error;
+            setRawTransactions(data || []);
 
-                if (data && data.length > 0) {
-                    const dates = data.map((t: any) => new Date(t.operation_date).getTime());
-                    const min = new Date(Math.min(...dates)).toISOString().split('T')[0];
-                    const max = new Date(Math.max(...dates)).toISOString().split('T')[0];
-                    const today = new Date().toISOString().split('T')[0];
-                    setFilters(prev => ({ ...prev, startDate: min, endDate: today > max ? today : max }));
-                }
+            if (data && data.length > 0) {
+                const dates = data.map((t: any) => new Date(t.operation_date).getTime());
+                const min = new Date(Math.min(...dates)).toISOString().split('T')[0];
+                const max = new Date(Math.max(...dates)).toISOString().split('T')[0];
+                const today = new Date().toISOString().split('T')[0];
+                setFilters(prev => ({ ...prev, startDate: min, endDate: today > max ? today : max }));
+            }
 
-                const { data: { user } } = await supabase.auth.getUser();
-                if (user) {
-                    const { data: userProfile } = await supabase.from('users').select('alias').eq('user_id', user.id).maybeSingle();
-                    if (userProfile?.alias) setFilters(prev => ({ ...prev, person: [userProfile.alias] }));
-                }
-            } catch (e) { console.error(e); } finally { setLoadingData(false); }
-        };
-        initData();
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user) {
+                const { data: userProfile } = await supabase.from('users').select('alias').eq('user_id', user.id).maybeSingle();
+                if (userProfile?.alias) setFilters(prev => ({ ...prev, person: [userProfile.alias] }));
+            }
+        } catch (e) { console.error(e); } finally { setLoadingData(false); }
     }, []);
+
+    useEffect(() => {
+        initData();
+    }, [initData]);
 
     const uniqueOptions = useMemo(() => {
         const getU = (key: string) => Array.from(new Set(rawTransactions.map(t => t[key]).filter(Boolean))).sort();
@@ -229,13 +223,12 @@ export default function PortfolioValuation() {
     }, [rawTransactions, filters, pythonData]);
 
     // --- USO CUSTOM HOOK ---
-    // NOTA: Aggiornato per usare i nuovi return values dell'hook
     const {
         viewSettings,
         setViewSettings,
-        paginatedRows,     // Usa questo per renderizzare la tabella
-        allFilteredRows,   // Usa questo per calcolare i totali
-        exportableRows,    // Usa questo per l'export
+        paginatedRows,
+        allFilteredRows,
+        exportableRows,
         visibleColumns,
         pagination,
         setPagination,
@@ -245,7 +238,6 @@ export default function PortfolioValuation() {
 
     // --- CALCOLO TOTALI ---
     const totals = useMemo(() => {
-        // Usa allFilteredRows invece di processedRows
         const dataRows = allFilteredRows.filter(r => r.type === 'data').map(r => (r as any).data);
         return dataRows.reduce((acc, item) => ({
             exposure: acc.exposure + item.total_exposure,
@@ -277,8 +269,32 @@ export default function PortfolioValuation() {
         } catch (e: any) { setPricesError("Failed to fetch data."); } finally { setLoadingPrices(false); }
     };
 
+    // --- NUOVA FUNZIONE: TRIGGER AGGIORNAMENTO MERCATO ---
+    const triggerUpdateMarketData = async () => {
+        setIsUpdatingMarket(true);
+        try {
+            const response = await fetch(`${PYTHON_API_BASE_URL}/api/cron/update_market_data`);
+            const data = await response.json();
+
+            if (response.ok) {
+                alert(`Update successful! Updated ${data.tickers_updated || 0} tickers.`);
+                // Ricarica i dati locali e se necessario rilancia la ricerca prezzi
+                initData();
+                if (Object.keys(pythonData).length > 0) {
+                    handleSearch();
+                }
+            } else {
+                alert(`Update failed: ${data.error || "Unknown error"}`);
+            }
+        } catch (error) {
+            console.error("Failed to update market data", error);
+            alert("Network error while trying to update market data.");
+        } finally {
+            setIsUpdatingMarket(false);
+        }
+    };
+
     const exportData = (format: 'csv' | 'xlsx') => {
-        // Usa exportableRows direttamente
         const ws = XLSX.utils.json_to_sheet(exportableRows);
         const filename = `portfolio_valuation_${new Date().toISOString().split('T')[0]}`;
         if (format === 'csv') {
@@ -342,7 +358,6 @@ export default function PortfolioValuation() {
         );
     };
 
-    // Callback per manipolazione colonne diretta
     const moveColumn = useCallback((from: number, to: number) => {
         setViewSettings(prev => {
             const cols = [...prev.columns];
@@ -363,11 +378,36 @@ export default function PortfolioValuation() {
     return (
         <div className="min-h-screen bg-slate-50 font-sans text-slate-900 p-6 pb-20">
             <div className="max-w-[1920px] mx-auto">
-                {/* Header */}
-                <div className="flex flex-wrap gap-4 justify-between items-center mb-6">
-                    <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2"><Wallet className="text-blue-600" /> Portfolio Valuation</h1>
-                    <div className="flex items-center gap-3">
-                        <Link href="/portfolio_valuation/plot" className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 text-slate-700 font-medium transition-colors shadow-sm text-sm"><TrendingUp size={16} className="text-purple-600" /><span>Plot History</span></Link>
+
+                {/* --- HEADER AGGIORNATO (LAYOUT A 3 COLONNE) --- */}
+                <div className="flex flex-col md:flex-row flex-wrap gap-4 justify-between items-center mb-6">
+
+                    {/* 1. SINISTRA: Titolo */}
+                    <div className="flex items-center gap-2 w-full md:w-1/3">
+                        <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
+                            <Wallet className="text-blue-600" /> Portfolio Valuation
+                        </h1>
+                    </div>
+
+                    {/* 2. CENTRO: Pulsanti Update e Plot */}
+                    <div className="flex items-center justify-center gap-3 w-full md:w-1/3">
+                        <button
+                            onClick={triggerUpdateMarketData}
+                            disabled={isUpdatingMarket}
+                            className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 text-slate-700 font-medium transition-colors shadow-sm text-sm disabled:opacity-50"
+                        >
+                            {isUpdatingMarket ? <Loader2 size={16} className="animate-spin text-blue-600" /> : <RefreshCw size={16} className="text-blue-600" />}
+                            <span>Update Prices</span>
+                        </button>
+
+                        <Link href="/portfolio_valuation/plot" className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 text-slate-700 font-medium transition-colors shadow-sm text-sm">
+                            <TrendingUp size={16} className="text-purple-600" />
+                            <span>Plot History</span>
+                        </Link>
+                    </div>
+
+                    {/* 3. DESTRA: Settings e Download */}
+                    <div className="flex items-center justify-end gap-3 w-full md:w-1/3">
                         <button onClick={() => setIsSettingsOpen(true)} className="p-2 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 text-slate-600 shadow-sm" title="View Settings"><Settings size={18} /></button>
                         <div className="relative" ref={downloadRef}>
                             <button onClick={() => setIsDownloadOpen(!isDownloadOpen)} className="p-2 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 text-slate-600 shadow-sm"><Download size={18} /></button>
