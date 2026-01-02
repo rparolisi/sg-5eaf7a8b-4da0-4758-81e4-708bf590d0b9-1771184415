@@ -381,38 +381,58 @@ export default function PortfolioValuation() {
 
                 {/* --- HEADER AGGIORNATO (LAYOUT A 3 COLONNE) --- */}
                 {/* --- HEADER AGGIORNATO (LAYOUT A 3 COLONNE BILANCIATE) --- */}
-                <div className="flex flex-col md:flex-row items-center mb-6 relative">
+                {/* --- HEADER (Tasti a Destra) --- */}
+                <div className="flex flex-col md:flex-row flex-wrap gap-4 justify-between items-center mb-6">
 
-                    {/* 1. SINISTRA: Titolo (Occupa lo spazio a sinistra) */}
-                    <div className="w-full md:flex-1 flex justify-start">
+                    {/* SINISTRA: Titolo */}
+                    <div className="flex items-center gap-2">
                         <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
                             <Wallet className="text-blue-600" /> Portfolio Valuation
                         </h1>
                     </div>
 
-                    {/* 2. CENTRO: Pulsanti Update e Plot (CENTRATURA ASSOLUTA O FLEX BILANCIATO) */}
-                    <div className="w-full md:flex-1 flex justify-center gap-3 mt-4 md:mt-0">
+                    {/* DESTRA: Tutti i pulsanti raggruppati */}
+                    <div className="flex items-center gap-3">
+
+                        {/* Tasto Update Prices */}
                         <button
                             onClick={triggerUpdateMarketData}
                             disabled={isUpdatingMarket}
-                            className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 text-slate-700 font-medium transition-colors shadow-sm text-sm disabled:opacity-50"
+                            className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-full font-medium shadow-sm transition-transform hover:-translate-y-0.5 disabled:opacity-50 disabled:hover:transform-none text-sm"
                         >
-                            {isUpdatingMarket ? <Loader2 size={16} className="animate-spin text-blue-600" /> : <RefreshCw size={16} className="text-blue-600" />}
-                            <span>Update Prices</span>
+                            {isUpdatingMarket ? <Loader2 size={16} className="animate-spin text-white" /> : <RefreshCw size={16} className="text-white" />}
+                            <span>Update</span>
                         </button>
 
-                        <Link href="/portfolio_valuation/plot" className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 text-slate-700 font-medium transition-colors shadow-sm text-sm">
-                            <TrendingUp size={16} className="text-purple-600" />
-                            <span>Plot History</span>
+                        {/* Tasto Plot History */}
+                        <Link href="/portfolio_valuation/plot" className="flex items-center gap-2 px-4 py-2 bg-white border border-purple-200 text-purple-600 hover:bg-purple-50 rounded-full font-medium shadow-sm transition-transform hover:-translate-y-0.5 text-sm">
+                            <TrendingUp size={16} />
+                            <span>Plot</span>
                         </Link>
-                    </div>
 
-                    {/* 3. DESTRA: Settings e Download (Occupa lo spazio a destra) */}
-                    <div className="w-full md:flex-1 flex justify-end gap-3 mt-4 md:mt-0">
-                        <button onClick={() => setIsSettingsOpen(true)} className="p-2 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 text-slate-600 shadow-sm" title="View Settings"><Settings size={18} /></button>
+                        {/* Separatore verticale opzionale per pulizia visiva */}
+                        <div className="h-6 w-px bg-slate-300 mx-1"></div>
+
+                        {/* Tasto Settings */}
+                        <button onClick={() => setIsSettingsOpen(true)} className="p-2 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 text-slate-600 shadow-sm transition-colors" title="View Settings">
+                            <Settings size={18} />
+                        </button>
+
+                        {/* Tasto Download */}
                         <div className="relative" ref={downloadRef}>
-                            <button onClick={() => setIsDownloadOpen(!isDownloadOpen)} className="p-2 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 text-slate-600 shadow-sm"><Download size={18} /></button>
-                            {isDownloadOpen && (<div className="absolute right-0 top-full mt-2 w-48 bg-white rounded-xl shadow-xl border border-slate-200 z-50 p-2"><button onClick={() => exportData('csv')} className="w-full flex items-center gap-3 px-3 py-2 hover:bg-slate-50 rounded text-sm text-slate-700"><FileText size={16} className="text-green-500" /> Export CSV</button><button onClick={() => exportData('xlsx')} className="w-full flex items-center gap-3 px-3 py-2 hover:bg-slate-50 rounded text-sm text-slate-700"><FileSpreadsheet size={16} className="text-emerald-600" /> Export XLSX</button></div>)}
+                            <button onClick={() => setIsDownloadOpen(!isDownloadOpen)} className="p-2 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 text-slate-600 shadow-sm transition-colors">
+                                <Download size={18} />
+                            </button>
+                            {isDownloadOpen && (
+                                <div className="absolute right-0 top-full mt-2 w-48 bg-white rounded-xl shadow-xl border border-slate-200 z-50 p-2 animate-in fade-in zoom-in-95 duration-100">
+                                    <button onClick={() => exportData('csv')} className="w-full flex items-center gap-3 px-3 py-2 hover:bg-slate-50 rounded text-sm text-slate-700 transition-colors">
+                                        <FileText size={16} className="text-green-500" /> Export CSV
+                                    </button>
+                                    <button onClick={() => exportData('xlsx')} className="w-full flex items-center gap-3 px-3 py-2 hover:bg-slate-50 rounded text-sm text-slate-700 transition-colors">
+                                        <FileSpreadsheet size={16} className="text-emerald-600" /> Export XLSX
+                                    </button>
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>
