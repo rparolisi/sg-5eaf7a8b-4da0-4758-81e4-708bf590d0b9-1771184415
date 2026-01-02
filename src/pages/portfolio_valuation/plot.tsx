@@ -6,7 +6,7 @@ import {
     TrendingUp, Download, Image as ImageIcon, FileText, FileSpreadsheet, Loader2
 } from 'lucide-react';
 import {
-    LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Area, ComposedChart
+    LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Area, ComposedChart, ReferenceLine
 } from 'recharts';
 import * as htmlToImage from 'html-to-image';
 import * as XLSX from 'xlsx';
@@ -19,10 +19,12 @@ const PYTHON_API_BASE_URL = "https://invest-monitor-api.onrender.com"; // VERIFI
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 const COLORS = {
-    exposure: "#94a3b8",    // Slate-400 (Area Grigia)
-    marketValue: "#2563eb", // Blue-600 (Linea Principale)
-    pl: "#16a34a",          // Green-600 (Profitto)
-    dividends: "#d97706"    // Amber-600 (Dividendi)
+    exposure: "#94a3b8",    // Slate-400 (Linea Esposizione)
+    grossValue: "#8b5cf6",  // Violet-500 (Nuova linea Gross Value)
+    marketValue: "#3b82f6", // Blue-500 (Linea Valore Mercato - Tratteggiata)
+    dividends: "#f59e0b",   // Amber-500 (Dividendi - Tratteggiata)
+    plAreaPos: "#22c55e",   // Green-500 (Area Profitto)
+    plAreaNeg: "#ef4444"    // Red-500 (Area Perdita)
 };
 
 // --- COMPONENTI UI (MultiSelect) ---
@@ -78,10 +80,12 @@ export default function PortfolioPlotPage() {
     const [transactions, setTransactions] = useState < any[] > ([]);
 
     // Configurazione Visualizzazione
+    // DEFAULT: Gross Value e Exposure attivi. P&L (Area), Market Value e Dividends spenti.
     const [visibleSeries, setVisibleSeries] = useState({
+        grossValue: true,
         exposure: true,
-        marketValue: true,
-        pl: true,
+        plArea: false, // Area Profit/Loss
+        marketValue: false,
         dividends: false
     });
 
@@ -103,7 +107,6 @@ export default function PortfolioPlotPage() {
                 // FIX: Aggiunto .limit(10000) per evitare che Supabase tagli i dati a 1000 righe
                 const { data } = await supabase
                     .from('transactions')
-                    // Scarichiamo SOLO le colonne che servono per i filtri del grafico
                     .select('transaction_id, operation_date, ticker, person, category')
                     .order('operation_date')
                     .limit(10000);
@@ -146,7 +149,7 @@ export default function PortfolioPlotPage() {
     const handlePlot = async () => {
         setCalculating(true);
         try {
-            // A. Filtra transazioni localmente per capire quali ticker servono
+            // A. Filtra transazioni localmente
             const filteredTxs = transactions.filter(t => {
                 if (filters.person.length && !filters.person.includes(t.person)) return false;
                 if (filters.ticker.length && !filters.ticker.includes(t.ticker)) return false;
@@ -173,7 +176,6 @@ export default function PortfolioPlotPage() {
                     tickers: uniqueTickers,
                     people: filters.person.length > 0 ? filters.person : null,
                     // NON inviamo categories, così il backend usa il default (tutte)
-                    // per garantire il calcolo corretto delle giacenze.
                     start_date: filters.startDate,
                     end_date: filters.endDate
                 })
@@ -182,9 +184,16 @@ export default function PortfolioPlotPage() {
             if (!pyRes.ok) throw new Error("Errore API Python");
 
             const historyData = await pyRes.json();
-            console.log("Received Data:", historyData);
 
-            setChartData(historyData);
+            // Arricchimento Dati: Calcolo Gross Value se non presente o derivato
+            // Gross Value = Market Value + Accumulated Dividends
+            const enrichedData = historyData.map((d: any) => ({
+                ...d,
+                gross_value: d.market_value + (d.dividends || 0)
+            }));
+
+            console.log("Received & Enriched Data:", enrichedData);
+            setChartData(enrichedData);
 
         } catch (e) {
             console.error(e);
@@ -217,6 +226,7 @@ export default function PortfolioPlotPage() {
         // Formatta i dati per l'export
         const exportSet = chartData.map(d => ({
             Date: d.date,
+            "Gross Value (€)": d.gross_value,
             "Total Exposure (€)": d.exposure,
             "Market Value (€)": d.market_value,
             "Profit/Loss (€)": d.profit_loss,
@@ -250,6 +260,19 @@ export default function PortfolioPlotPage() {
         return () => document.removeEventListener("mousedown", handleClickOutside);
     }, []);
 
+    // Helper per gradiente P&L (Verde/Rosso)
+    const gradientOffset = () => {
+        const dataMax = Math.max(...chartData.map((i) => i.profit_loss));
+        const dataMin = Math.min(...chartData.map((i) => i.profit_loss));
+
+        if (dataMax <= 0) return 0;
+        if (dataMin >= 0) return 1;
+
+        return dataMax / (dataMax - dataMin);
+    };
+
+    const off = gradientOffset();
+
     return (
         <div className="min-h-screen bg-slate-50 font-sans text-slate-900 pb-10">
             {/* HEADER */}
@@ -278,8 +301,6 @@ export default function PortfolioPlotPage() {
                             <MultiSelect label="Person" options={options.people} selected={filters.person} onChange={v => setFilters({ ...filters, person: v })} />
                             <MultiSelect label="Ticker" options={options.tickers} selected={filters.ticker} onChange={v => setFilters({ ...filters, ticker: v })} />
 
-                            {/* Rimosso filtro Categorie per evitare errori di calcolo */}
-
                             <div className="pt-2 border-t border-slate-100">
                                 <label className="block text-xs font-bold text-slate-500 mb-2 uppercase">Date Range</label>
                                 <div className="grid grid-cols-2 gap-2">
@@ -307,6 +328,13 @@ export default function PortfolioPlotPage() {
                             {chartData.length > 0 ? (
                                 <ResponsiveContainer width="100%" height="100%">
                                     <ComposedChart data={chartData} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
+                                        <defs>
+                                            <linearGradient id="splitColor" x1="0" y1="0" x2="0" y2="1">
+                                                <stop offset={off} stopColor={COLORS.plAreaPos} stopOpacity={0.3} />
+                                                <stop offset={off} stopColor={COLORS.plAreaNeg} stopOpacity={0.3} />
+                                            </linearGradient>
+                                        </defs>
+
                                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                                         <XAxis
                                             dataKey="date"
@@ -323,52 +351,69 @@ export default function PortfolioPlotPage() {
                                         />
                                         <Tooltip
                                             contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)', padding: '12px' }}
-                                            formatter={(v: number) => v.toLocaleString('it-IT', { style: 'currency', currency: 'EUR' })}
+                                            formatter={(v: number, name: string) => [
+                                                v.toLocaleString('it-IT', { style: 'currency', currency: 'EUR' }),
+                                                name
+                                            ]}
                                             labelStyle={{ color: '#1e293b', fontWeight: 'bold', marginBottom: '8px' }}
                                         />
                                         <Legend wrapperStyle={{ paddingTop: '20px' }} iconType="circle" />
+                                        <ReferenceLine y={0} stroke="#cbd5e1" />
 
-                                        {/* EXPOSURE (Area Grigia) */}
-                                        {visibleSeries.exposure && (
+                                        {/* PROFIT/LOSS AREA (Differenza tra Gross ed Exposure) */}
+                                        {/* Viene renderizzata prima così sta sotto le linee */}
+                                        {visibleSeries.plArea && (
                                             <Area
+                                                type="monotone"
+                                                dataKey="profit_loss"
+                                                name="Profit/Loss Area"
+                                                stroke="none"
+                                                fill="url(#splitColor)"
+                                                activeDot={false}
+                                            />
+                                        )}
+
+                                        {/* EXPOSURE (Linea Solida Grigia) */}
+                                        {visibleSeries.exposure && (
+                                            <Line
                                                 type="monotone"
                                                 dataKey="exposure"
                                                 name="Exposure (Cost)"
                                                 stroke={COLORS.exposure}
-                                                fill={COLORS.exposure}
-                                                fillOpacity={0.15}
                                                 strokeWidth={2}
+                                                dot={false}
                                                 activeDot={{ r: 6 }}
                                             />
                                         )}
 
-                                        {/* MARKET VALUE (Linea Blu) */}
-                                        {visibleSeries.marketValue && (
+                                        {/* GROSS VALUE (Nuova Linea Solida Viola) */}
+                                        {visibleSeries.grossValue && (
                                             <Line
                                                 type="monotone"
-                                                dataKey="market_value" // Nota: usa la key del JSON python
-                                                name="Market Value"
-                                                stroke={COLORS.marketValue}
+                                                dataKey="gross_value"
+                                                name="Gross Value"
+                                                stroke={COLORS.grossValue}
                                                 strokeWidth={3}
                                                 dot={false}
                                                 activeDot={{ r: 6 }}
                                             />
                                         )}
 
-                                        {/* PROFIT/LOSS (Linea Verde) */}
-                                        {visibleSeries.pl && (
+                                        {/* MARKET VALUE (Linea Blu Tratteggiata) */}
+                                        {visibleSeries.marketValue && (
                                             <Line
                                                 type="monotone"
-                                                dataKey="profit_loss"
-                                                name="Profit/Loss"
-                                                stroke={COLORS.pl}
+                                                dataKey="market_value"
+                                                name="Market Value"
+                                                stroke={COLORS.marketValue}
                                                 strokeWidth={2}
+                                                strokeDasharray="5 5"
                                                 dot={false}
                                                 activeDot={{ r: 6 }}
                                             />
                                         )}
 
-                                        {/* DIVIDENDS (Linea Arancione a scalini) */}
+                                        {/* DIVIDENDS (Linea Arancione Tratteggiata a scalini) */}
                                         {visibleSeries.dividends && (
                                             <Line
                                                 type="step"
@@ -376,6 +421,7 @@ export default function PortfolioPlotPage() {
                                                 name="Cumul. Dividends"
                                                 stroke={COLORS.dividends}
                                                 strokeWidth={2}
+                                                strokeDasharray="5 5"
                                                 dot={false}
                                                 activeDot={{ r: 6 }}
                                             />
@@ -419,10 +465,12 @@ export default function PortfolioPlotPage() {
                                         />
                                     </div>
                                     <span className="capitalize text-sm font-medium text-slate-600 group-hover:text-slate-900 transition-colors">
-                                        {k.replace(/([A-Z])/g, ' $1').trim()}
+                                        {k.replace(/([A-Z])/g, ' $1').replace('plArea', 'P&L Area').trim()}
                                     </span>
                                     {/* Pallino colore legenda */}
-                                    <div className="ml-auto w-2 h-2 rounded-full" style={{ backgroundColor: COLORS[k as keyof typeof COLORS] }}></div>
+                                    <div className="ml-auto w-2 h-2 rounded-full" style={{
+                                        backgroundColor: k === 'plArea' ? COLORS.plAreaPos : COLORS[k as keyof typeof COLORS]
+                                    }}></div>
                                 </label>
                             ))}
                         </div>
