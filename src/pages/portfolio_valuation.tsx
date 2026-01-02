@@ -123,6 +123,7 @@ export default function PortfolioValuation() {
         const initData = async () => {
             setLoadingData(true);
             try {
+                // 1. Carica Transazioni
                 const { data, error } = await supabase
                     .from('transactions')
                     .select('*')
@@ -133,6 +134,7 @@ export default function PortfolioValuation() {
                 const transactions = data || [];
                 setRawTransactions(transactions);
 
+                // 2. Imposta Date Default
                 if (transactions.length > 0) {
                     const dates = transactions.map(t => new Date(t.operation_date).getTime());
                     const min = new Date(Math.min(...dates)).toISOString().split('T')[0];
@@ -146,6 +148,16 @@ export default function PortfolioValuation() {
                         endDate: end
                     }));
                 }
+
+                // 3. Imposta Utente Default (ALIAS)
+                const { data: { user } } = await supabase.auth.getUser();
+                if (user) {
+                    const { data: userProfile } = await supabase.from('users').select('alias').eq('user_id', user.id).maybeSingle();
+                    if (userProfile?.alias) {
+                        setFilters(prev => ({ ...prev, person: [userProfile.alias] }));
+                    }
+                }
+
             } catch (e) {
                 console.error("Error loading transactions:", e);
             } finally {
