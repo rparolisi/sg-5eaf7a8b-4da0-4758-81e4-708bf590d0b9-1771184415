@@ -1,18 +1,21 @@
-import { useState, useMemo } from 'react';
+// src/hooks/useTableLogic.ts
+
+import { useState, useMemo, useEffect } from 'react'; // Aggiungi useEffect
 import { ViewSettings, ColumnDef, ProcessedRow } from '../types/table';
 
 // Helper: Pulisce e normalizza i valori per confronti sicuri
 const safeString = (val: any) => {
     if (val === null || val === undefined) return '';
-    // Converte oggetti/array in stringa se necessario, altrimenti stringa standard
     const str = typeof val === 'object' ? JSON.stringify(val) : String(val);
     return str.trim().toLowerCase();
 };
 
 export function useTableLogic<T>(
     data: T[],
-    initialColumns: ColumnDef[]
+    initialColumns: ColumnDef[],
+    initialPageSize: number = 25 // Nuova prop default
 ) {
+    // --- STATI ESISTENTI ---
     const [viewSettings, setViewSettings] = useState < ViewSettings > ({
         columns: initialColumns,
         filters: [],
@@ -20,44 +23,38 @@ export function useTableLogic<T>(
         groups: []
     });
 
+    // --- NUOVO STATO PAGINAZIONE ---
+    const [pagination, setPagination] = useState({
+        page: 1,
+        pageSize: initialPageSize
+    });
+
+    // Reset pagina a 1 se cambiano filtri o raggruppamenti
+    useEffect(() => {
+        setPagination(prev => ({ ...prev, page: 1 }));
+    }, [viewSettings.filters, viewSettings.groups, data]);
+
     const processedRows = useMemo(() => {
         let result = [...data];
 
-        // 1. FILTRI AVANZATI (Settings Modal)
+        // 1. FILTRI AVANZATI
         if (viewSettings.filters.length > 0) {
-            console.log("--- DEBUG FILTER ---"); // DEBUG
             result = result.filter(item => {
                 return viewSettings.filters.every(rule => {
                     const rawVal = (item as any)[rule.columnId];
-
                     const itemValStr = safeString(rawVal);
                     const filterValStr = safeString(rule.value);
-
-                    // Log per capire cosa stiamo confrontando
-                    // console.log(`Checking ${rule.columnId}: '${itemValStr}' vs '${filterValStr}' (${rule.operator})`);
-
                     const itemValNum = Number(rawVal);
                     const filterValNum = Number(rule.value);
                     const filterVal2Num = Number(rule.value2);
-
-                    // Verifica se è un confronto numerico valido
                     const isNum = !isNaN(itemValNum) && !isNaN(filterValNum) && rawVal !== null && rawVal !== '' && rule.value !== '';
 
                     let matches = false;
-
                     switch (rule.operator) {
-                        case 'contains':
-                            matches = itemValStr.includes(filterValStr);
-                            break;
-                        case 'equals':
-                            matches = itemValStr === filterValStr;
-                            break;
-                        case 'greater':
-                            matches = isNum ? itemValNum > filterValNum : itemValStr > filterValStr;
-                            break;
-                        case 'less':
-                            matches = isNum ? itemValNum < filterValNum : itemValStr < filterValStr;
-                            break;
+                        case 'contains': matches = itemValStr.includes(filterValStr); break;
+                        case 'equals': matches = itemValStr === filterValStr; break;
+                        case 'greater': matches = isNum ? itemValNum > filterValNum : itemValStr > filterValStr; break;
+                        case 'less': matches = isNum ? itemValNum < filterValNum : itemValStr < filterValStr; break;
                         case 'between':
                             if (isNum) {
                                 const max = !isNaN(filterVal2Num) ? filterVal2Num : Infinity;
@@ -66,18 +63,14 @@ export function useTableLogic<T>(
                                 matches = itemValStr >= filterValStr && itemValStr <= safeString(rule.value2);
                             }
                             break;
-                        default:
-                            matches = true;
+                        default: matches = true;
                     }
-
-                    // Logica Include/Exclude
                     return rule.type === 'include' ? matches : !matches;
                 });
             });
         }
 
         // 2. ORDINAMENTO
-        // Priorità: Gruppi > Sort Utente
         const groupCols = viewSettings.groups.map(g => g.columnId);
         const sortRules = [
             ...groupCols.map(col => ({ columnId: col, direction: 'asc' as const })),
@@ -89,21 +82,16 @@ export function useTableLogic<T>(
                 for (const rule of sortRules) {
                     const valA = (a as any)[rule.columnId];
                     const valB = (b as any)[rule.columnId];
-
                     if (valA === valB) continue;
                     if (valA === null || valA === undefined) return 1;
                     if (valB === null || valB === undefined) return -1;
-
                     let comparison = 0;
                     if (typeof valA === 'number' && typeof valB === 'number') {
                         comparison = valA - valB;
                     } else {
                         comparison = safeString(valA).localeCompare(safeString(valB));
                     }
-
-                    if (comparison !== 0) {
-                        return rule.direction === 'asc' ? comparison : -comparison;
-                    }
+                    if (comparison !== 0) return rule.direction === 'asc' ? comparison : -comparison;
                 }
                 return 0;
             });
@@ -115,12 +103,10 @@ export function useTableLogic<T>(
         } else {
             const rows: ProcessedRow<T>[] = [];
             let previousValues: Record<string, any> = {};
-
             result.forEach((item) => {
                 groupCols.forEach((groupCol, level) => {
                     const currentVal = (item as any)[groupCol];
                     const prevVal = previousValues[groupCol];
-
                     if (currentVal !== prevVal) {
                         const colDef = initialColumns.find(c => c.id === groupCol);
                         rows.push({
@@ -138,13 +124,26 @@ export function useTableLogic<T>(
             });
             return rows;
         }
-
     }, [data, viewSettings, initialColumns]);
+
+    // 4. PAGINAZIONE (Calcolata sui processedRows finali)
+    const paginatedRows = useMemo(() => {
+        const start = (pagination.page - 1) * pagination.pageSize;
+        return processedRows.slice(start, start + pagination.pageSize);
+    }, [processedRows, pagination]);
 
     return {
         viewSettings,
         setViewSettings,
-        processedRows,
-        visibleColumns: viewSettings.columns.filter(c => c.visible)
+        // Restituisci paginatedRows per la tabella visualizzata
+        paginatedRows,
+        // Restituisci processedRows per l'export (così scarichi tutto il filtrato, non solo la pagina)
+        allFilteredRows: processedRows,
+        visibleColumns: viewSettings.columns.filter(c => c.visible),
+        // Nuovi ritorni per la paginazione
+        pagination,
+        setPagination,
+        totalRows: processedRows.length,
+        totalPages: Math.ceil(processedRows.length / pagination.pageSize)
     };
 }
