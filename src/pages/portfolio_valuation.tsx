@@ -107,7 +107,7 @@ interface PortfolioItem {
 }
 
 interface ColumnConfig {
-    id: keyof PortfolioItem | 'return_perc_fmt' | 'actions'; // actions unused but kept for safety
+    id: keyof PortfolioItem | 'return_perc_fmt' | 'actions';
     label: string;
     visible: boolean;
     width: number;
@@ -139,8 +139,8 @@ export default function PortfolioValuation() {
         { id: 'avg_price', label: 'Avg Price', visible: true, width: 100, align: 'right' },
         { id: 'current_price', label: 'Mkt Price', visible: true, width: 100, align: 'right' },
         { id: 'total_exposure', label: 'Exposure', visible: true, width: 110, align: 'right' },
-        { id: 'market_value', label: 'Mkt Value', visible: true, width: 110, align: 'right' }, // NEW
-        { id: 'gross_value', label: 'Gross Value', visible: true, width: 110, align: 'right' }, // NEW
+        { id: 'market_value', label: 'Mkt Value', visible: true, width: 110, align: 'right' },
+        { id: 'gross_value', label: 'Gross Value', visible: true, width: 110, align: 'right' },
         { id: 'avg_date', label: 'Avg Date', visible: true, width: 100, align: 'center' },
         { id: 'total_dividends', label: 'Dividends', visible: true, width: 100, align: 'right' },
         { id: 'profit_loss', label: 'P/L (€)', visible: true, width: 100, align: 'right' },
@@ -259,7 +259,7 @@ export default function PortfolioValuation() {
             const total_dividends = pyData ? pyData.dividends : null;
             let is_live_price = pyData ? pyData.is_live : false;
 
-            // Fallback se prezzo mancante (Simula logica backend)
+            // Fallback se prezzo mancante
             if (current_price === null || current_price === 0) {
                 current_price = avg_price;
                 is_live_price = false;
@@ -267,7 +267,7 @@ export default function PortfolioValuation() {
 
             const market_value = current_price * quantity;
             const gross_value = market_value + (total_dividends || 0);
-            const profit_loss = gross_value - total_exposure; // Total Return logic
+            const profit_loss = gross_value - total_exposure;
             const performance_perc = total_exposure !== 0 ? (profit_loss / total_exposure) * 100 : 0;
 
             return {
@@ -332,7 +332,7 @@ export default function PortfolioValuation() {
     const fmt = (num: number | null) => num !== null ? new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' }).format(num) : '-';
     const fmtPerc = (num: number | null) => num !== null ? `${num > 0 ? '+' : ''}${num.toFixed(2)}%` : '-';
 
-    // --- RESIZING & COLUMNS ---
+    // --- DRAG & DROP + RESIZING ---
     const handleResize = useCallback((index: number, newWidth: number) => {
         setColumns(cols => {
             const newCols = [...cols];
@@ -341,14 +341,42 @@ export default function PortfolioValuation() {
         });
     }, []);
 
-    // Componente Cella Intestazione Resizable
-    const ResizableHeader = ({ col, index }: { col: ColumnConfig, index: number }) => {
+    const moveColumn = useCallback((fromIndex: number, toIndex: number) => {
+        if (fromIndex === toIndex) return;
+        setColumns(prev => {
+            const newCols = [...prev];
+            const [movedCol] = newCols.splice(fromIndex, 1);
+            newCols.splice(toIndex, 0, movedCol);
+            return newCols;
+        });
+    }, []);
+
+    // Componente Intestazione (Sortable + Resizable)
+    const ResizableHeader = ({ col, index, moveColumn }: { col: ColumnConfig, index: number, moveColumn: (from: number, to: number) => void }) => {
         const [w, setW] = useState(col.width);
 
         useEffect(() => setW(col.width), [col.width]);
 
+        // Drag handlers
+        const handleDragStart = (e: React.DragEvent) => {
+            e.dataTransfer.setData("colIndex", index.toString());
+            e.dataTransfer.effectAllowed = "move";
+        };
+
+        const handleDragOver = (e: React.DragEvent) => {
+            e.preventDefault(); // Necessario per permettere il drop
+        };
+
+        const handleDrop = (e: React.DragEvent) => {
+            e.preventDefault();
+            const fromIndex = parseInt(e.dataTransfer.getData("colIndex"));
+            moveColumn(fromIndex, index);
+        };
+
+        // Resize handlers
         const onMouseDown = (e: React.MouseEvent) => {
             e.preventDefault();
+            e.stopPropagation(); // Evita di triggerare il drag dell'header
             const startX = e.pageX;
             const startW = w;
 
@@ -369,11 +397,18 @@ export default function PortfolioValuation() {
         };
 
         return (
-            <th style={{ width: w }} className={`px-4 py-3 relative group ${col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left'}`}>
+            <th
+                style={{ width: w }}
+                draggable
+                onDragStart={handleDragStart}
+                onDragOver={handleDragOver}
+                onDrop={handleDrop}
+                className={`px-4 py-3 relative group cursor-move select-none active:bg-slate-100 ${col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left'}`}
+            >
                 {col.label}
                 <div
                     onMouseDown={onMouseDown}
-                    className="absolute right-0 top-0 bottom-0 w-4 cursor-col-resize flex items-center justify-center opacity-0 group-hover:opacity-100 hover:bg-slate-200 transition-opacity"
+                    className="absolute right-0 top-0 bottom-0 w-4 cursor-col-resize flex items-center justify-center opacity-0 group-hover:opacity-100 hover:bg-slate-200 transition-opacity z-10"
                 >
                     <GripVertical size={12} className="text-slate-400" />
                 </div>
@@ -418,7 +453,6 @@ export default function PortfolioValuation() {
         setIsDownloadOpen(false);
     };
 
-    // Filtra colonne visibili
     const visibleColumns = columns.filter(c => c.visible);
     const hasEstimatedPrices = portfolioData.some(p => p.current_price !== null && !p.is_live_price);
 
@@ -519,7 +553,7 @@ export default function PortfolioValuation() {
                                     <thead className="bg-slate-50 text-slate-500 font-semibold uppercase text-[11px] tracking-wider border-b border-slate-200">
                                         <tr>
                                             {columns.map((col, i) => (
-                                                col.visible && <ResizableHeader key={col.id} col={col} index={i} />
+                                                col.visible && <ResizableHeader key={col.id} col={col} index={i} moveColumn={moveColumn} />
                                             ))}
                                         </tr>
                                     </thead>
