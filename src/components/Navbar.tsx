@@ -44,7 +44,7 @@ export default function Navbar() {
         fetchUserProfile();
     }, []);
 
-    // Definizione degli item
+    // Definizione degli item con possibili sottomenu
     const navItems = [
         { name: 'Home', path: '/', icon: Home },
         {
@@ -62,61 +62,60 @@ export default function Navbar() {
 
     return (
         <nav className="sticky top-0 z-50 w-full bg-white/80 backdrop-blur-md border-b border-gray-200 shadow-sm">
-            <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-                <div className="flex justify-between items-center h-16">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8"> {/* Aumentato max-w per spaziare meglio */}
 
-                    {/* --- LEFT SIDE: LOGO + BRANDING --- */}
-                    <div className="flex items-center gap-8">
+                {/* MODIFICA 1: Aumentata altezza navbar da h-16 a h-24 */}
+                <div className="flex justify-between items-center h-24">
+
+                    {/* --- LEFT SIDE: LOGO + DESKTOP LINKS --- */}
+                    <div className="flex items-center gap-6">
                         <div className="flex-shrink-0 flex items-center cursor-pointer gap-3" onClick={() => router.push('/')}>
 
-                            {/* LOGO (Reso più grande: w-12 h-12) */}
-                            <div className="relative w-16 h-16 flex items-center justify-center">
+                            {/* MODIFICA 2: Logo raddoppiato (w-24 h-24 ovvero 96px) */}
+                            <div className="relative w-24 h-24 flex items-center justify-center">
                                 <Image
-                                    /* ATTENZIONE: Assicurati che il nome del file in /public 
-                                      corrisponda esattamente a quello scritto qui sotto.
-                                      Consiglio: rinomina il file in "owl-logo.png" per semplicità.
-                                    */
                                     src="/owl-logo-no_background-new.png"
                                     alt="Owl Logo"
-                                    width={48}
-                                    height={48}
-                                    className="object-contain"
+                                    width={96} // Raddoppiato da 40/48
+                                    height={96} // Raddoppiato da 40/48
+                                    className="object-contain scale-110" // scale-110 per riempire bene visivamente
                                     priority
                                 />
                             </div>
 
-                            {/* TESTO (Impilato verticalmente) */}
+                            {/* MODIFICA 3: Testo più grande e spaziato */}
                             <div className="flex flex-col justify-center">
-                                <span className="font-bold text-xl text-slate-900 leading-none tracking-tight">
+                                <span className="font-bold text-3xl text-slate-900 leading-none tracking-tight"> {/* Aumentato a text-3xl */}
                                     O-W-L
                                 </span>
-                                <span className="text-[10px] text-blue-600 font-semibold uppercase tracking-wider leading-none mt-0.5">
+                                <span className="text-sm text-blue-600 font-semibold uppercase tracking-wider leading-none mt-1"> {/* Aumentato a text-sm */}
                                     Own Wealth Log
                                 </span>
                             </div>
                         </div>
 
                         {/* DESKTOP NAV */}
-                        <div className="hidden md:flex space-x-6 h-16 ml-4">
+                        <div className="hidden md:flex space-x-6 h-24 ml-6">
                             {navItems.map((item) => {
                                 const active = isActive(item.path);
                                 const Icon = item.icon;
 
                                 return (
                                     <div key={item.name} className="relative group flex items-center">
+                                        {/* Link Principale */}
                                         <Link
                                             href={item.path}
-                                            className={`inline-flex items-center px-1 pt-1 h-full text-sm font-medium transition-colors border-b-2 ${active
+                                            className={`inline-flex items-center px-1 pt-1 h-full text-sm font-medium transition-colors border-b-4 ${active // border-b-4 per bilanciare l'altezza
                                                 ? 'border-blue-600 text-blue-600'
                                                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                                                 }`}
                                         >
-                                            <Icon size={16} className="mr-2" />
+                                            <Icon size={18} className="mr-2" />
                                             {item.name}
-                                            {item.dropdown && <ChevronDown size={12} className="ml-1 opacity-50 group-hover:rotate-180 transition-transform" />}
+                                            {item.dropdown && <ChevronDown size={14} className="ml-1 opacity-50 group-hover:rotate-180 transition-transform" />}
                                         </Link>
 
-                                        {/* Dropdown */}
+                                        {/* Sottomenu (Dropdown) */}
                                         {item.dropdown && (
                                             <div className="absolute left-0 top-full pt-0 w-48 hidden group-hover:block animate-in fade-in slide-in-from-top-1 duration-200">
                                                 <div className="bg-white border border-gray-200 rounded-lg shadow-xl py-2 mt-0 overflow-hidden">
@@ -124,9 +123,9 @@ export default function Navbar() {
                                                         <Link
                                                             key={subItem.name}
                                                             href={subItem.path}
-                                                            className="flex items-center px-4 py-2.5 text-sm text-gray-600 hover:bg-blue-50 hover:text-blue-600 transition-colors"
+                                                            className="flex items-center px-4 py-3 text-sm text-gray-600 hover:bg-blue-50 hover:text-blue-600 transition-colors"
                                                         >
-                                                            <subItem.icon size={14} className="mr-3 text-gray-400 group-hover:text-blue-500" />
+                                                            <subItem.icon size={16} className="mr-3 text-gray-400 group-hover:text-blue-500" />
                                                             {subItem.name}
                                                         </Link>
                                                     ))}
@@ -143,7 +142,7 @@ export default function Navbar() {
                     <div className="hidden md:flex items-center">
                         <Link href="/users">
                             <div className={`
-                                w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold shadow-sm transition-all border
+                                w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold shadow-md transition-all border-2
                                 ${isActive('/users')
                                     ? 'bg-blue-600 text-white border-blue-600'
                                     : 'bg-white text-blue-600 border-gray-200 hover:border-blue-300 hover:bg-blue-50'
