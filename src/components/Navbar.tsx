@@ -44,7 +44,7 @@ export default function Navbar() {
         fetchUserProfile();
     }, []);
 
-    // Definizione degli item con possibili sottomenu
+    // Definizione degli item
     const navItems = [
         { name: 'Home', path: '/', icon: Home },
         {
@@ -67,10 +67,9 @@ export default function Navbar() {
                 <div className="flex justify-between items-center h-24">
 
                     {/* --- LEFT SIDE: LOGO + DESKTOP LINKS --- */}
-                    <div className="flex items-center gap-6">
+                    <div className="flex items-center">
+                        {/* LOGO SECTION */}
                         <div className="flex-shrink-0 flex items-center cursor-pointer gap-3" onClick={() => router.push('/')}>
-
-                            {/* LOGO */}
                             <div className="relative w-24 h-24 flex items-center justify-center">
                                 <Image
                                     src="/owl-logo-no_background-new.png"
@@ -81,9 +80,6 @@ export default function Navbar() {
                                     priority
                                 />
                             </div>
-
-                            {/* TESTO (Modificato per centrare) */}
-                            {/* Aggiunto 'items-center' per centrare orizzontalmente i testi tra loro */}
                             <div className="flex flex-col justify-center items-center">
                                 <span className="font-bold text-3xl text-slate-900 leading-none tracking-tight">
                                     O-W-L
@@ -94,38 +90,40 @@ export default function Navbar() {
                             </div>
                         </div>
 
-                        {/* DESKTOP NAV */}
-                        <div className="hidden md:flex space-x-6 h-24 ml-6">
+                        {/* DESKTOP NAV (MODIFICATO: Più grande e più spaziato) */}
+                        <div className="hidden md:flex space-x-8 h-24 ml-10"> {/* Aumentato margine sinistro e spaziatura */}
                             {navItems.map((item) => {
                                 const active = isActive(item.path);
                                 const Icon = item.icon;
 
                                 return (
                                     <div key={item.name} className="relative group flex items-center">
-                                        {/* Link Principale */}
                                         <Link
                                             href={item.path}
-                                            className={`inline-flex items-center px-1 pt-1 h-full text-sm font-medium transition-colors border-b-4 ${active
+                                            // MODIFICA QUI: text-lg (invece di text-sm) e font-semibold
+                                            className={`inline-flex items-center px-1 pt-1 h-full text-lg font-semibold transition-colors border-b-4 ${active
                                                 ? 'border-blue-600 text-blue-600'
-                                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                                                : 'border-transparent text-slate-600 hover:text-slate-900 hover:border-slate-300'
                                                 }`}
                                         >
-                                            <Icon size={18} className="mr-2" />
+                                            {/* Icona leggermente più grande (size={20}) */}
+                                            <Icon size={20} className="mr-2.5" />
                                             {item.name}
-                                            {item.dropdown && <ChevronDown size={14} className="ml-1 opacity-50 group-hover:rotate-180 transition-transform" />}
+                                            {item.dropdown && <ChevronDown size={16} className="ml-1 opacity-50 group-hover:rotate-180 transition-transform" />}
                                         </Link>
 
-                                        {/* Sottomenu (Dropdown) */}
+                                        {/* Dropdown Menu */}
                                         {item.dropdown && (
-                                            <div className="absolute left-0 top-full pt-0 w-48 hidden group-hover:block animate-in fade-in slide-in-from-top-1 duration-200">
+                                            <div className="absolute left-0 top-full pt-0 w-56 hidden group-hover:block animate-in fade-in slide-in-from-top-1 duration-200">
                                                 <div className="bg-white border border-gray-200 rounded-lg shadow-xl py-2 mt-0 overflow-hidden">
                                                     {item.dropdown.map((subItem) => (
                                                         <Link
                                                             key={subItem.name}
                                                             href={subItem.path}
-                                                            className="flex items-center px-4 py-3 text-sm text-gray-600 hover:bg-blue-50 hover:text-blue-600 transition-colors"
+                                                            // MODIFICA QUI: Dropdown text-base (invece di text-sm)
+                                                            className="flex items-center px-5 py-3 text-base text-gray-600 hover:bg-blue-50 hover:text-blue-600 transition-colors"
                                                         >
-                                                            <subItem.icon size={16} className="mr-3 text-gray-400 group-hover:text-blue-500" />
+                                                            <subItem.icon size={18} className="mr-3 text-gray-400 group-hover:text-blue-500" />
                                                             {subItem.name}
                                                         </Link>
                                                     ))}
@@ -141,8 +139,9 @@ export default function Navbar() {
                     {/* --- RIGHT SIDE: USER PROFILE --- */}
                     <div className="hidden md:flex items-center">
                         <Link href="/users">
+                            {/* Ingrandito anche il cerchio profilo */}
                             <div className={`
-                                w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold shadow-md transition-all border-2
+                                w-11 h-11 rounded-full flex items-center justify-center text-base font-bold shadow-md transition-all border-2
                                 ${isActive('/users')
                                     ? 'bg-blue-600 text-white border-blue-600'
                                     : 'bg-white text-blue-600 border-gray-200 hover:border-blue-300 hover:bg-blue-50'
@@ -154,22 +153,23 @@ export default function Navbar() {
                     </div>
 
                     {/* --- MOBILE MENU --- */}
-                    <div className="flex md:hidden justify-around w-full fixed bottom-0 left-0 bg-white border-t border-gray-200 p-3 pb-5 z-50">
+                    <div className="flex md:hidden justify-around w-full fixed bottom-0 left-0 bg-white border-t border-gray-200 p-3 pb-6 z-50">
                         {navItems.map((item) => {
                             const active = isActive(item.path);
                             const Icon = item.icon;
                             return (
                                 <Link key={item.path} href={item.path} className={`flex flex-col items-center ${active ? 'text-blue-600' : 'text-gray-400'}`}>
-                                    <Icon size={24} strokeWidth={active ? 2.5 : 2} />
-                                    <span className="text-[10px] mt-1 font-medium">{item.name}</span>
+                                    <Icon size={26} strokeWidth={active ? 2.5 : 2} />
+                                    {/* Aumentato testo mobile a text-xs */}
+                                    <span className="text-xs mt-1.5 font-medium">{item.name}</span>
                                 </Link>
                             );
                         })}
                         <Link href="/users" className={`flex flex-col items-center ${isActive('/users') ? 'text-blue-600' : 'text-gray-400'}`}>
-                            <div className={`w-6 h-6 rounded-full border flex items-center justify-center text-[10px] font-bold ${isActive('/users') ? 'border-blue-600 bg-blue-100' : 'border-gray-400'}`}>
+                            <div className={`w-7 h-7 rounded-full border flex items-center justify-center text-xs font-bold ${isActive('/users') ? 'border-blue-600 bg-blue-100' : 'border-gray-400'}`}>
                                 {userInitials}
                             </div>
-                            <span className="text-[10px] mt-1 font-medium">Profile</span>
+                            <span className="text-xs mt-1.5 font-medium">Profile</span>
                         </Link>
                     </div>
                 </div>
