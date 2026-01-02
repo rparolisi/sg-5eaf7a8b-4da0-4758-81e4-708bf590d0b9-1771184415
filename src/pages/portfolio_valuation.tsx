@@ -459,7 +459,7 @@ export default function PortfolioValuation() {
     return (
         <div className="min-h-screen bg-slate-50 font-sans text-slate-900 p-6 pb-20">
             <div className="max-w-[1920px] mx-auto">
-                {/* Header (Titolo) - Rimosso pulsante Plot da qui */}
+                {/* Header */}
                 <div className="flex justify-between items-center mb-6">
                     <div>
                         <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
@@ -470,7 +470,7 @@ export default function PortfolioValuation() {
                 </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 mb-8">
-                    {/* FILTRI */}
+                    {/* FILTERS */}
                     <div className="lg:col-span-1 space-y-4">
                         <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
                             <div className="flex items-center justify-between mb-4 border-b border-slate-100 pb-2">
@@ -496,53 +496,62 @@ export default function PortfolioValuation() {
 
                     {/* TABLE AREA */}
                     <div className="lg:col-span-4 flex flex-col gap-4">
-                        {/* Toolbar Tabella (Destra) - Include il tasto Plot ora */}
-                        <div className="flex justify-end gap-2 mb-2">
-                            {/* Plot History Button */}
-                            <Link href="/portfolio_valuation/plot" className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 text-slate-700 font-medium transition-colors shadow-sm">
-                                <TrendingUp size={18} className="text-purple-600" />
-                                <span className="hidden sm:inline">Plot History</span>
-                            </Link>
 
-                            {/* Column Visibility Menu */}
-                            <div className="relative" ref={settingsRef}>
-                                <button onClick={() => setIsColMenuOpen(!isColMenuOpen)} className="p-2 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 text-slate-600">
-                                    <Settings size={18} />
-                                </button>
-                                {isColMenuOpen && (
-                                    <div className="absolute right-0 top-full mt-2 w-56 bg-white rounded-xl shadow-xl border border-slate-200 z-50 p-2">
-                                        <div className="text-xs font-bold text-slate-400 uppercase mb-2 px-2">Visible Columns</div>
-                                        {columns.map((col, idx) => (
-                                            <div key={col.id} onClick={() => {
-                                                const newCols = [...columns];
-                                                newCols[idx].visible = !newCols[idx].visible;
-                                                setColumns(newCols);
-                                            }} className="flex items-center gap-2 px-2 py-1.5 hover:bg-slate-50 rounded cursor-pointer text-sm">
-                                                <div className={`w-4 h-4 border rounded flex items-center justify-center ${col.visible ? 'bg-blue-600 border-blue-600' : 'border-slate-300'}`}>
-                                                    {col.visible && <Check size={12} className="text-white" />}
-                                                </div>
-                                                {col.label}
-                                            </div>
-                                        ))}
-                                    </div>
-                                )}
+                        {/* TOOLBAR: Grid Layout a 3 Colonne */}
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-center mb-2">
+                            {/* Spazio Vuoto a Sinistra */}
+                            <div />
+
+                            {/* Centro: Tasto Plot History */}
+                            <div className="justify-self-center">
+                                <Link href="/portfolio_valuation/plot" className="flex items-center gap-2 px-6 py-2 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 text-slate-700 font-medium transition-colors shadow-sm">
+                                    <TrendingUp size={18} className="text-purple-600" />
+                                    <span>Plot History</span>
+                                </Link>
                             </div>
 
-                            {/* Download Menu */}
-                            <div className="relative" ref={downloadRef}>
-                                <button onClick={() => setIsDownloadOpen(!isDownloadOpen)} className="p-2 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 text-slate-600">
-                                    <Download size={18} />
-                                </button>
-                                {isDownloadOpen && (
-                                    <div className="absolute right-0 top-full mt-2 w-48 bg-white rounded-xl shadow-xl border border-slate-200 z-50 p-2">
-                                        <button onClick={() => exportData('csv')} className="w-full flex items-center gap-3 px-3 py-2 hover:bg-slate-50 rounded text-sm text-slate-700">
-                                            <FileText size={16} className="text-green-500" /> Export CSV
-                                        </button>
-                                        <button onClick={() => exportData('xlsx')} className="w-full flex items-center gap-3 px-3 py-2 hover:bg-slate-50 rounded text-sm text-slate-700">
-                                            <FileSpreadsheet size={16} className="text-emerald-600" /> Export XLSX
-                                        </button>
-                                    </div>
-                                )}
+                            {/* Destra: Strumenti Tabella */}
+                            <div className="flex justify-end gap-2">
+                                {/* Column Visibility Menu */}
+                                <div className="relative" ref={settingsRef}>
+                                    <button onClick={() => setIsColMenuOpen(!isColMenuOpen)} className="p-2 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 text-slate-600">
+                                        <Settings size={18} />
+                                    </button>
+                                    {isColMenuOpen && (
+                                        <div className="absolute right-0 top-full mt-2 w-56 bg-white rounded-xl shadow-xl border border-slate-200 z-50 p-2">
+                                            <div className="text-xs font-bold text-slate-400 uppercase mb-2 px-2">Visible Columns</div>
+                                            {columns.map((col, idx) => (
+                                                <div key={col.id} onClick={() => {
+                                                    const newCols = [...columns];
+                                                    newCols[idx].visible = !newCols[idx].visible;
+                                                    setColumns(newCols);
+                                                }} className="flex items-center gap-2 px-2 py-1.5 hover:bg-slate-50 rounded cursor-pointer text-sm">
+                                                    <div className={`w-4 h-4 border rounded flex items-center justify-center ${col.visible ? 'bg-blue-600 border-blue-600' : 'border-slate-300'}`}>
+                                                        {col.visible && <Check size={12} className="text-white" />}
+                                                    </div>
+                                                    {col.label}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Download Menu */}
+                                <div className="relative" ref={downloadRef}>
+                                    <button onClick={() => setIsDownloadOpen(!isDownloadOpen)} className="p-2 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 text-slate-600">
+                                        <Download size={18} />
+                                    </button>
+                                    {isDownloadOpen && (
+                                        <div className="absolute right-0 top-full mt-2 w-48 bg-white rounded-xl shadow-xl border border-slate-200 z-50 p-2">
+                                            <button onClick={() => exportData('csv')} className="w-full flex items-center gap-3 px-3 py-2 hover:bg-slate-50 rounded text-sm text-slate-700">
+                                                <FileText size={16} className="text-green-500" /> Export CSV
+                                            </button>
+                                            <button onClick={() => exportData('xlsx')} className="w-full flex items-center gap-3 px-3 py-2 hover:bg-slate-50 rounded text-sm text-slate-700">
+                                                <FileSpreadsheet size={16} className="text-emerald-600" /> Export XLSX
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                         </div>
 
