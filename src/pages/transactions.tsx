@@ -3,9 +3,9 @@ import { useRouter } from 'next/router';
 import { createClient } from '@supabase/supabase-js';
 import {
     Plus, Search, Filter, Settings, Download, X,
-    TrendingUp, TrendingDown, GripVertical, Check, ArrowUp, ArrowDown, ChevronRight,
+    TrendingUp, TrendingDown, GripVertical, Check, ArrowUp, ArrowDown, ChevronRight, ChevronDown, // <--- AGGIUNTO QUI
     FileText, FileSpreadsheet, List, LineChart as LineChartIcon, BarChart3, AlertTriangle, Info,
-    Calendar, Loader2 // <--- AGGIUNTO ANCHE QUESTO
+    Calendar, Loader2
 } from 'lucide-react';
 import {
     LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
