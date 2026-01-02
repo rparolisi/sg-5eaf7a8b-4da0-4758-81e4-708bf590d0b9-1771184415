@@ -380,17 +380,18 @@ export default function PortfolioValuation() {
             <div className="max-w-[1920px] mx-auto">
 
                 {/* --- HEADER AGGIORNATO (LAYOUT A 3 COLONNE) --- */}
-                <div className="flex flex-col md:flex-row flex-wrap gap-4 justify-between items-center mb-6">
+                {/* --- HEADER AGGIORNATO (LAYOUT A 3 COLONNE BILANCIATE) --- */}
+                <div className="flex flex-col md:flex-row items-center mb-6 relative">
 
-                    {/* 1. SINISTRA: Titolo */}
-                    <div className="flex items-center gap-2 w-full md:w-1/3">
+                    {/* 1. SINISTRA: Titolo (Occupa lo spazio a sinistra) */}
+                    <div className="w-full md:flex-1 flex justify-start">
                         <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
                             <Wallet className="text-blue-600" /> Portfolio Valuation
                         </h1>
                     </div>
 
-                    {/* 2. CENTRO: Pulsanti Update e Plot */}
-                    <div className="flex items-center justify-center gap-3 w-full md:w-1/3">
+                    {/* 2. CENTRO: Pulsanti Update e Plot (CENTRATURA ASSOLUTA O FLEX BILANCIATO) */}
+                    <div className="w-full md:flex-1 flex justify-center gap-3 mt-4 md:mt-0">
                         <button
                             onClick={triggerUpdateMarketData}
                             disabled={isUpdatingMarket}
@@ -406,8 +407,8 @@ export default function PortfolioValuation() {
                         </Link>
                     </div>
 
-                    {/* 3. DESTRA: Settings e Download */}
-                    <div className="flex items-center justify-end gap-3 w-full md:w-1/3">
+                    {/* 3. DESTRA: Settings e Download (Occupa lo spazio a destra) */}
+                    <div className="w-full md:flex-1 flex justify-end gap-3 mt-4 md:mt-0">
                         <button onClick={() => setIsSettingsOpen(true)} className="p-2 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 text-slate-600 shadow-sm" title="View Settings"><Settings size={18} /></button>
                         <div className="relative" ref={downloadRef}>
                             <button onClick={() => setIsDownloadOpen(!isDownloadOpen)} className="p-2 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 text-slate-600 shadow-sm"><Download size={18} /></button>
