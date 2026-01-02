@@ -70,7 +70,7 @@ export default function Navbar() {
                         <div className="flex-shrink-0 flex items-center cursor-pointer gap-3" onClick={() => router.push('/')}>
 
                             {/* LOGO (Reso più grande: w-12 h-12) */}
-                            <div className="relative w-12 h-12 flex items-center justify-center">
+                            <div className="relative w-16 h-16 flex items-center justify-center">
                                 <Image
                                     /* ATTENZIONE: Assicurati che il nome del file in /public 
                                       corrisponda esattamente a quello scritto qui sotto.
