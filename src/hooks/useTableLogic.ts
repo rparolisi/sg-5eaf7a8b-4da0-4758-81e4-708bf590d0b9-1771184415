@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { ViewSettings, ColumnDef, ProcessedRow } from '../types/table';
 
-// Helper per pulire i valori prima del confronto
+// Helper: Pulisce e normalizza i valori per confronti sicuri
 const safeString = (val: any) => {
     if (val === null || val === undefined) return '';
     return String(val).trim().toLowerCase();
@@ -23,44 +23,38 @@ export function useTableLogic<T>(
         let result = [...data];
 
         // 1A. Filtri Header (Quick Filters - Imbuto)
+        // Questi sono sempre "OR" tra i valori selezionati (es. "Ticker è A o B")
         Object.keys(columnFilters).forEach(colId => {
             const selectedVals = columnFilters[colId];
             if (selectedVals && selectedVals.length > 0) {
-                // Normalizziamo anche i valori selezionati dal filtro rapido
-                const normalizedSelection = selectedVals.map(v => v.trim().toLowerCase());
+                const normalizedSelection = selectedVals.map(v => safeString(v));
 
                 result = result.filter(item => {
                     const rawVal = (item as any)[colId];
-                    // Se rawVal è numero, lo convertiamo in stringa per cercare nel set
-                    const valStr = String(rawVal === null || rawVal === undefined ? '' : rawVal).trim().toLowerCase();
-
-                    // Verifica se il valore della riga è incluso nella selezione
-                    // Nota: usiamo include parziale per flessibilità o match esatto
+                    const valStr = safeString(rawVal);
                     return normalizedSelection.some(sel => valStr === sel);
                 });
             }
         });
 
         // 1B. Filtri Avanzati (Settings Modal - Ingranaggio)
+        // Questi sono "AND" tra le regole (es. "Ticker contiene A" E "Price > 10")
         if (viewSettings.filters.length > 0) {
             result = result.filter(item => {
-                // Deve soddisfare TUTTE le regole (Logic AND)
                 return viewSettings.filters.every(rule => {
                     const rawVal = (item as any)[rule.columnId];
 
-                    // Preparazione valori per confronto Testuale
+                    // Preparazione valori (Stringa vs Numero)
                     const itemValStr = safeString(rawVal);
                     const filterValStr = safeString(rule.value);
                     const filterVal2Str = safeString(rule.value2);
 
-                    // Preparazione valori per confronto Numerico
                     const itemValNum = Number(rawVal);
                     const filterValNum = Number(rule.value);
                     const filterVal2Num = Number(rule.value2);
 
-                    // Verifica se i valori sono numeri validi per operatori matematici
-                    const isItemNum = !isNaN(itemValNum) && rawVal !== null && rawVal !== '';
-                    const isFilterNum = !isNaN(filterValNum) && rule.value !== '';
+                    // È un confronto numerico valido?
+                    const isNumericComparison = !isNaN(itemValNum) && !isNaN(filterValNum) && rawVal !== null && rawVal !== '' && rule.value !== '';
 
                     let matches = false;
 
@@ -69,19 +63,19 @@ export function useTableLogic<T>(
                             matches = itemValStr.includes(filterValStr);
                             break;
                         case 'equals':
-                            // Supporta sia stringhe che numeri (es. prezzo esatto)
+                            // Usa confronto stringa normalizzato per precisione
                             matches = itemValStr === filterValStr;
                             break;
                         case 'greater':
-                            if (isItemNum && isFilterNum) matches = itemValNum > filterValNum;
-                            else matches = itemValStr > filterValStr; // Fallback alfabetico
+                            if (isNumericComparison) matches = itemValNum > filterValNum;
+                            else matches = itemValStr > filterValStr;
                             break;
                         case 'less':
-                            if (isItemNum && isFilterNum) matches = itemValNum < filterValNum;
+                            if (isNumericComparison) matches = itemValNum < filterValNum;
                             else matches = itemValStr < filterValStr;
                             break;
                         case 'between':
-                            if (isItemNum && isFilterNum) {
+                            if (isNumericComparison) {
                                 const max = !isNaN(filterVal2Num) ? filterVal2Num : Infinity;
                                 matches = itemValNum >= filterValNum && itemValNum <= max;
                             } else {
@@ -92,14 +86,12 @@ export function useTableLogic<T>(
                             matches = true;
                     }
 
-                    // Logica Include/Exclude
                     return rule.type === 'include' ? matches : !matches;
                 });
             });
         }
 
         // 2. Ordinamento (Sorting)
-        // Priorità: Prima ordina per i Gruppi, poi per le regole di Sort utente
         const groupCols = viewSettings.groups.map(g => g.columnId);
         const sortRules = [
             ...groupCols.map(col => ({ columnId: col, direction: 'asc' as const })),
@@ -117,11 +109,9 @@ export function useTableLogic<T>(
                     if (valB === null || valB === undefined) return -1;
 
                     let comparison = 0;
-                    // Confronto numerico se entrambi sono numeri
                     if (typeof valA === 'number' && typeof valB === 'number') {
                         comparison = valA - valB;
                     } else {
-                        // Confronto stringa locale (gestisce accenti ecc.)
                         comparison = String(valA).localeCompare(String(valB));
                     }
 
@@ -134,7 +124,6 @@ export function useTableLogic<T>(
         }
 
         // 3. Strutturazione (Grouping)
-        // Se non ci sono gruppi, restituisci array piatto. Altrimenti crea struttura header/data
         if (groupCols.length === 0) {
             return result.map(item => ({ type: 'data', data: item } as ProcessedRow<T>));
         } else {
@@ -142,17 +131,13 @@ export function useTableLogic<T>(
             let previousValues: Record<string, any> = {};
 
             result.forEach((item) => {
-                // Controlla cambiamenti nei livelli di gruppo
                 groupCols.forEach((groupCol, level) => {
                     const currentVal = (item as any)[groupCol];
                     const prevVal = previousValues[groupCol];
 
-                    // Se il valore cambia rispetto alla riga precedente, inserisci header
-                    // Nota: Grazie al sort preventivo, righe uguali sono vicine
                     if (currentVal !== prevVal) {
-                        // Trova label colonna per display (es. "Ticker: AAPL")
+                        // Trova la label della colonna per l'header del gruppo
                         const colDef = initialColumns.find(c => c.id === groupCol);
-
                         rows.push({
                             type: 'group_header',
                             key: groupCol,
@@ -160,17 +145,10 @@ export function useTableLogic<T>(
                             level: level,
                             field: colDef ? colDef.label : groupCol
                         });
-
-                        // Aggiorna valore corrente
                         previousValues[groupCol] = currentVal;
-
-                        // Reset dei livelli più profondi (se cambia il padre, i figli sono nuovi anche se hanno stesso valore di prima)
-                        for (let l = level + 1; l < groupCols.length; l++) {
-                            delete previousValues[groupCols[l]];
-                        }
+                        for (let l = level + 1; l < groupCols.length; l++) delete previousValues[groupCols[l]];
                     }
                 });
-
                 rows.push({ type: 'data', data: item });
             });
             return rows;
