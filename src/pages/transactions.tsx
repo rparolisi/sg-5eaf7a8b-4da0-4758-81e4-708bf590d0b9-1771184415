@@ -101,21 +101,19 @@ export default function Transactions() {
     });
 
     // --- INIT ---
+    // Sostituisci il blocco useEffect attuale con questo:
     useEffect(() => {
         if (!SUPABASE_URL || !SUPABASE_KEY) {
-            setError("Supabase config missing."); setLoading(false); return;
+            setError("Supabase config missing.");
+            setLoading(false);
+            return;
         }
 
-        if (!(window as any).supabase) {
-            const script = document.createElement('script');
-            script.src = "https://unpkg.com/@supabase/supabase-js@2";
-            script.async = true;
-            script.onload = () => setSupabase((window as any).supabase.createClient(SUPABASE_URL, SUPABASE_KEY));
-            document.body.appendChild(script);
-        } else {
-            setSupabase((window as any).supabase.createClient(SUPABASE_URL, SUPABASE_KEY));
-        }
+        // Inizializzazione diretta tramite l'import npm (più veloce e pulito)
+        const client = createClient(SUPABASE_URL, SUPABASE_KEY);
+        setSupabase(client);
 
+        // Caricamento solo di XLSX se non presente (questo va bene tenerlo se non lo importi via npm)
         if (!(window as any).XLSX) {
             const script = document.createElement('script');
             script.src = "https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js";
@@ -124,7 +122,9 @@ export default function Transactions() {
         }
 
         const handleClickOutside = (e: MouseEvent) => {
-            if (downloadRef.current && !downloadRef.current.contains(e.target as Node)) setIsDownloadOpen(false);
+            if (downloadRef.current && !downloadRef.current.contains(e.target as Node)) {
+                setIsDownloadOpen(false);
+            }
         };
         document.addEventListener('mousedown', handleClickOutside);
         return () => document.removeEventListener('mousedown', handleClickOutside);
