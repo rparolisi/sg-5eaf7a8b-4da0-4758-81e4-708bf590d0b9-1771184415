@@ -459,7 +459,7 @@ export default function PortfolioValuation() {
     return (
         <div className="min-h-screen bg-slate-50 font-sans text-slate-900 p-6 pb-20">
             <div className="max-w-[1920px] mx-auto">
-                {/* Header */}
+                {/* Header (Titolo) - Rimosso pulsante Plot da qui */}
                 <div className="flex justify-between items-center mb-6">
                     <div>
                         <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
@@ -470,7 +470,7 @@ export default function PortfolioValuation() {
                 </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 mb-8">
-                    {/* FILTERS */}
+                    {/* FILTRI */}
                     <div className="lg:col-span-1 space-y-4">
                         <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
                             <div className="flex items-center justify-between mb-4 border-b border-slate-100 pb-2">
@@ -496,17 +496,14 @@ export default function PortfolioValuation() {
 
                     {/* TABLE AREA */}
                     <div className="lg:col-span-4 flex flex-col gap-4">
-
-                        {/* PLOT BUTTON CENTERED ABOVE TABLE */}
-                        <div className="flex justify-center mb-2">
-                            <Link href="/portfolio_valuation/plot" className="flex items-center gap-2 px-6 py-2.5 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 text-slate-700 font-medium transition-colors shadow-sm">
-                                <TrendingUp size={18} className="text-purple-600" />
-                                Plot History
-                            </Link>
-                        </div>
-
-                        {/* Toolbar Tabella (Destra) */}
+                        {/* Toolbar Tabella (Destra) - Include il tasto Plot ora */}
                         <div className="flex justify-end gap-2 mb-2">
+                            {/* Plot History Button */}
+                            <Link href="/portfolio_valuation/plot" className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 text-slate-700 font-medium transition-colors shadow-sm">
+                                <TrendingUp size={18} className="text-purple-600" />
+                                <span className="hidden sm:inline">Plot History</span>
+                            </Link>
+
                             {/* Column Visibility Menu */}
                             <div className="relative" ref={settingsRef}>
                                 <button onClick={() => setIsColMenuOpen(!isColMenuOpen)} className="p-2 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 text-slate-600">
