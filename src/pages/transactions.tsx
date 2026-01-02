@@ -283,6 +283,9 @@ export default function Transactions() {
                         <button onClick={() => setIsModalOpen(true)} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-full font-medium shadow-sm transition-transform hover:-translate-y-0.5"><Plus size={18} /> Add</button>
                         <button onClick={() => setIsPlotModalOpen(true)} className="flex items-center gap-2 bg-white hover:bg-purple-50 text-purple-600 border border-purple-200 px-4 py-2 rounded-full font-medium shadow-sm transition-transform hover:-translate-y-0.5"><LineChartIcon size={18} /> Plot</button>
 
+                        {/* Separatore verticale opzionale per pulizia visiva */}
+                        <div className="h-6 w-px bg-slate-300 mx-1"></div>
+
                         <button onClick={() => setIsSettingsOpen(true)} className="p-2 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 text-slate-600 shadow-sm"><Settings size={18} /></button>
 
                         <div className="relative" ref={downloadRef}>
