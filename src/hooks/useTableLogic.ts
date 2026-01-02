@@ -41,7 +41,7 @@ export function useTableLogic<T>(
     });
 
     const processedRows = useMemo(() => {
-        let result = [...data];
+        let rows = [...rawData];
 
         // 1. FILTRI
         // A. Header (Quick Filters - Imbuto)
