@@ -3,9 +3,9 @@ import { useRouter } from 'next/router';
 import { createClient } from '@supabase/supabase-js';
 import {
     Plus, Search, Filter, Settings, Download, X,
-    TrendingUp, TrendingDown, GripVertical, Check, ArrowUp, ArrowDown, ChevronRight,
-    FileText, FileSpreadsheet, List, LineChart as LineChartIcon, BarChart3, AlertTriangle,
-    Loader2
+    TrendingUp, TrendingDown, GripVertical, Check, ArrowUp, ArrowDown, ChevronRight, ChevronDown,
+    FileText, FileSpreadsheet, List, LineChart as LineChartIcon, BarChart3, AlertTriangle, Info,
+    Calendar, Loader2
 } from 'lucide-react';
 import {
     LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
@@ -52,8 +52,7 @@ export default function Transactions() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState < string | null > (null);
 
-    // --- VIEW SETTINGS & LOGIC (SAP STYLE) ---
-    // Filtri rapidi header
+    // --- VIEW SETTINGS & LOGIC ---
     const [columnFilters, setColumnFilters] = useState < Record < string, string[]>> ({});
     const [activeFilterCol, setActiveFilterCol] = useState < string | null > (null);
     const [filterSearchTerm, setFilterSearchTerm] = useState("");
@@ -83,7 +82,6 @@ export default function Transactions() {
             setError("Supabase config missing."); setLoading(false); return;
         }
 
-        // Caricamento Supabase dinamico
         if (!(window as any).supabase) {
             const script = document.createElement('script');
             script.src = "https://unpkg.com/@supabase/supabase-js@2";
@@ -94,7 +92,6 @@ export default function Transactions() {
             setSupabase((window as any).supabase.createClient(SUPABASE_URL, SUPABASE_KEY));
         }
 
-        // Caricamento XLSX
         if (!(window as any).XLSX) {
             const script = document.createElement('script');
             script.src = "https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js";
@@ -102,7 +99,6 @@ export default function Transactions() {
             document.body.appendChild(script);
         }
 
-        // Gestione Click Outside
         const handleClickOutside = (e: MouseEvent) => {
             if (downloadRef.current && !downloadRef.current.contains(e.target as Node)) setIsDownloadOpen(false);
             if (headerFilterRef.current && !headerFilterRef.current.contains(e.target as Node)) setActiveFilterCol(null);
@@ -136,12 +132,12 @@ export default function Transactions() {
     }, [router.isReady, router.query.add]);
 
     // --- HOOK TABLE LOGIC ---
-    // Ora passiamo direttamente rawTransactions. I filtri avanzati gestiscono tutto.
+    // Passiamo rawTransactions direttamente. L'hook gestisce tutto (filtri, sort, group).
     const {
         viewSettings, setViewSettings, processedRows, visibleColumns
     } = useTableLogic(rawTransactions, ALL_COLUMNS, columnFilters);
 
-    // Limitazione righe per visualizzazione
+    // Limitazione righe
     const displayRows = useMemo(() => {
         return processedRows.slice(0, rowsLimit);
     }, [processedRows, rowsLimit]);
@@ -161,11 +157,10 @@ export default function Transactions() {
     const chartData = useMemo(() => {
         const dataRows = processedRows.filter(r => r.type === 'data').map(r => (r as any).data);
         if (!dataRows.length) return [];
-
         return [...dataRows]
             .map(item => ({
                 ...item,
-                displayX: new Date(item[plotConfig.x]).toLocaleDateString('it-IT'), // Assumendo date
+                displayX: new Date(item[plotConfig.x]).toLocaleDateString('it-IT'),
                 valX: item[plotConfig.x],
                 valY: Number(item[plotConfig.y]) || 0
             }))
@@ -232,7 +227,6 @@ export default function Transactions() {
             });
             const result = await response.json();
             if (!response.ok) throw new Error(result.detail || "Error");
-
             alert(result.message);
             setIsModalOpen(false);
             await fetchTransactions();
@@ -269,7 +263,8 @@ export default function Transactions() {
         const [w, setW] = useState(col.width);
         useEffect(() => setW(col.width), [col.width]);
 
-        const uniqueVals = useMemo(() => Array.from(new Set(rawTransactions.map(item => String(item[col.id] || '')))).sort(), [col.id]);
+        // BUG FIX: Added rawTransactions to dependencies to update filters when data loads
+        const uniqueVals = useMemo(() => Array.from(new Set(rawTransactions.map(item => String(item[col.id] || '')))).sort(), [col.id, rawTransactions]);
         const filteredVals = uniqueVals.filter(v => v.toLowerCase().includes(filterSearchTerm.toLowerCase()));
 
         // Drag
