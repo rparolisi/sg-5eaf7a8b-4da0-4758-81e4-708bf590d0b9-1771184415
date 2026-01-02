@@ -4,7 +4,7 @@ import { createClient } from '@supabase/supabase-js';
 import {
     Plus, Search, Filter, Settings, Download, X,
     TrendingUp, TrendingDown, GripVertical, Check, ArrowUp, ArrowDown, ChevronRight, ChevronDown,
-    FileText, FileSpreadsheet, LineChart as LineChartIcon, BarChart3, AlertTriangle, Info,
+    FileText, FileSpreadsheet, List, LineChart as LineChartIcon, BarChart3, AlertTriangle, Info,
     Calendar, Loader2
 } from 'lucide-react';
 import {
@@ -12,17 +12,14 @@ import {
 } from 'recharts';
 import * as XLSX from 'xlsx';
 
-// IMPORT MODULI CONDIVISI
 import { TableSettingsModal } from '../components/TableSettingsModal';
 import { useTableLogic } from '../hooks/useTableLogic';
 import { ColumnDef } from '../types/table';
 
-// --- CONFIGURAZIONE ---
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
 const SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
 const PYTHON_API_URL = "https://invest-monitor-api.onrender.com";
 
-// --- DEFINIZIONE COLONNE ---
 const ALL_COLUMNS: ColumnDef[] = [
     { id: 'transaction_id', label: 'ID', visible: false, width: 80, type: 'number', align: 'left' },
     { id: 'operation_date', label: 'Date', visible: true, width: 100, type: 'date', align: 'left' },
@@ -45,7 +42,6 @@ const ALL_COLUMNS: ColumnDef[] = [
 
 const PEOPLE_OPTIONS = ["Ale", "Peppe", "Raff"];
 
-// --- COMPONENTE MULTI-SELECT ---
 const MultiSelect = ({ label, options, selected, onChange }: { label: string, options: string[], selected: string[], onChange: (val: string[]) => void }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [searchTerm, setSearchTerm] = useState("");
@@ -53,20 +49,13 @@ const MultiSelect = ({ label, options, selected, onChange }: { label: string, op
 
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
-            if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-                setIsOpen(false);
-                setSearchTerm("");
-            }
+            if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) { setIsOpen(false); setSearchTerm(""); }
         };
         document.addEventListener("mousedown", handleClickOutside);
         return () => document.removeEventListener("mousedown", handleClickOutside);
     }, []);
 
-    const toggleOption = (option: string) => {
-        if (selected.includes(option)) onChange(selected.filter(item => item !== option));
-        else onChange([...selected, option]);
-    };
-
+    const toggleOption = (option: string) => { onChange(selected.includes(option) ? selected.filter(i => i !== option) : [...selected, option]); };
     const filteredOptions = options.filter(opt => opt.toLowerCase().includes(searchTerm.toLowerCase()));
 
     return (
@@ -78,18 +67,13 @@ const MultiSelect = ({ label, options, selected, onChange }: { label: string, op
             </button>
             {isOpen && (
                 <div className="absolute top-full left-0 w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-xl z-50 overflow-hidden flex flex-col max-h-60">
-                    <div className="p-2 border-b border-slate-100 bg-white sticky top-0 z-10">
-                        <div className="relative"><Search size={14} className="absolute left-2.5 top-2.5 text-slate-400" /><input type="text" autoFocus className="w-full pl-8 pr-3 py-1.5 text-sm border border-slate-200 rounded-md focus:ring-2 focus:ring-blue-500 outline-none bg-slate-50" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} /></div>
-                    </div>
+                    <div className="p-2 border-b border-slate-100 bg-white sticky top-0 z-10"><div className="relative"><Search size={14} className="absolute left-2.5 top-2.5 text-slate-400" /><input type="text" autoFocus className="w-full pl-8 pr-3 py-1.5 text-sm border border-slate-200 rounded-md focus:ring-2 focus:ring-blue-500 outline-none bg-slate-50" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} /></div></div>
                     <div className="overflow-y-auto flex-1 custom-scrollbar">
-                        {filteredOptions.length > 0 ? filteredOptions.map(option => {
-                            const isSelected = selected.includes(option);
-                            return (
-                                <div key={option} onClick={() => toggleOption(option)} className="px-3 py-2 flex items-center gap-2 cursor-pointer hover:bg-blue-50 transition-colors text-sm text-slate-700 border-l-2 border-transparent hover:border-blue-500">
-                                    <div className={`w-4 h-4 border rounded flex items-center justify-center flex-shrink-0 ${isSelected ? 'bg-blue-600 border-blue-600' : 'border-slate-300'}`}>{isSelected && <Check size={12} className="text-white" />}</div><span className="truncate">{option}</span>
-                                </div>
-                            );
-                        }) : <div className="px-4 py-3 text-xs text-slate-400 italic text-center">No results found</div>}
+                        {filteredOptions.length > 0 ? filteredOptions.map(o => (
+                            <div key={o} onClick={() => toggleOption(o)} className="px-3 py-2 flex items-center gap-2 cursor-pointer hover:bg-blue-50 transition-colors text-sm text-slate-700 border-l-2 border-transparent hover:border-blue-500">
+                                <div className={`w-4 h-4 border rounded flex items-center justify-center flex-shrink-0 ${selected.includes(o) ? 'bg-blue-600 border-blue-600' : 'border-slate-300'}`}>{selected.includes(o) && <Check size={12} className="text-white" />}</div><span className="truncate">{o}</span>
+                            </div>
+                        )) : <div className="px-4 py-3 text-xs text-slate-400 italic text-center">No results found</div>}
                     </div>
                 </div>
             )}
@@ -104,60 +88,32 @@ export default function Transactions() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState < string | null > (null);
 
-    // --- VIEW SETTINGS & LOGIC ---
+    // --- VIEW SETTINGS ---
     const [columnFilters, setColumnFilters] = useState < Record < string, string[]>> ({});
     const [activeFilterCol, setActiveFilterCol] = useState < string | null > (null);
     const [filterSearchTerm, setFilterSearchTerm] = useState("");
-
-    // UI States
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const [isDownloadOpen, setIsDownloadOpen] = useState(false);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isPlotModalOpen, setIsPlotModalOpen] = useState(false);
     const [plotConfig, setPlotConfig] = useState({ x: 'operation_date', y: 'total_outlay_eur' });
 
-    // Sidebar Filters
-    const [filters, setFilters] = useState({
-        person: [] as string[],
-        ticker: [] as string[],
-        startDate: '',
-        endDate: ''
-    });
-
     // Refs
     const downloadRef = useRef < HTMLDivElement > (null);
     const headerFilterRef = useRef < HTMLDivElement > (null);
 
-    // Stato Form Add
-    const [formData, setFormData] = useState({
-        type: 'Buy', people: [] as string[], security: '', date: new Date().toISOString().split('T')[0],
-        price: '', currency: 'EUR', exchange_rate: '1', shares_single: '', shares_multi: {} as Record<string, string>,
-        platform: '', account_owner: '', regulated: 'Yes', expenses: '0', taxes: '0',
-    });
+    const [filters, setFilters] = useState({ person: [] as string[], ticker: [] as string[], startDate: '', endDate: '' });
+    const [formData, setFormData] = useState({ type: 'Buy', people: [] as string[], security: '', date: new Date().toISOString().split('T')[0], price: '', currency: 'EUR', exchange_rate: '1', shares_single: '', shares_multi: {} as Record<string, string>, platform: '', account_owner: '', regulated: 'Yes', expenses: '0', taxes: '0' });
 
     // --- INIT ---
     useEffect(() => {
-        if (!SUPABASE_URL || !SUPABASE_KEY) {
-            setError("Supabase config missing."); setLoading(false); return;
-        }
-
+        if (!SUPABASE_URL || !SUPABASE_KEY) { setError("Supabase config missing."); setLoading(false); return; }
         if (!(window as any).supabase) {
-            const script = document.createElement('script');
-            script.src = "https://unpkg.com/@supabase/supabase-js@2";
-            script.async = true;
+            const script = document.createElement('script'); script.src = "https://unpkg.com/@supabase/supabase-js@2"; script.async = true;
             script.onload = () => setSupabase((window as any).supabase.createClient(SUPABASE_URL, SUPABASE_KEY));
             document.body.appendChild(script);
-        } else {
-            setSupabase((window as any).supabase.createClient(SUPABASE_URL, SUPABASE_KEY));
-        }
-
-        if (!(window as any).XLSX) {
-            const script = document.createElement('script');
-            script.src = "https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js";
-            script.async = true;
-            document.body.appendChild(script);
-        }
-
+        } else setSupabase((window as any).supabase.createClient(SUPABASE_URL, SUPABASE_KEY));
+        if (!(window as any).XLSX) { const script = document.createElement('script'); script.src = "https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"; script.async = true; document.body.appendChild(script); }
         const handleClickOutside = (e: MouseEvent) => {
             if (downloadRef.current && !downloadRef.current.contains(e.target as Node)) setIsDownloadOpen(false);
             if (headerFilterRef.current && !headerFilterRef.current.contains(e.target as Node)) setActiveFilterCol(null);
@@ -166,7 +122,6 @@ export default function Transactions() {
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
 
-    // Fetch Data
     const fetchTransactions = useCallback(async () => {
         if (!supabase) return;
         setLoading(true);
@@ -174,23 +129,11 @@ export default function Transactions() {
             const { data, error } = await supabase.from('transactions').select('*').order('operation_date', { ascending: false });
             if (error) throw error;
             setRawTransactions(data || []);
-        } catch (err: any) {
-            setError(err.message);
-        } finally {
-            setLoading(false);
-        }
+        } catch (err: any) { setError(err.message); } finally { setLoading(false); }
     }, [supabase]);
 
     useEffect(() => { if (supabase) fetchTransactions(); }, [supabase, fetchTransactions]);
 
-    useEffect(() => {
-        if (router.isReady && router.query.add === 'true') {
-            setIsModalOpen(true);
-            router.replace('/transactions', undefined, { shallow: true });
-        }
-    }, [router.isReady, router.query.add]);
-
-    // --- PRE-FILTERING (SIDEBAR) ---
     const filteredTransactions = useMemo(() => {
         if (rawTransactions.length === 0) return [];
         return rawTransactions.filter(t => {
@@ -208,13 +151,10 @@ export default function Transactions() {
         return { people: getUnique('person'), tickers: getUnique('ticker') };
     }, [rawTransactions]);
 
-    // --- HOOK TABLE LOGIC ---
-    // Gestione filtri avanzati, sort e group
-    const {
-        viewSettings, setViewSettings, processedRows, visibleColumns
-    } = useTableLogic(filteredTransactions, ALL_COLUMNS, columnFilters);
+    // --- USE TABLE LOGIC ---
+    const { viewSettings, setViewSettings, processedRows, visibleColumns } = useTableLogic(filteredTransactions, ALL_COLUMNS, columnFilters);
 
-    // --- CALCOLO TOTALI ---
+    // --- TOTALS ---
     const totals = useMemo(() => {
         const dataRows = processedRows.filter(r => r.type === 'data').map(r => (r as any).data);
         return dataRows.reduce((acc, item) => ({
@@ -225,21 +165,14 @@ export default function Transactions() {
         }), { total_outlay_eur: 0, shares_count: 0, transaction_fees_eur: 0, transaction_taxes_eur: 0 });
     }, [processedRows]);
 
-    // --- CHART DATA PREP ---
     const chartData = useMemo(() => {
         const dataRows = processedRows.filter(r => r.type === 'data').map(r => (r as any).data);
         if (!dataRows.length) return [];
-        return [...dataRows]
-            .map(item => ({
-                ...item,
-                displayX: new Date(item[plotConfig.x]).toLocaleDateString('it-IT'),
-                valX: item[plotConfig.x],
-                valY: Number(item[plotConfig.y]) || 0
-            }))
-            .sort((a, b) => a.valX < b.valX ? -1 : 1);
+        return [...dataRows].map(item => ({
+            ...item, displayX: new Date(item[plotConfig.x]).toLocaleDateString('it-IT'), valX: item[plotConfig.x], valY: Number(item[plotConfig.y]) || 0
+        })).sort((a, b) => a.valX < b.valX ? -1 : 1);
     }, [processedRows, plotConfig]);
 
-    // --- ACTIONS ---
     const handleSort = (key: string) => {
         const currentSort = viewSettings.sorts.find(s => s.columnId === key);
         const newDirection = currentSort?.direction === 'asc' ? 'desc' : 'asc';
@@ -247,16 +180,12 @@ export default function Transactions() {
     };
 
     const handleResize = useCallback((idx: number, w: number) => {
-        setViewSettings(prev => {
-            const cols = [...prev.columns]; cols[idx] = { ...cols[idx], width: w }; return { ...prev, columns: cols };
-        });
+        setViewSettings(prev => { const cols = [...prev.columns]; cols[idx] = { ...cols[idx], width: w }; return { ...prev, columns: cols }; });
     }, []);
 
     const moveColumn = useCallback((from: number, to: number) => {
         if (from === to) return;
-        setViewSettings(prev => {
-            const cols = [...prev.columns]; const [moved] = cols.splice(from, 1); cols.splice(to, 0, moved); return { ...prev, columns: cols };
-        });
+        setViewSettings(prev => { const cols = [...prev.columns]; const [moved] = cols.splice(from, 1); cols.splice(to, 0, moved); return { ...prev, columns: cols }; });
     }, []);
 
     const toggleColumnFilter = (colKey: string, value: string) => {
@@ -267,70 +196,36 @@ export default function Transactions() {
         });
     };
 
+    // UI Helpers
     const handleFilterChange = (key: keyof typeof filters, val: any) => setFilters(prev => ({ ...prev, [key]: val }));
     const clearFilters = () => setFilters({ person: [], ticker: [], startDate: '', endDate: '' });
-
-    // --- FORM ACTIONS ---
-    const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-        const { name, value } = e.target;
-        setFormData(prev => ({ ...prev, [name]: value }));
-    };
-
-    const togglePerson = (person: string) => {
-        setFormData(prev => {
-            const current = prev.people;
-            if (current.includes(person)) {
-                const newPeople = current.filter(p => p !== person);
-                const newShares = { ...prev.shares_multi }; delete newShares[person];
-                return { ...prev, people: newPeople, shares_multi: newShares };
-            }
-            return { ...prev, people: [...current, person] };
-        });
-    };
-
-    const handleMultiShareChange = (person: string, value: string) => {
-        setFormData(prev => ({
-            ...prev,
-            shares_multi: { ...prev.shares_multi, [person]: value }
-        }));
-    };
+    const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => { const { name, value } = e.target; setFormData(prev => ({ ...prev, [name]: value })); };
+    const togglePerson = (person: string) => { setFormData(prev => { const current = prev.people; if (current.includes(person)) { const newPeople = current.filter(p => p !== person); const newShares = { ...prev.shares_multi }; delete newShares[person]; return { ...prev, people: newPeople, shares_multi: newShares }; } return { ...prev, people: [...current, person] }; }); };
 
     const handleSubmit = async () => {
-        if (formData.people.length === 0 || !formData.security || !formData.price) {
-            alert("Please fill required fields."); return;
-        }
+        if (formData.people.length === 0 || !formData.security || !formData.price) { alert("Please fill required fields."); return; }
         setLoading(true);
         try {
-            const response = await fetch(`${PYTHON_API_URL}/process_transaction`, {
-                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(formData)
-            });
+            const response = await fetch(`${PYTHON_API_URL}/process_transaction`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(formData) });
             const result = await response.json();
             if (!response.ok) throw new Error(result.detail || "Error");
-
-            alert(result.message);
-            setIsModalOpen(false);
-            await fetchTransactions();
+            alert(result.message); setIsModalOpen(false); await fetchTransactions();
         } catch (e: any) { alert(`Error: ${e.message}`); } finally { setLoading(false); }
     };
 
-    // --- EXPORT ---
     const exportData = (format: 'csv' | 'xlsx') => {
         const dataRows = processedRows.filter(r => r.type === 'data').map(r => (r as any).data);
         const ws = XLSX.utils.json_to_sheet(dataRows);
         const fname = `transactions_${new Date().toISOString().split('T')[0]}`;
-
         if (format === 'csv') {
             const csv = XLSX.utils.sheet_to_csv(ws);
             const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
             const url = URL.createObjectURL(blob);
             const link = document.createElement('a'); link.href = url; link.download = `${fname}.csv`; link.click();
-        } else {
-            const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Data"); XLSX.writeFile(wb, `${fname}.xlsx`);
-        }
+        } else { const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Data"); XLSX.writeFile(wb, `${fname}.xlsx`); }
         setIsDownloadOpen(false);
     };
 
-    // --- RENDER HELPERS ---
     const fmt = (val: any, type: string) => {
         if (val === null || val === undefined) return '-';
         if (type === 'date') return new Date(val).toLocaleDateString('it-IT');
@@ -338,34 +233,22 @@ export default function Transactions() {
         return String(val);
     };
 
-    // HEADER COMPONENT
     const HeaderCell = ({ col, index }: any) => {
         const [w, setW] = useState(col.width);
         useEffect(() => setW(col.width), [col.width]);
-
-        // Dipendenza rawTransactions aggiunta per aggiornare i filtri all'arrivo dei dati
         const uniqueVals = useMemo(() => Array.from(new Set(rawTransactions.map(item => String(item[col.id] || '')))).sort(), [col.id, rawTransactions]);
         const filteredVals = uniqueVals.filter(v => v.toLowerCase().includes(filterSearchTerm.toLowerCase()));
 
         const handleDragStart = (e: React.DragEvent) => { e.dataTransfer.setData("colIndex", index.toString()); e.dataTransfer.effectAllowed = "move"; };
         const handleDrop = (e: React.DragEvent) => { e.preventDefault(); const fromIndex = parseInt(e.dataTransfer.getData("colIndex")); moveColumn(fromIndex, index); };
-
-        const onMouseDown = (e: React.MouseEvent) => {
-            e.preventDefault(); e.stopPropagation();
-            const startX = e.pageX; const startW = w;
-            const onMouseMove = (e: MouseEvent) => setW(Math.max(50, startW + (e.pageX - startX)));
-            const onMouseUp = (e: MouseEvent) => { handleResize(index, Math.max(50, startW + (e.pageX - startX))); document.removeEventListener('mousemove', onMouseMove); document.removeEventListener('mouseup', onMouseUp); };
-            document.addEventListener('mousemove', onMouseMove); document.addEventListener('mouseup', onMouseUp);
-        };
+        const onMouseDown = (e: React.MouseEvent) => { e.preventDefault(); e.stopPropagation(); const startX = e.pageX; const startW = w; const onMouseMove = (e: MouseEvent) => setW(Math.max(50, startW + (e.pageX - startX))); const onMouseUp = (e: MouseEvent) => { handleResize(index, Math.max(50, startW + (e.pageX - startX))); document.removeEventListener('mousemove', onMouseMove); document.removeEventListener('mouseup', onMouseUp); }; document.addEventListener('mousemove', onMouseMove); document.addEventListener('mouseup', onMouseUp); };
 
         const activeSort = viewSettings.sorts.find(s => s.columnId === col.id);
 
         return (
             <th style={{ width: w }} draggable onDragStart={handleDragStart} onDragOver={e => e.preventDefault()} onDrop={handleDrop} className={`px-4 py-3 relative group cursor-grab active:cursor-grabbing select-none hover:bg-slate-100 ${col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left'}`}>
                 <div className={`flex items-center gap-2 ${col.align === 'right' ? 'justify-end' : col.align === 'center' ? 'justify-center' : 'justify-start'}`}>
-                    <span onClick={() => handleSort(col.id)} className="cursor-pointer font-bold flex items-center gap-1 hover:text-blue-600 text-xs uppercase tracking-wider text-gray-600">
-                        {col.label} {activeSort && (activeSort.direction === 'asc' ? <ArrowUp size={12} /> : <ArrowDown size={12} />)}
-                    </span>
+                    <span onClick={() => handleSort(col.id)} className="cursor-pointer font-bold flex items-center gap-1 hover:text-blue-600 text-xs uppercase tracking-wider text-gray-600">{col.label} {activeSort && (activeSort.direction === 'asc' ? <ArrowUp size={12} /> : <ArrowDown size={12} />)}</span>
                     <button onClick={(e) => { e.stopPropagation(); setActiveFilterCol(activeFilterCol === col.id ? null : col.id); setFilterSearchTerm(""); }} className={`p-1 rounded hover:bg-slate-200 transition-opacity ${activeFilterCol === col.id || columnFilters[col.id]?.length ? 'opacity-100 text-blue-600' : 'opacity-0 group-hover:opacity-100 text-slate-400'}`}><Filter size={12} fill={columnFilters[col.id]?.length ? "currentColor" : "none"} /></button>
                 </div>
                 {activeFilterCol === col.id && (
@@ -391,13 +274,10 @@ export default function Transactions() {
                 {/* HEADER */}
                 <div className="flex flex-wrap gap-4 justify-between items-center mb-6">
                     <h1 className="text-3xl font-bold text-gray-800">Transactions</h1>
-
                     <div className="flex items-center gap-2">
                         <button onClick={() => setIsModalOpen(true)} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-full font-medium shadow-sm transition-transform hover:-translate-y-0.5"><Plus size={18} /> Add</button>
                         <button onClick={() => setIsPlotModalOpen(true)} className="flex items-center gap-2 bg-white hover:bg-purple-50 text-purple-600 border border-purple-200 px-4 py-2 rounded-full font-medium shadow-sm transition-transform hover:-translate-y-0.5"><LineChartIcon size={18} /> Plot</button>
-
                         <button onClick={() => setIsSettingsOpen(true)} className="p-2 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 text-slate-600 shadow-sm"><Settings size={18} /></button>
-
                         <div className="relative" ref={downloadRef}>
                             <button onClick={() => setIsDownloadOpen(!isDownloadOpen)} className="p-2 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 text-slate-600 shadow-sm"><Download size={18} /></button>
                             {isDownloadOpen && (<div className="absolute right-0 top-full mt-2 w-48 bg-white rounded-xl shadow-xl border border-slate-200 z-50 p-2"><button onClick={() => exportData('csv')} className="w-full flex items-center gap-3 px-3 py-2 hover:bg-slate-50 rounded text-sm text-slate-700"><FileText size={16} className="text-green-500" /> Export CSV</button><button onClick={() => exportData('xlsx')} className="w-full flex items-center gap-3 px-3 py-2 hover:bg-slate-50 rounded text-sm text-slate-700"><FileSpreadsheet size={16} className="text-emerald-600" /> Export XLSX</button></div>)}
@@ -406,26 +286,18 @@ export default function Transactions() {
                 </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 mb-8">
-                    {/* FILTERS SIDEBAR */}
+                    {/* FILTRI SIDEBAR */}
                     <div className="lg:col-span-1 space-y-4">
                         <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
-                            <div className="flex items-center justify-between mb-4 border-b border-slate-100 pb-2">
-                                <div className="flex items-center gap-2 text-slate-800 font-semibold"><Filter size={18} /> Filters</div>
-                                {(filters.person.length > 0 || filters.ticker.length > 0) && <button onClick={clearFilters} className="text-xs text-red-500 hover:underline flex items-center gap-1"><XCircle size={12} /> Clear</button>}
-                            </div>
+                            <div className="flex items-center justify-between mb-4 border-b border-slate-100 pb-2"><div className="flex items-center gap-2 text-slate-800 font-semibold"><Filter size={18} /> Filters</div><button onClick={clearFilters} className="text-xs text-red-500 hover:underline flex items-center gap-1"><XCircle size={12} /> Clear</button></div>
                             <div className="space-y-4">
                                 <MultiSelect label="Person" options={uniqueOptions.people} selected={filters.person} onChange={(val) => handleFilterChange('person', val)} />
                                 <MultiSelect label="Ticker" options={uniqueOptions.tickers} selected={filters.ticker} onChange={(val) => handleFilterChange('ticker', val)} />
                                 <div className="pt-2 border-t border-slate-100">
                                     <label className="block text-xs font-bold text-slate-500 uppercase mb-2"><Calendar size={12} className="inline mr-1" /> Date Range</label>
-                                    <div className="grid grid-cols-2 gap-2">
-                                        <input type="date" className="w-full p-2 border border-slate-300 rounded text-xs" value={filters.startDate} onChange={(e) => handleFilterChange('startDate', e.target.value)} />
-                                        <input type="date" className="w-full p-2 border border-slate-300 rounded text-xs" value={filters.endDate} onChange={(e) => handleFilterChange('endDate', e.target.value)} />
-                                    </div>
+                                    <div className="grid grid-cols-2 gap-2"><input type="date" className="w-full p-2 border border-slate-300 rounded text-xs" value={filters.startDate} onChange={(e) => handleFilterChange('startDate', e.target.value)} /><input type="date" className="w-full p-2 border border-slate-300 rounded text-xs" value={filters.endDate} onChange={(e) => handleFilterChange('endDate', e.target.value)} /></div>
                                 </div>
-                                <button onClick={() => fetchTransactions()} disabled={loading} className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-lg font-bold shadow-md transition-all active:scale-95 disabled:opacity-50 mt-4">
-                                    {loading ? <Loader2 size={18} className="animate-spin" /> : <Search size={18} />} Search Prices
-                                </button>
+                                <button onClick={() => fetchTransactions()} disabled={loading} className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-lg font-bold shadow-md transition-all active:scale-95 disabled:opacity-50 mt-4">{loading ? <Loader2 size={18} className="animate-spin" /> : <Search size={18} />} Search Prices</button>
                             </div>
                         </div>
                     </div>
@@ -433,17 +305,12 @@ export default function Transactions() {
                     {/* TABLE */}
                     <div className="lg:col-span-3 flex flex-col gap-6">
                         {error && <div className="bg-red-50 border border-red-200 text-red-700 p-3 rounded-lg text-sm flex items-center gap-2"><AlertTriangle size={16} /> {error}</div>}
-
                         <div className="bg-white rounded-xl shadow-lg border border-slate-200 overflow-hidden relative min-h-[300px]">
                             {loading && <div className="absolute inset-0 bg-white/80 z-20 flex flex-col items-center justify-center text-slate-500"><Loader2 size={32} className="animate-spin text-blue-600 mb-2" /> <p>Loading...</p></div>}
-                            <div className="overflow-x-auto min-h-[500px]">
-                                <table className="w-full text-sm text-left border-collapse">
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-sm text-left">
                                     <thead className="bg-slate-50 text-slate-500 font-semibold uppercase text-[11px] tracking-wider border-b border-slate-200">
-                                        <tr>
-                                            {visibleColumns.map((col, i) => (
-                                                <HeaderCell key={col.id} col={col} index={i} />
-                                            ))}
-                                        </tr>
+                                        <tr>{visibleColumns.map((col, i) => (<HeaderCell key={col.id} col={col} index={i} />))}</tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100">
                                         {processedRows.map((row: any, idx: number) => {
@@ -457,17 +324,14 @@ export default function Transactions() {
                                                         const alignClass = col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left';
                                                         let val = item[col.id];
                                                         let content: React.ReactNode = fmt(val, col.type);
-
                                                         if (col.id === 'buy_or_sell') content = <span className={`px-2 py-1 rounded-full text-xs font-medium ${val === 'Buy' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>{item.category || val}</span>;
                                                         else if (col.id === 'ticker') content = <span className="font-bold text-slate-800">{val}</span>;
-
                                                         return <td key={col.id} className={`px-4 py-3 ${alignClass}`}>{content}</td>;
                                                     })}
                                                 </tr>
                                             );
                                         })}
                                     </tbody>
-                                    {/* FOOTER TOTALI */}
                                     {processedRows.some((r: any) => r.type === 'data') && (
                                         <tfoot className="bg-slate-50 border-t-2 border-slate-200 font-bold text-slate-800 sticky bottom-0">
                                             <tr>{visibleColumns.map(col => {
@@ -488,38 +352,25 @@ export default function Transactions() {
                     </div>
                 </div>
 
-                {/* MODALS */}
                 <TableSettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} settings={viewSettings} onUpdate={setViewSettings} allColumns={ALL_COLUMNS} />
 
-                {/* PLOT MODAL */}
                 {isPlotModalOpen && (
                     <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4 backdrop-blur-sm">
                         <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl p-6">
-                            <div className="flex justify-between mb-4">
-                                <h2 className="text-xl font-bold">Plot Data</h2>
-                                <button onClick={() => setIsPlotModalOpen(false)}><X size={24} className="text-gray-400 hover:text-gray-600" /></button>
-                            </div>
+                            <div className="flex justify-between mb-4"><h2 className="text-xl font-bold">Plot Data</h2><button onClick={() => setIsPlotModalOpen(false)}><X size={24} className="text-gray-400 hover:text-gray-600" /></button></div>
                             <div className="grid grid-cols-2 gap-4 mb-4">
                                 <select className="p-2 border rounded" value={plotConfig.x} onChange={e => setPlotConfig(p => ({ ...p, x: e.target.value }))}>{ALL_COLUMNS.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}</select>
                                 <select className="p-2 border rounded" value={plotConfig.y} onChange={e => setPlotConfig(p => ({ ...p, y: e.target.value }))}>{ALL_COLUMNS.filter(c => c.type === 'number').map(c => <option key={c.id} value={c.id}>{c.label}</option>)}</select>
                             </div>
                             <div className="h-[400px]">
                                 <ResponsiveContainer width="100%" height="100%">
-                                    <LineChart data={chartData}>
-                                        <CartesianGrid strokeDasharray="3 3" />
-                                        <XAxis dataKey="displayX" />
-                                        <YAxis />
-                                        <Tooltip />
-                                        <Legend />
-                                        <Line type="monotone" dataKey="valY" stroke="#8884d8" name={ALL_COLUMNS.find(c => c.id === plotConfig.y)?.label} />
-                                    </LineChart>
+                                    <LineChart data={chartData}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="displayX" /><YAxis /><Tooltip /><Legend /><Line type="monotone" dataKey="valY" stroke="#8884d8" name={ALL_COLUMNS.find(c => c.id === plotConfig.y)?.label} /></LineChart>
                                 </ResponsiveContainer>
                             </div>
                         </div>
                     </div>
                 )}
 
-                {/* ADD TRANSACTION MODAL */}
                 {isModalOpen && (
                     <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
                         <div className="bg-white rounded-xl w-full max-w-2xl p-6 relative">
@@ -530,11 +381,7 @@ export default function Transactions() {
                                     <button onClick={() => setFormData(p => ({ ...p, type: 'Buy' }))} className={`flex-1 py-2 rounded border ${formData.type === 'Buy' ? 'bg-green-100 border-green-500 text-green-700' : ''}`}>Buy</button>
                                     <button onClick={() => setFormData(p => ({ ...p, type: 'Sell' }))} className={`flex-1 py-2 rounded border ${formData.type === 'Sell' ? 'bg-red-100 border-red-500 text-red-700' : ''}`}>Sell</button>
                                 </div>
-                                <div className="flex gap-2 flex-wrap">
-                                    {PEOPLE_OPTIONS.map(p => (
-                                        <button key={p} onClick={() => togglePerson(p)} className={`px-3 py-1 rounded border ${formData.people.includes(p) ? 'bg-blue-600 text-white' : ''}`}>{p}</button>
-                                    ))}
-                                </div>
+                                <div className="flex gap-2 flex-wrap">{PEOPLE_OPTIONS.map(p => (<button key={p} onClick={() => togglePerson(p)} className={`px-3 py-1 rounded border ${formData.people.includes(p) ? 'bg-blue-600 text-white' : ''}`}>{p}</button>))}</div>
                                 <input placeholder="Ticker (e.g. AAPL)" className="p-2 border rounded" name="security" value={formData.security} onChange={handleInputChange} />
                                 <input type="number" placeholder="Price" className="p-2 border rounded" name="price" value={formData.price} onChange={handleInputChange} />
                                 <input type="date" className="p-2 border rounded" name="date" value={formData.date} onChange={handleInputChange} />
@@ -543,7 +390,6 @@ export default function Transactions() {
                         </div>
                     </div>
                 )}
-
             </div>
         </main>
     );
