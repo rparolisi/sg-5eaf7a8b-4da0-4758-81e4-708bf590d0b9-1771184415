@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { ViewSettings, ColumnDef, ProcessedRow } from '../types/table';
 
-// Helper: Pulisce e normalizza i valori per confronti sicuri
+// Helper per normalizzare i valori (stringhe, numeri, null) per confronti sicuri
 const safeString = (val: any) => {
     if (val === null || val === undefined) return '';
     return String(val).trim().toLowerCase();
@@ -22,29 +22,30 @@ export function useTableLogic<T>(
     const processedRows = useMemo(() => {
         let result = [...data];
 
-        // 1A. Filtri Header (Quick Filters - Imbuto)
-        // Questi sono sempre "OR" tra i valori selezionati (es. "Ticker è A o B")
+        // 1A. FILTRI HEADER (Quick Filters)
         Object.keys(columnFilters).forEach(colId => {
             const selectedVals = columnFilters[colId];
             if (selectedVals && selectedVals.length > 0) {
+                // Normalizza le selezioni del filtro
                 const normalizedSelection = selectedVals.map(v => safeString(v));
 
                 result = result.filter(item => {
                     const rawVal = (item as any)[colId];
+                    // Normalizza il valore della cella
                     const valStr = safeString(rawVal);
+
+                    // Verifica se il valore è incluso
                     return normalizedSelection.some(sel => valStr === sel);
                 });
             }
         });
 
-        // 1B. Filtri Avanzati (Settings Modal - Ingranaggio)
-        // Questi sono "AND" tra le regole (es. "Ticker contiene A" E "Price > 10")
+        // 1B. FILTRI AVANZATI (Settings Modal)
         if (viewSettings.filters.length > 0) {
             result = result.filter(item => {
                 return viewSettings.filters.every(rule => {
                     const rawVal = (item as any)[rule.columnId];
 
-                    // Preparazione valori (Stringa vs Numero)
                     const itemValStr = safeString(rawVal);
                     const filterValStr = safeString(rule.value);
                     const filterVal2Str = safeString(rule.value2);
@@ -53,27 +54,15 @@ export function useTableLogic<T>(
                     const filterValNum = Number(rule.value);
                     const filterVal2Num = Number(rule.value2);
 
-                    // È un confronto numerico valido?
                     const isNumericComparison = !isNaN(itemValNum) && !isNaN(filterValNum) && rawVal !== null && rawVal !== '' && rule.value !== '';
 
                     let matches = false;
 
                     switch (rule.operator) {
-                        case 'contains':
-                            matches = itemValStr.includes(filterValStr);
-                            break;
-                        case 'equals':
-                            // Usa confronto stringa normalizzato per precisione
-                            matches = itemValStr === filterValStr;
-                            break;
-                        case 'greater':
-                            if (isNumericComparison) matches = itemValNum > filterValNum;
-                            else matches = itemValStr > filterValStr;
-                            break;
-                        case 'less':
-                            if (isNumericComparison) matches = itemValNum < filterValNum;
-                            else matches = itemValStr < filterValStr;
-                            break;
+                        case 'contains': matches = itemValStr.includes(filterValStr); break;
+                        case 'equals': matches = itemValStr === filterValStr; break;
+                        case 'greater': matches = isNumericComparison ? itemValNum > filterValNum : itemValStr > filterValStr; break;
+                        case 'less': matches = isNumericComparison ? itemValNum < filterValNum : itemValStr < filterValStr; break;
                         case 'between':
                             if (isNumericComparison) {
                                 const max = !isNaN(filterVal2Num) ? filterVal2Num : Infinity;
@@ -82,16 +71,14 @@ export function useTableLogic<T>(
                                 matches = itemValStr >= filterValStr && itemValStr <= filterVal2Str;
                             }
                             break;
-                        default:
-                            matches = true;
+                        default: matches = true;
                     }
-
                     return rule.type === 'include' ? matches : !matches;
                 });
             });
         }
 
-        // 2. Ordinamento (Sorting)
+        // 2 & 3. ORDINAMENTO
         const groupCols = viewSettings.groups.map(g => g.columnId);
         const sortRules = [
             ...groupCols.map(col => ({ columnId: col, direction: 'asc' as const })),
@@ -103,27 +90,19 @@ export function useTableLogic<T>(
                 for (const rule of sortRules) {
                     const valA = (a as any)[rule.columnId];
                     const valB = (b as any)[rule.columnId];
-
                     if (valA === valB) continue;
                     if (valA === null || valA === undefined) return 1;
                     if (valB === null || valB === undefined) return -1;
-
                     let comparison = 0;
-                    if (typeof valA === 'number' && typeof valB === 'number') {
-                        comparison = valA - valB;
-                    } else {
-                        comparison = String(valA).localeCompare(String(valB));
-                    }
-
-                    if (comparison !== 0) {
-                        return rule.direction === 'asc' ? comparison : -comparison;
-                    }
+                    if (typeof valA === 'number' && typeof valB === 'number') comparison = valA - valB;
+                    else comparison = String(valA).localeCompare(String(valB));
+                    return rule.direction === 'asc' ? comparison : -comparison;
                 }
                 return 0;
             });
         }
 
-        // 3. Strutturazione (Grouping)
+        // 4. RAGGRUPPAMENTO
         if (groupCols.length === 0) {
             return result.map(item => ({ type: 'data', data: item } as ProcessedRow<T>));
         } else {
@@ -136,14 +115,12 @@ export function useTableLogic<T>(
                     const prevVal = previousValues[groupCol];
 
                     if (currentVal !== prevVal) {
-                        // Trova la label della colonna per l'header del gruppo
-                        const colDef = initialColumns.find(c => c.id === groupCol);
                         rows.push({
                             type: 'group_header',
                             key: groupCol,
                             value: currentVal,
                             level: level,
-                            field: colDef ? colDef.label : groupCol
+                            field: initialColumns.find(c => c.id === groupCol)?.label || groupCol
                         });
                         previousValues[groupCol] = currentVal;
                         for (let l = level + 1; l < groupCols.length; l++) delete previousValues[groupCols[l]];
