@@ -31,7 +31,7 @@ export function useTableLogic<T>(
         setPagination(prev => ({ ...prev, page: 1 }));
     }, [viewSettings.filters, viewSettings.groups, data]);
 
-    // --- 1. FILTRARE, ORDINARE E RAGGRUPPARE (Logica esistente) ---
+    // --- 1. FILTRARE, ORDINARE E RAGGRUPPARE ---
     const processedRows = useMemo(() => {
         let result = [...data];
 
@@ -123,30 +123,24 @@ export function useTableLogic<T>(
         }
     }, [data, viewSettings, initialColumns]);
 
-    // --- 2. PAGINAZIONE (Per la visualizzazione a schermo) ---
+    // --- 2. PAGINAZIONE ---
     const paginatedRows = useMemo(() => {
         const start = (pagination.page - 1) * pagination.pageSize;
         return processedRows.slice(start, start + pagination.pageSize);
     }, [processedRows, pagination]);
 
-    // --- 3. PREPARAZIONE EXPORT (Nuova logica per tutte le tabelle) ---
+    // --- 3. EXPORT DATA (Solo colonne visibili) ---
     const exportableRows = useMemo(() => {
-        // Prende solo le colonne visibili
         const visibleCols = viewSettings.columns.filter(c => c.visible);
-
-        // Prende tutte le righe di dati (escludendo header dei gruppi)
         return processedRows
             .filter(r => r.type === 'data')
             .map((r: any) => {
                 const item = r.data;
                 const exportRow: Record<string, any> = {};
-
-                // Crea un nuovo oggetto usando l'etichetta (Label) come chiave
                 visibleCols.forEach(col => {
-                    // Mappa: Chiave (Excel Header) -> Valore
+                    // Usa la Label come intestazione colonna
                     exportRow[col.label] = item[col.id];
                 });
-
                 return exportRow;
             });
     }, [processedRows, viewSettings.columns]);
@@ -154,9 +148,9 @@ export function useTableLogic<T>(
     return {
         viewSettings,
         setViewSettings,
-        paginatedRows,     // Dati paginati per la UI
-        allFilteredRows: processedRows, // Dati grezzi filtrati per calcoli
-        exportableRows,    // NUOVO: Dati pronti per l'export (solo colonne visibili)
+        paginatedRows,
+        allFilteredRows: processedRows,
+        exportableRows,    // <--- IMPORTANTE: Viene restituito qui
         visibleColumns: viewSettings.columns.filter(c => c.visible),
         pagination,
         setPagination,
