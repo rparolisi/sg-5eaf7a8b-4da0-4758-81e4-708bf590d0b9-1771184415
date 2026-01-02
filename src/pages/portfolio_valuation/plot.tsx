@@ -6,7 +6,7 @@ import {
     TrendingUp, Download, Image as ImageIcon, FileText, FileSpreadsheet, Loader2
 } from 'lucide-react';
 import {
-    LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Area, ComposedChart, ReferenceLine
+    LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Area, ComposedChart
 } from 'recharts';
 import * as htmlToImage from 'html-to-image';
 import * as XLSX from 'xlsx';
@@ -20,7 +20,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 const COLORS = {
     exposure: "#94a3b8",    // Slate-400 (Linea Esposizione)
-    grossValue: "#8b5cf6",  // Violet-500 (Nuova linea Gross Value)
+    grossValue: "#8b5cf6",  // Violet-500 (Linea Gross Value)
     marketValue: "#3b82f6", // Blue-500 (Linea Valore Mercato - Tratteggiata)
     dividends: "#f59e0b",   // Amber-500 (Dividendi - Tratteggiata)
     plAreaPos: "#22c55e",   // Green-500 (Area Profitto)
@@ -80,16 +80,16 @@ export default function PortfolioPlotPage() {
     const [transactions, setTransactions] = useState < any[] > ([]);
 
     // Configurazione Visualizzazione
-    // DEFAULT: Gross Value e Exposure attivi. P&L (Area), Market Value e Dividends spenti.
+    // DEFAULT: Gross Value e Exposure ON. Il resto OFF.
     const [visibleSeries, setVisibleSeries] = useState({
         grossValue: true,
         exposure: true,
-        plArea: false, // Area Profit/Loss
+        plArea: false, // Area Profit/Loss (Verde/Rossa tra le linee)
         marketValue: false,
         dividends: false
     });
 
-    // Filtri (Rimosso category)
+    // Filtri
     const [filters, setFilters] = useState < { person: string[], ticker: string[], startDate: string, endDate: string } > ({
         person: [], ticker: [], startDate: '', endDate: ''
     });
@@ -120,7 +120,6 @@ export default function PortfolioPlotPage() {
                         setFilters(prev => ({ ...prev, startDate: min, endDate: today }));
                     }
 
-                    // Imposta Person di default se loggato
                     const { data: { user } } = await supabase.auth.getUser();
                     if (user) {
                         const { data: userProfile } = await supabase.from('users').select('alias').eq('user_id', user.id).maybeSingle();
@@ -136,7 +135,7 @@ export default function PortfolioPlotPage() {
         loadData();
     }, []);
 
-    // 2. Opzioni per i filtri (Uniche)
+    // 2. Opzioni per i filtri
     const options = useMemo(() => {
         const getU = (k: string) => Array.from(new Set(transactions.map(t => t[k]).filter(Boolean))).sort();
         return {
@@ -145,11 +144,10 @@ export default function PortfolioPlotPage() {
         };
     }, [transactions]);
 
-    // 3. Calcolo e Fetch Dati Storici (CHIAMATA AL BACKEND)
+    // 3. Calcolo e Fetch Dati Storici
     const handlePlot = async () => {
         setCalculating(true);
         try {
-            // A. Filtra transazioni localmente
             const filteredTxs = transactions.filter(t => {
                 if (filters.person.length && !filters.person.includes(t.person)) return false;
                 if (filters.ticker.length && !filters.ticker.includes(t.ticker)) return false;
@@ -163,10 +161,8 @@ export default function PortfolioPlotPage() {
                 return;
             }
 
-            // B. Identifica Ticker unici nel filtro
             const uniqueTickers = Array.from(new Set(filteredTxs.map(t => t.ticker)));
 
-            // C. Richiedi storico completo a Python
             console.log("Calling Python API for Portfolio History...");
 
             const pyRes = await fetch(`${PYTHON_API_BASE_URL}/api/portfolio_history`, {
@@ -175,7 +171,6 @@ export default function PortfolioPlotPage() {
                 body: JSON.stringify({
                     tickers: uniqueTickers,
                     people: filters.person.length > 0 ? filters.person : null,
-                    // NON inviamo categories, così il backend usa il default (tutte)
                     start_date: filters.startDate,
                     end_date: filters.endDate
                 })
@@ -185,12 +180,25 @@ export default function PortfolioPlotPage() {
 
             const historyData = await pyRes.json();
 
-            // Arricchimento Dati: Calcolo Gross Value se non presente o derivato
-            // Gross Value = Market Value + Accumulated Dividends
-            const enrichedData = historyData.map((d: any) => ({
-                ...d,
-                gross_value: d.market_value + (d.dividends || 0)
-            }));
+            // Arricchimento Dati per Aree Recharts
+            const enrichedData = historyData.map((d: any) => {
+                const gross = d.market_value + (d.dividends || 0);
+                const exp = d.exposure;
+
+                // Logica per le aree "fill between":
+                // Se Gross > Exposure (Profitto): Range [Exposure, Gross]
+                // Se Gross < Exposure (Perdita): Range [Gross, Exposure]
+                // Usiamo "null" (o [exp, exp]) quando la condizione non è soddisfatta per non disegnare nulla.
+
+                return {
+                    ...d,
+                    gross_value: gross,
+                    // Area Verde: esiste solo se Gross > Exposure
+                    profit_area: gross >= exp ? [exp, gross] : [exp, exp],
+                    // Area Rossa: esiste solo se Gross < Exposure
+                    loss_area: gross < exp ? [gross, exp] : [exp, exp]
+                };
+            });
 
             console.log("Received & Enriched Data:", enrichedData);
             setChartData(enrichedData);
@@ -223,7 +231,6 @@ export default function PortfolioPlotPage() {
         if (!chartData.length) return;
         const filename = `portfolio_history_${new Date().toISOString().split('T')[0]}`;
 
-        // Formatta i dati per l'export
         const exportSet = chartData.map(d => ({
             Date: d.date,
             "Gross Value (€)": d.gross_value,
@@ -259,19 +266,6 @@ export default function PortfolioPlotPage() {
         document.addEventListener("mousedown", handleClickOutside);
         return () => document.removeEventListener("mousedown", handleClickOutside);
     }, []);
-
-    // Helper per gradiente P&L (Verde/Rosso)
-    const gradientOffset = () => {
-        const dataMax = Math.max(...chartData.map((i) => i.profit_loss));
-        const dataMin = Math.min(...chartData.map((i) => i.profit_loss));
-
-        if (dataMax <= 0) return 0;
-        if (dataMin >= 0) return 1;
-
-        return dataMax / (dataMax - dataMin);
-    };
-
-    const off = gradientOffset();
 
     return (
         <div className="min-h-screen bg-slate-50 font-sans text-slate-900 pb-10">
@@ -328,13 +322,6 @@ export default function PortfolioPlotPage() {
                             {chartData.length > 0 ? (
                                 <ResponsiveContainer width="100%" height="100%">
                                     <ComposedChart data={chartData} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
-                                        <defs>
-                                            <linearGradient id="splitColor" x1="0" y1="0" x2="0" y2="1">
-                                                <stop offset={off} stopColor={COLORS.plAreaPos} stopOpacity={0.3} />
-                                                <stop offset={off} stopColor={COLORS.plAreaNeg} stopOpacity={0.3} />
-                                            </linearGradient>
-                                        </defs>
-
                                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                                         <XAxis
                                             dataKey="date"
@@ -351,29 +338,47 @@ export default function PortfolioPlotPage() {
                                         />
                                         <Tooltip
                                             contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)', padding: '12px' }}
-                                            formatter={(v: number, name: string) => [
-                                                v.toLocaleString('it-IT', { style: 'currency', currency: 'EUR' }),
-                                                name
-                                            ]}
+                                            formatter={(v: number, name: string) => {
+                                                // Nascondi tooltip per le aree "range" che servono solo per il colore
+                                                if (name.includes('Area')) return [null, null];
+                                                return [v.toLocaleString('it-IT', { style: 'currency', currency: 'EUR' }), name];
+                                            }}
                                             labelStyle={{ color: '#1e293b', fontWeight: 'bold', marginBottom: '8px' }}
+                                            // Filtra le righe del tooltip che sono null (le aree di background)
+                                            filterNull={true}
                                         />
                                         <Legend wrapperStyle={{ paddingTop: '20px' }} iconType="circle" />
-                                        <ReferenceLine y={0} stroke="#cbd5e1" />
 
-                                        {/* PROFIT/LOSS AREA (Differenza tra Gross ed Exposure) */}
-                                        {/* Viene renderizzata prima così sta sotto le linee */}
+                                        {/* AREE P&L (SOTTOSTANTI LE LINEE) */}
+                                        {/* Disegniamo queste per prime (z-index basso) */}
                                         {visibleSeries.plArea && (
-                                            <Area
-                                                type="monotone"
-                                                dataKey="profit_loss"
-                                                name="Profit/Loss Area"
-                                                stroke="none"
-                                                fill="url(#splitColor)"
-                                                activeDot={false}
-                                            />
+                                            <>
+                                                {/* Area Verde (Profitto: Tra Exp e Gross) */}
+                                                <Area
+                                                    type="monotone"
+                                                    dataKey="profit_area"
+                                                    name="Profit Area"
+                                                    stroke="none"
+                                                    fill={COLORS.plAreaPos}
+                                                    fillOpacity={0.3}
+                                                    activeDot={false}
+                                                    isAnimationActive={false}
+                                                />
+                                                {/* Area Rossa (Perdita: Tra Gross e Exp) */}
+                                                <Area
+                                                    type="monotone"
+                                                    dataKey="loss_area"
+                                                    name="Loss Area"
+                                                    stroke="none"
+                                                    fill={COLORS.plAreaNeg}
+                                                    fillOpacity={0.3}
+                                                    activeDot={false}
+                                                    isAnimationActive={false}
+                                                />
+                                            </>
                                         )}
 
-                                        {/* EXPOSURE (Linea Solida Grigia) */}
+                                        {/* EXPOSURE (Linea Solida) */}
                                         {visibleSeries.exposure && (
                                             <Line
                                                 type="monotone"
@@ -386,7 +391,7 @@ export default function PortfolioPlotPage() {
                                             />
                                         )}
 
-                                        {/* GROSS VALUE (Nuova Linea Solida Viola) */}
+                                        {/* GROSS VALUE (Linea Solida Viola) */}
                                         {visibleSeries.grossValue && (
                                             <Line
                                                 type="monotone"
@@ -399,7 +404,7 @@ export default function PortfolioPlotPage() {
                                             />
                                         )}
 
-                                        {/* MARKET VALUE (Linea Blu Tratteggiata) */}
+                                        {/* MARKET VALUE (Tratteggiata Blu) */}
                                         {visibleSeries.marketValue && (
                                             <Line
                                                 type="monotone"
@@ -413,7 +418,7 @@ export default function PortfolioPlotPage() {
                                             />
                                         )}
 
-                                        {/* DIVIDENDS (Linea Arancione Tratteggiata a scalini) */}
+                                        {/* DIVIDENDS (Tratteggiata Arancione) */}
                                         {visibleSeries.dividends && (
                                             <Line
                                                 type="step"
@@ -465,11 +470,12 @@ export default function PortfolioPlotPage() {
                                         />
                                     </div>
                                     <span className="capitalize text-sm font-medium text-slate-600 group-hover:text-slate-900 transition-colors">
-                                        {k.replace(/([A-Z])/g, ' $1').replace('plArea', 'P&L Area').trim()}
+                                        {k.replace(/([A-Z])/g, ' $1').replace('plArea', 'Profit/Loss Area').trim()}
                                     </span>
                                     {/* Pallino colore legenda */}
                                     <div className="ml-auto w-2 h-2 rounded-full" style={{
-                                        backgroundColor: k === 'plArea' ? COLORS.plAreaPos : COLORS[k as keyof typeof COLORS]
+                                        backgroundColor: k === 'plArea' ? COLORS.plAreaPos : COLORS[k as keyof typeof COLORS],
+                                        background: k === 'plArea' ? `linear-gradient(90deg, ${COLORS.plAreaPos} 50%, ${COLORS.plAreaNeg} 50%)` : undefined
                                     }}></div>
                                 </label>
                             ))}
