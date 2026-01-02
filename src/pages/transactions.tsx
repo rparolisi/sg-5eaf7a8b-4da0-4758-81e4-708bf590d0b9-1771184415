@@ -158,6 +158,7 @@ export default function Transactions() {
         setViewSettings,
         paginatedRows,
         allFilteredRows,
+        exportableRows, // <--- 1. DEVI ESTRARRE QUESTA VARIABILE QUI
         visibleColumns,
         pagination,
         setPagination,
@@ -248,7 +249,7 @@ export default function Transactions() {
 
     // --- EXPORT ---
     const exportData = (format: 'csv' | 'xlsx') => {
-        // 2. USA exportableRows DIRETTAMENTE (contiene già solo le colonne giuste)
+        // 2. ORA exportableRows È DEFINITA PERCHÉ ESTRATTA DALL'HOOK
         const ws = XLSX.utils.json_to_sheet(exportableRows);
         const fname = `transactions_${new Date().toISOString().split('T')[0]}`;
 
