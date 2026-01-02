@@ -75,8 +75,8 @@ export default function Navbar() {
                                 <Image 
                                     src="/owl-logo-no_background-new.png" 
                                     alt="Owl Logo" 
-                                    width={40} 
-                                    height={40} 
+                                    width={50} 
+                                    height={50} 
                                     className="object-contain"
                                     priority
                                 />
