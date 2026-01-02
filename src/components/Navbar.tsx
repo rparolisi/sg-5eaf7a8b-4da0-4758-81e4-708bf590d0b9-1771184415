@@ -84,7 +84,7 @@ export default function Navbar() {
                             {/* --- FINE MODIFICA LOGO --- */}
 
                             <span className="font-bold text-xl text-gray-800 tracking-tight">
-                                Invest<span className="text-blue-600">Monitor</span>
+                                O-W-L<span className="text-blue-600">Own Wealth Log</span>
                             </span>
                         </div>
 
