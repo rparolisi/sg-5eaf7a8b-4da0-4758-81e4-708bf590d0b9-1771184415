@@ -3,10 +3,11 @@ import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import {
     ArrowLeft, BarChart3, Settings, Filter, ChevronDown, Check, Search,
-    TrendingUp, Download, Image as ImageIcon, FileText, FileSpreadsheet, Loader2
+    TrendingUp, Download, Image as ImageIcon, FileText, FileSpreadsheet, Loader2,
+    CheckSquare, Square
 } from 'lucide-react';
 import {
-    LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Area, ComposedChart
+    LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Area, ComposedChart, ReferenceLine
 } from 'recharts';
 import * as htmlToImage from 'html-to-image';
 import * as XLSX from 'xlsx';
@@ -48,7 +49,43 @@ const MultiSelect = ({ label, options, selected, onChange }: { label: string, op
         onChange(selected.includes(option) ? selected.filter(i => i !== option) : [...selected, option]);
     };
 
+    // Filtra le opzioni in base alla ricerca
     const filtered = options.filter(o => o.toLowerCase().includes(searchTerm.toLowerCase()));
+
+    // Gestione "Select All" / "Deselect All" (basato sui risultati filtrati)
+    const isAllFilteredSelected = filtered.length > 0 && filtered.every(o => selected.includes(o));
+
+    const handleSelectAll = () => {
+        if (isAllFilteredSelected) {
+            // Deseleziona quelli visibili
+            onChange(selected.filter(s => !filtered.includes(s)));
+        } else {
+            // Seleziona quelli visibili (mantenendo quelli già selezionati non visibili)
+            onChange(Array.from(new Set([...selected, ...filtered])));
+        }
+    };
+
+    // Gestione Paste da Clipboard (Spazi, Tab, Virgole, Newlines)
+    const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
+        e.preventDefault();
+        const text = e.clipboardData.getData('text');
+        if (!text) return;
+
+        // Splitta per qualsiasi spazio bianco o virgola
+        const tokens = text.split(/[\s,]+/).map(t => t.trim()).filter(Boolean);
+
+        // Trova quali token corrispondono a opzioni valide (case insensitive)
+        const validTokens = options.filter(opt =>
+            tokens.some(t => t.toLowerCase() === opt.toLowerCase())
+        );
+
+        if (validTokens.length > 0) {
+            // Aggiungi alla selezione esistente
+            onChange(Array.from(new Set([...selected, ...validTokens])));
+            // Opzionale: Feedback visivo o clear search
+            setSearchTerm("");
+        }
+    };
 
     return (
         <div className="relative" ref={dropdownRef}>
@@ -59,13 +96,43 @@ const MultiSelect = ({ label, options, selected, onChange }: { label: string, op
             </button>
             {isOpen && (
                 <div className="absolute top-full left-0 w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-xl z-50 overflow-hidden flex flex-col max-h-60">
-                    <div className="p-2 border-b border-slate-100 bg-white sticky top-0"><div className="relative"><Search size={14} className="absolute left-2.5 top-2.5 text-slate-400" /><input type="text" autoFocus className="w-full pl-8 pr-3 py-1.5 text-sm border border-slate-200 rounded-md outline-none bg-slate-50" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} /></div></div>
+                    {/* Header con Search e Select All */}
+                    <div className="p-2 border-b border-slate-100 bg-white sticky top-0 flex flex-col gap-2">
+                        <div className="relative">
+                            <Search size={14} className="absolute left-2.5 top-2.5 text-slate-400" />
+                            <input
+                                type="text"
+                                autoFocus
+                                className="w-full pl-8 pr-3 py-1.5 text-sm border border-slate-200 rounded-md outline-none bg-slate-50 focus:bg-white focus:border-blue-300 transition-colors"
+                                placeholder="Search or Paste..."
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                                onPaste={handlePaste}
+                            />
+                        </div>
+                        {filtered.length > 0 && (
+                            <button
+                                onClick={handleSelectAll}
+                                className="text-xs font-semibold text-blue-600 hover:text-blue-800 text-left flex items-center gap-1 px-1"
+                            >
+                                {isAllFilteredSelected ? <CheckSquare size={12} /> : <Square size={12} />}
+                                {isAllFilteredSelected ? "Deselect Visible" : "Select All Visible"}
+                            </button>
+                        )}
+                    </div>
+
+                    {/* Lista Opzioni */}
                     <div className="overflow-y-auto flex-1 custom-scrollbar">
                         {filtered.length > 0 ? filtered.map(o => (
                             <div key={o} onClick={() => toggleOption(o)} className="px-3 py-2 flex items-center gap-2 cursor-pointer hover:bg-blue-50 text-sm text-slate-700 hover:text-blue-600 transition-colors">
-                                <div className={`w-4 h-4 border rounded flex items-center justify-center flex-shrink-0 ${selected.includes(o) ? 'bg-blue-600 border-blue-600' : 'border-slate-300'}`}>{selected.includes(o) && <Check size={12} className="text-white" />}</div><span className="truncate">{o}</span>
+                                <div className={`w-4 h-4 border rounded flex items-center justify-center flex-shrink-0 ${selected.includes(o) ? 'bg-blue-600 border-blue-600' : 'border-slate-300'}`}>
+                                    {selected.includes(o) && <Check size={12} className="text-white" />}
+                                </div>
+                                <span className="truncate">{o}</span>
                             </div>
-                        )) : <div className="px-4 py-3 text-xs text-slate-400 italic text-center">No results</div>}
+                        )) : (
+                            <div className="px-4 py-3 text-xs text-slate-400 italic text-center">No results</div>
+                        )}
                     </div>
                 </div>
             )}
@@ -80,7 +147,6 @@ export default function PortfolioPlotPage() {
     const [transactions, setTransactions] = useState < any[] > ([]);
 
     // Configurazione Visualizzazione
-    // DEFAULT: Gross Value e Exposure ON. Il resto OFF.
     const [visibleSeries, setVisibleSeries] = useState({
         grossValue: true,
         exposure: true,
@@ -188,7 +254,6 @@ export default function PortfolioPlotPage() {
                 // Logica per le aree "fill between":
                 // Se Gross > Exposure (Profitto): Range [Exposure, Gross]
                 // Se Gross < Exposure (Perdita): Range [Gross, Exposure]
-                // Usiamo "null" (o [exp, exp]) quando la condizione non è soddisfatta per non disegnare nulla.
 
                 return {
                     ...d,
@@ -348,9 +413,9 @@ export default function PortfolioPlotPage() {
                                             filterNull={true}
                                         />
                                         <Legend wrapperStyle={{ paddingTop: '20px' }} iconType="circle" />
+                                        <ReferenceLine y={0} stroke="#cbd5e1" />
 
                                         {/* AREE P&L (SOTTOSTANTI LE LINEE) */}
-                                        {/* Disegniamo queste per prime (z-index basso) */}
                                         {visibleSeries.plArea && (
                                             <>
                                                 {/* Area Verde (Profitto: Tra Exp e Gross) */}
