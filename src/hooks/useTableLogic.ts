@@ -9,8 +9,7 @@ const safeString = (val: any) => {
 
 export function useTableLogic<T>(
     data: T[],
-    initialColumns: ColumnDef[],
-    columnFilters: Record<string, string[]> = {}
+    initialColumns: ColumnDef[]
 ) {
     const [viewSettings, setViewSettings] = useState < ViewSettings > ({
         columns: initialColumns,
@@ -22,58 +21,51 @@ export function useTableLogic<T>(
     const processedRows = useMemo(() => {
         let result = [...data];
 
-        // 1. FILTRI
-        // A. Header (Quick Filters - Imbuto)
-        Object.keys(columnFilters).forEach(colId => {
-            const selectedVals = columnFilters[colId];
-            if (selectedVals && selectedVals.length > 0) {
-                // Normalizza le selezioni del filtro
-                const normalizedSelection = selectedVals.map(v => safeString(v));
-
-                result = result.filter(item => {
-                    const rawVal = (item as any)[colId];
-                    // Normalizza il valore della cella
-                    const valStr = safeString(rawVal);
-
-                    // Verifica se il valore è incluso
-                    return normalizedSelection.some(sel => valStr === sel);
-                });
-            }
-        });
-
-        // B. Advanced Filters (Settings Modal - Ingranaggio)
+        // 1. FILTRI AVANZATI (Settings Modal)
         if (viewSettings.filters.length > 0) {
             result = result.filter(item => {
+                // Deve soddisfare TUTTE le regole (AND)
                 return viewSettings.filters.every(rule => {
                     const rawVal = (item as any)[rule.columnId];
 
                     const itemValStr = safeString(rawVal);
                     const filterValStr = safeString(rule.value);
-                    const filterVal2Str = safeString(rule.value2);
 
                     const itemValNum = Number(rawVal);
                     const filterValNum = Number(rule.value);
                     const filterVal2Num = Number(rule.value2);
 
-                    const isNumericComparison = !isNaN(itemValNum) && !isNaN(filterValNum) && rawVal !== null && rawVal !== '' && rule.value !== '';
+                    // Verifica se è un confronto numerico valido
+                    const isNum = !isNaN(itemValNum) && !isNaN(filterValNum) && rawVal !== null && rawVal !== '' && rule.value !== '';
 
                     let matches = false;
 
                     switch (rule.operator) {
-                        case 'contains': matches = itemValStr.includes(filterValStr); break;
-                        case 'equals': matches = itemValStr === filterValStr; break;
-                        case 'greater': matches = isNumericComparison ? itemValNum > filterValNum : itemValStr > filterValStr; break;
-                        case 'less': matches = isNumericComparison ? itemValNum < filterValNum : itemValStr < filterValStr; break;
+                        case 'contains':
+                            matches = itemValStr.includes(filterValStr);
+                            break;
+                        case 'equals':
+                            matches = itemValStr === filterValStr;
+                            break;
+                        case 'greater':
+                            matches = isNum ? itemValNum > filterValNum : itemValStr > filterValStr;
+                            break;
+                        case 'less':
+                            matches = isNum ? itemValNum < filterValNum : itemValStr < filterValStr;
+                            break;
                         case 'between':
-                            if (isNumericComparison) {
+                            if (isNum) {
                                 const max = !isNaN(filterVal2Num) ? filterVal2Num : Infinity;
                                 matches = itemValNum >= filterValNum && itemValNum <= max;
                             } else {
-                                matches = itemValStr >= filterValStr && itemValStr <= filterVal2Str;
+                                matches = itemValStr >= filterValStr && itemValStr <= safeString(rule.value2);
                             }
                             break;
-                        default: matches = true;
+                        default:
+                            matches = true;
                     }
+
+                    // Logica Include/Exclude
                     return rule.type === 'include' ? matches : !matches;
                 });
             });
@@ -141,7 +133,7 @@ export function useTableLogic<T>(
             return rows;
         }
 
-    }, [data, viewSettings, columnFilters, initialColumns]);
+    }, [data, viewSettings, initialColumns]); // Rimosso columnFilters dalle dipendenze
 
     return {
         viewSettings,
