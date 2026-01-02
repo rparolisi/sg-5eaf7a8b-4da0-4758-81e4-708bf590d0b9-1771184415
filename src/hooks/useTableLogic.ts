@@ -1,6 +1,27 @@
 import { useState, useMemo } from 'react';
 import { ViewSettings, ColumnDef, ProcessedRow } from '../types/table';
 
+const applyColumnFilters = (
+    rows: any[],
+    columnFilters: Record<string, string[]>
+) => {
+    return rows.filter(row =>
+        Object.entries(columnFilters).every(([colId, values]) => {
+            // Nessun filtro su questa colonna
+            if (!values || values.length === 0) return true;
+
+            const cellValue = row[colId];
+
+            // Se il valore è nullo, non passa
+            if (cellValue === null || cellValue === undefined) return false;
+
+            // MATCH ESATTO (NON contains!)
+            return values.includes(String(cellValue));
+        })
+    );
+};
+
+
 // Helper: Pulisce e normalizza i valori per confronti sicuri
 const safeString = (val: any) => {
     if (val === null || val === undefined) return '';
