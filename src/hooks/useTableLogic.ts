@@ -99,7 +99,7 @@ export function useTableLogic<T>(
             return result.map(item => ({ type: 'data', data: item } as ProcessedRow<T>));
         } else {
             const rows: ProcessedRow<T>[] = [];
-            let previousValues: Record<string, any> = {};
+            const previousValues: Record<string, any> = {};
             result.forEach((item) => {
                 groupCols.forEach((groupCol, level) => {
                     const currentVal = (item as any)[groupCol];
