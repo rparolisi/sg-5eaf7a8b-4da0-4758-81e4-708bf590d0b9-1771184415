@@ -3,7 +3,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { useRouter } from 'next/router';
 import { createClient } from '@supabase/supabase-js';
-import { List, PieChart, Info, Home, PlusCircle, LineChart, ChevronDown, ScrollText } from 'lucide-react';
+import { List, PieChart, Info, Home, PlusCircle, LineChart, ChevronDown, ScrollText, RefreshCw } from 'lucide-react';
 
 // --- CONFIGURAZIONE SUPABASE ---
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
@@ -63,6 +63,7 @@ export default function Navbar() {
             icon: PieChart,
             dropdown: [
                 { name: 'Portfolio', path: '/portfolio_valuation', icon: ScrollText },
+                { name: 'Update', path: '/transactions?update=true', icon: RefreshCw },
                 { name: 'Plot', path: '/portfolio_valuation/plot', icon: LineChart },
             ]
         },
