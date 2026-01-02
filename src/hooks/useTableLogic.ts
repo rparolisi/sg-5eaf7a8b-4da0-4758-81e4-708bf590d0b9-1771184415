@@ -23,7 +23,7 @@ export function useTableLogic<T>(
         let result = [...data];
 
         // 1. FILTRI
-        // A. Header (Quick Filters)
+        // A. Header (Quick Filters - Imbuto)
         Object.keys(columnFilters).forEach(colId => {
             const selectedVals = columnFilters[colId];
             if (selectedVals && selectedVals.length > 0) {
@@ -35,28 +35,49 @@ export function useTableLogic<T>(
             }
         });
 
-        // B. Advanced Filters
+        // B. Advanced Filters (Settings Modal - Ingranaggio)
         if (viewSettings.filters.length > 0) {
             result = result.filter(item => {
+                // Deve soddisfare TUTTE le regole (AND)
                 return viewSettings.filters.every(rule => {
                     const rawVal = (item as any)[rule.columnId];
                     const valStr = safeString(rawVal);
                     const filterStr = safeString(rule.value);
                     const valNum = Number(rawVal);
                     const filterNum = Number(rule.value);
-                    const isNum = !isNaN(valNum) && !isNaN(filterNum) && rawVal !== null && rawVal !== '';
+
+                    // Verifica se è un confronto numerico valido
+                    const isNum = !isNaN(valNum) && !isNaN(filterNum) && rawVal !== null && rawVal !== '' && rule.value !== '';
+
+                    let matches = false;
 
                     switch (rule.operator) {
-                        case 'contains': return valStr.includes(filterStr);
-                        case 'equals': return valStr === filterStr;
-                        case 'greater': return isNum ? valNum > filterNum : valStr > filterStr;
-                        case 'less': return isNum ? valNum < filterNum : valStr < filterStr;
-                        case 'between': return isNum
-                            ? (valNum >= filterNum && valNum <= Number(rule.value2))
-                            : (valStr >= filterStr && valStr <= safeString(rule.value2));
-                        default: return true;
+                        case 'contains':
+                            matches = valStr.includes(filterStr);
+                            break;
+                        case 'equals':
+                            matches = valStr === filterStr;
+                            break;
+                        case 'greater':
+                            matches = isNum ? valNum > filterNum : valStr > filterStr;
+                            break;
+                        case 'less':
+                            matches = isNum ? valNum < filterNum : valStr < filterStr;
+                            break;
+                        case 'between':
+                            if (isNum) {
+                                matches = valNum >= filterNum && valNum <= Number(rule.value2);
+                            } else {
+                                matches = valStr >= filterStr && valStr <= safeString(rule.value2);
+                            }
+                            break;
+                        default:
+                            matches = true;
                     }
-                }) ? (rule.type === 'include') : (rule.type !== 'include');
+
+                    // Logica Include/Exclude applicata QUI, dentro lo scope di 'rule'
+                    return rule.type === 'include' ? matches : !matches;
+                });
             });
         }
 
@@ -73,17 +94,15 @@ export function useTableLogic<T>(
                     const rawA = (a as any)[rule.columnId];
                     const rawB = (b as any)[rule.columnId];
 
-                    // Gestione Nulls (sempre in fondo)
+                    // Gestione Nulls
                     if (rawA === rawB) continue;
                     if (rawA === null || rawA === undefined) return 1;
                     if (rawB === null || rawB === undefined) return -1;
 
                     let comparison = 0;
-                    // Se entrambi sono numeri validi, usa sottrazione
                     if (typeof rawA === 'number' && typeof rawB === 'number') {
                         comparison = rawA - rawB;
                     } else {
-                        // Altrimenti usa safeString per confronto alfabetico sicuro
                         const strA = safeString(rawA);
                         const strB = safeString(rawB);
                         comparison = strA.localeCompare(strB);
@@ -127,5 +146,10 @@ export function useTableLogic<T>(
 
     }, [data, viewSettings, columnFilters, initialColumns]);
 
-    return { viewSettings, setViewSettings, processedRows, visibleColumns: viewSettings.columns.filter(c => c.visible) };
+    return {
+        viewSettings,
+        setViewSettings,
+        processedRows,
+        visibleColumns: viewSettings.columns.filter(c => c.visible)
+    };
 }
