@@ -50,7 +50,7 @@ export default function Navbar() {
         {
             name: 'Transactions',
             path: '/transactions',
-            icon: ScrollText,
+            icon: List,
             dropdown: [
                 { name: 'Transactions', path: '/transactions', icon: ScrollText },
                 { name: 'Add', path: '/transactions?add=true', icon: PlusCircle },
