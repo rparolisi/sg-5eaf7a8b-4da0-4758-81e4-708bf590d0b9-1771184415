@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import Image from 'next/image'; // <--- IMPORTA QUESTO
+import Image from 'next/image';
 import { useRouter } from 'next/router';
 import { createClient } from '@supabase/supabase-js';
-import { List, PieChart, Info, Home, PlusCircle, LineChart, ChevronDown, TrendingUp } from 'lucide-react';
+import { List, PieChart, Info, Home, PlusCircle, LineChart, ChevronDown } from 'lucide-react';
 
 // --- CONFIGURAZIONE SUPABASE ---
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
@@ -13,7 +13,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 export default function Navbar() {
     const router = useRouter();
     const isActive = (path: string) => router.pathname === path;
-    const [userInitials, setUserInitials] = useState<string>('U');
+    const [userInitials, setUserInitials] = useState < string > ('U');
 
     // --- FETCH USER INITIALS ---
     useEffect(() => {
@@ -44,7 +44,7 @@ export default function Navbar() {
         fetchUserProfile();
     }, []);
 
-    // Definizione degli item con possibili sottomenu
+    // Definizione degli item
     const navItems = [
         { name: 'Home', path: '/', icon: Home },
         {
@@ -65,43 +65,50 @@ export default function Navbar() {
             <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
                 <div className="flex justify-between items-center h-16">
 
-                    {/* --- LEFT SIDE: LOGO + DESKTOP LINKS --- */}
+                    {/* --- LEFT SIDE: LOGO + BRANDING --- */}
                     <div className="flex items-center gap-8">
-                        <div className="flex-shrink-0 flex items-center cursor-pointer" onClick={() => router.push('/')}>
-                            
-                            {/* --- INIZIO MODIFICA LOGO --- */}
-                            <div className="mr-2 relative w-10 h-10"> 
-                                {/* Assicurati che il file si chiami 'owl-logo-no_background-new.png' e sia nella cartella /public */}
-                                <Image 
-                                    src="/owl-logo-no_background-new.png" 
-                                    alt="Owl Logo" 
-                                    width={100} 
-                                    height={100} 
+                        <div className="flex-shrink-0 flex items-center cursor-pointer gap-3" onClick={() => router.push('/')}>
+
+                            {/* LOGO (Reso più grande: w-12 h-12) */}
+                            <div className="relative w-12 h-12 flex items-center justify-center">
+                                <Image
+                                    /* ATTENZIONE: Assicurati che il nome del file in /public 
+                                      corrisponda esattamente a quello scritto qui sotto.
+                                      Consiglio: rinomina il file in "owl-logo.png" per semplicità.
+                                    */
+                                    src="/owl-logo-no_background-new.png"
+                                    alt="Owl Logo"
+                                    width={48}
+                                    height={48}
                                     className="object-contain"
                                     priority
                                 />
                             </div>
-                            {/* --- FINE MODIFICA LOGO --- */}
 
-                            <span className="font-bold text-xl text-gray-800 tracking-tight">O-W-L</span>
-                            <span className="text-blue-600">Own Wealth Log</span>
-                            
+                            {/* TESTO (Impilato verticalmente) */}
+                            <div className="flex flex-col justify-center">
+                                <span className="font-bold text-xl text-slate-900 leading-none tracking-tight">
+                                    O-W-L
+                                </span>
+                                <span className="text-[10px] text-blue-600 font-semibold uppercase tracking-wider leading-none mt-0.5">
+                                    Own Wealth Log
+                                </span>
+                            </div>
                         </div>
 
                         {/* DESKTOP NAV */}
-                        <div className="hidden md:flex space-x-8 h-16">
+                        <div className="hidden md:flex space-x-6 h-16 ml-4">
                             {navItems.map((item) => {
                                 const active = isActive(item.path);
                                 const Icon = item.icon;
 
                                 return (
                                     <div key={item.name} className="relative group flex items-center">
-                                        {/* Link Principale */}
                                         <Link
                                             href={item.path}
                                             className={`inline-flex items-center px-1 pt-1 h-full text-sm font-medium transition-colors border-b-2 ${active
-                                                    ? 'border-blue-600 text-blue-600'
-                                                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                                                ? 'border-blue-600 text-blue-600'
+                                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                                                 }`}
                                         >
                                             <Icon size={16} className="mr-2" />
@@ -109,7 +116,7 @@ export default function Navbar() {
                                             {item.dropdown && <ChevronDown size={12} className="ml-1 opacity-50 group-hover:rotate-180 transition-transform" />}
                                         </Link>
 
-                                        {/* Sottomenu (Dropdown) - Appare su Hover */}
+                                        {/* Dropdown */}
                                         {item.dropdown && (
                                             <div className="absolute left-0 top-full pt-0 w-48 hidden group-hover:block animate-in fade-in slide-in-from-top-1 duration-200">
                                                 <div className="bg-white border border-gray-200 rounded-lg shadow-xl py-2 mt-0 overflow-hidden">
