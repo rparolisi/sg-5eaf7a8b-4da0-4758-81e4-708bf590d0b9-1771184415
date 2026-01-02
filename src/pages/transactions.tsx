@@ -315,7 +315,7 @@ export default function Transactions() {
                                         }
                                         const item = row.data;
                                         return (
-                                            <tr key={item.transaction_id || idx} className="hover:bg-slate-50/50 transition-colors">
+                                            <tr key={item.id || idx} className="hover:bg-slate-50/50 transition-colors">
                                                 {visibleColumns.map(col => {
                                                     const alignClass = col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left';
                                                     let val = item[col.id];
