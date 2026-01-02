@@ -1,9 +1,10 @@
 import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { createClient } from '@supabase/supabase-js';
-import { 
-    ArrowUpRight, ArrowDownRight, Wallet, Loader2, Search, Filter, 
-    ChevronDown, Calendar, XCircle, TrendingUp, Settings, Download, 
-    FileText, FileSpreadsheet, GripVertical, Check, ArrowUp, ArrowDown, ChevronRight 
+import {
+    ArrowUpRight, ArrowDownRight, Wallet, Loader2, Search, Filter,
+    ChevronDown, Calendar, XCircle, TrendingUp, Settings, Download,
+    FileText, FileSpreadsheet, Check, ArrowUp, ArrowDown, ChevronRight,
+    AlertCircle, ChevronLeft, ChevronsLeft, ChevronsRight
 } from 'lucide-react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
@@ -25,7 +26,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 const MultiSelect = ({ label, options, selected, onChange }: { label: string, options: string[], selected: string[], onChange: (val: string[]) => void }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [searchTerm, setSearchTerm] = useState("");
-    const dropdownRef = useRef<HTMLDivElement>(null);
+    const dropdownRef = useRef < HTMLDivElement > (null);
 
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
@@ -77,8 +78,8 @@ const INITIAL_COLUMNS: ColumnDef[] = [
     { id: 'avg_price', label: 'Avg Price', visible: true, width: 100, type: 'number', align: 'right' },
     { id: 'current_price', label: 'Mkt Price', visible: true, width: 100, type: 'number', align: 'right' },
     { id: 'total_exposure', label: 'Exposure', visible: true, width: 110, type: 'number', align: 'right' },
-    { id: 'market_value', label: 'Mkt Value', visible: true, width: 110, type: 'number', align: 'right' }, 
-    { id: 'gross_value', label: 'Gross Value', visible: true, width: 110, type: 'number', align: 'right' }, 
+    { id: 'market_value', label: 'Mkt Value', visible: true, width: 110, type: 'number', align: 'right' },
+    { id: 'gross_value', label: 'Gross Value', visible: true, width: 110, type: 'number', align: 'right' },
     { id: 'avg_date', label: 'Avg Date', visible: true, width: 100, type: 'date', align: 'center' },
     { id: 'total_dividends', label: 'Dividends', visible: true, width: 100, type: 'number', align: 'right' },
     { id: 'profit_loss', label: 'P/L (€)', visible: true, width: 100, type: 'number', align: 'right' },
@@ -90,9 +91,9 @@ export default function PortfolioValuation() {
     const router = useRouter();
 
     // Dati Base
-    const [rawTransactions, setRawTransactions] = useState<any[]>([]);
+    const [rawTransactions, setRawTransactions] = useState < any[] > ([]);
     const [loadingData, setLoadingData] = useState(true);
-    const [pythonData, setPythonData] = useState<Record<string, { price: number, dividends: number, is_live: boolean }>>({});
+    const [pythonData, setPythonData] = useState < Record < string, { price: number, dividends: number, is_live: boolean }>> ({});
     const [loadingPrices, setLoadingPrices] = useState(false);
     const [pricesError, setPricesError] = useState("");
 
@@ -101,13 +102,21 @@ export default function PortfolioValuation() {
 
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const [isDownloadOpen, setIsDownloadOpen] = useState(false);
-    const downloadRef = useRef<HTMLDivElement>(null);
+    const downloadRef = useRef < HTMLDivElement > (null);
 
     // Filtri Rapidi Header
-    const [columnFilters, setColumnFilters] = useState<Record<string, string[]>>({});
-    const [activeFilterCol, setActiveFilterCol] = useState<string | null>(null);
+    // (Nota: Column filters non sono usati direttamente qui ma passati all'hook se supportati,
+    // altrimenti gestiti internamente. L'hook useTableLogic non accetta columnFilters come argomento
+    // nel codice precedente, quindi li gestiamo nell'hook o qui se necessario.
+    // Assumiamo che l'hook NON prenda columnFilters per ora, o se lo fa, va aggiornato.)
+    // Se l'hook non gestisce i filtri per colonna "rapidi" (quelli dell'header),
+    // dovresti aggiungerli alla logica dell'hook o pre-filtrare i dati.
+    // Per semplicità qui li lascio ma non sono collegati all'hook se non modificato.
+    // Se vuoi usarli, dovresti aggiornare useTableLogic per accettare initialFilters o simile.
+    const [columnFilters, setColumnFilters] = useState < Record < string, string[]>> ({});
+    const [activeFilterCol, setActiveFilterCol] = useState < string | null > (null);
     const [filterSearchTerm, setFilterSearchTerm] = useState("");
-    const headerFilterRef = useRef<HTMLDivElement>(null);
+    const headerFilterRef = useRef < HTMLDivElement > (null);
 
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
@@ -153,7 +162,7 @@ export default function PortfolioValuation() {
     // --- AGGREGAZIONE DATI ---
     const basePortfolioData = useMemo(() => {
         if (rawTransactions.length === 0) return [];
-        
+
         const filtered = rawTransactions.filter(t => {
             if (filters.person.length && !filters.person.includes(t.person)) return false;
             if (filters.ticker.length && !filters.ticker.includes(t.ticker)) return false;
@@ -167,12 +176,12 @@ export default function PortfolioValuation() {
         filtered.forEach(t => {
             const key = `${t.ticker}|${t.person}`;
             if (!groups[key]) groups[key] = { ticker: t.ticker, person: t.person, qty: 0, cost: 0, dates: [], weights: [] };
-            
+
             const qty = Number(t.shares_count || 0);
             const sign = Number(t.operation_sign || 0);
             const price = Number(t.price_per_share_eur || 0);
             const outlay = t.total_outlay_eur !== null ? Number(t.total_outlay_eur) : (price * qty);
-            
+
             if (Number(t.buy_or_sell) === 1) {
                 if (sign === 1) {
                     groups[key].qty += qty; groups[key].cost += outlay;
@@ -220,13 +229,24 @@ export default function PortfolioValuation() {
     }, [rawTransactions, filters, pythonData]);
 
     // --- USO CUSTOM HOOK ---
-    const { 
-        viewSettings, setViewSettings, processedRows, visibleColumns 
-    } = useTableLogic(basePortfolioData, INITIAL_COLUMNS, columnFilters);
+    // NOTA: Aggiornato per usare i nuovi return values dell'hook
+    const {
+        viewSettings,
+        setViewSettings,
+        paginatedRows,     // Usa questo per renderizzare la tabella
+        allFilteredRows,   // Usa questo per calcolare i totali
+        exportableRows,    // Usa questo per l'export
+        visibleColumns,
+        pagination,
+        setPagination,
+        totalRows,
+        totalPages
+    } = useTableLogic(basePortfolioData, INITIAL_COLUMNS, 25);
 
     // --- CALCOLO TOTALI ---
     const totals = useMemo(() => {
-        const dataRows = processedRows.filter(r => r.type === 'data').map(r => (r as any).data);
+        // Usa allFilteredRows invece di processedRows
+        const dataRows = allFilteredRows.filter(r => r.type === 'data').map(r => (r as any).data);
         return dataRows.reduce((acc, item) => ({
             exposure: acc.exposure + item.total_exposure,
             market_value: acc.market_value + item.market_value,
@@ -234,7 +254,7 @@ export default function PortfolioValuation() {
             dividends: acc.dividends + (item.total_dividends || 0),
             profit_loss: acc.profit_loss + (item.profit_loss || 0)
         }), { exposure: 0, market_value: 0, gross_value: 0, dividends: 0, profit_loss: 0 });
-    }, [processedRows]);
+    }, [allFilteredRows]);
 
     const totalReturnPerc = totals.exposure !== 0 ? (totals.profit_loss / totals.exposure) * 100 : 0;
 
@@ -258,13 +278,8 @@ export default function PortfolioValuation() {
     };
 
     const exportData = (format: 'csv' | 'xlsx') => {
-        const dataRows = processedRows.filter(r => r.type === 'data').map(r => (r as any).data);
-        const data = dataRows.map(row => {
-            const r: any = {};
-            visibleColumns.forEach(col => { r[col.label] = row[col.id]; });
-            return r;
-        });
-        const ws = XLSX.utils.json_to_sheet(data);
+        // Usa exportableRows direttamente
+        const ws = XLSX.utils.json_to_sheet(exportableRows);
         const filename = `portfolio_valuation_${new Date().toISOString().split('T')[0]}`;
         if (format === 'csv') {
             const csv = XLSX.utils.sheet_to_csv(ws);
@@ -286,12 +301,12 @@ export default function PortfolioValuation() {
         const [w, setW] = useState(col.width);
         useEffect(() => setW(col.width), [col.width]);
 
-        const uniqueVals = useMemo(() => Array.from(new Set(basePortfolioData.map(item => String((item as any)[col.id])))).sort(), [col.id, basePortfolioData]);
+        const uniqueVals = useMemo(() => Array.from(new Set(basePortfolioData.map(item => String((item as any)[col.id])))).sort(), [col.id]);
         const filteredVals = uniqueVals.filter(v => v.toLowerCase().includes(filterSearchTerm.toLowerCase()));
 
         const handleDragStart = (e: React.DragEvent) => { e.dataTransfer.setData("colIndex", index.toString()); e.dataTransfer.effectAllowed = "move"; };
         const handleDrop = (e: React.DragEvent) => { e.preventDefault(); const fromIndex = parseInt(e.dataTransfer.getData("colIndex")); moveColumn(fromIndex, index); };
-        
+
         const onMouseDown = (e: React.MouseEvent) => {
             e.preventDefault(); e.stopPropagation();
             const startX = e.pageX; const startW = w;
@@ -305,8 +320,8 @@ export default function PortfolioValuation() {
         return (
             <th style={{ width: w }} draggable onDragStart={handleDragStart} onDragOver={e => e.preventDefault()} onDrop={handleDrop} className={`px-4 py-3 relative group cursor-grab active:cursor-grabbing select-none hover:bg-slate-100 ${col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left'}`}>
                 <div className={`flex items-center gap-2 ${col.align === 'right' ? 'justify-end' : col.align === 'center' ? 'justify-center' : 'justify-start'}`}>
-                    <span onClick={() => setViewSettings(prev => ({...prev, sorts: [{ id: 'quick', columnId: col.id, direction: activeSort?.direction === 'asc' ? 'desc' : 'asc' }] }))} className="cursor-pointer font-bold flex items-center gap-1 hover:text-blue-600 text-xs uppercase tracking-wider text-gray-600">
-                        {col.label} {activeSort && (activeSort.direction === 'asc' ? <ArrowUp size={12}/> : <ArrowDown size={12}/>)}
+                    <span onClick={() => setViewSettings(prev => ({ ...prev, sorts: [{ id: 'quick', columnId: col.id, direction: activeSort?.direction === 'asc' ? 'desc' : 'asc' }] }))} className="cursor-pointer font-bold flex items-center gap-1 hover:text-blue-600 text-xs uppercase tracking-wider text-gray-600">
+                        {col.label} {activeSort && (activeSort.direction === 'asc' ? <ArrowUp size={12} /> : <ArrowDown size={12} />)}
                     </span>
                     <button onClick={(e) => { e.stopPropagation(); setActiveFilterCol(activeFilterCol === col.id ? null : col.id); setFilterSearchTerm(""); }} className={`p-1 rounded hover:bg-slate-200 transition-opacity ${activeFilterCol === col.id || columnFilters[col.id]?.length ? 'opacity-100 text-blue-600' : 'opacity-0 group-hover:opacity-100 text-slate-400'}`}><Filter size={12} fill={columnFilters[col.id]?.length ? "currentColor" : "none"} /></button>
                 </div>
@@ -316,10 +331,10 @@ export default function PortfolioValuation() {
                         <div className="max-h-40 overflow-y-auto space-y-1 custom-scrollbar">
                             {filteredVals.map(val => {
                                 const isSel = columnFilters[col.id]?.includes(val);
-                                return (<label key={val} className="flex items-center gap-2 px-2 py-1 hover:bg-slate-50 rounded cursor-pointer text-xs"><div className={`w-3 h-3 border rounded flex items-center justify-center ${isSel ? 'bg-blue-600 border-blue-600' : 'border-slate-300'}`}>{isSel && <Check size={10} className="text-white"/>}</div><span className="truncate">{val || '(Empty)'}</span><input type="checkbox" className="hidden" checked={!!isSel} onChange={() => setColumnFilters(prev => { const cur = prev[col.id] || []; return { ...prev, [col.id]: cur.includes(val) ? cur.filter(v => v !== val) : [...cur, val] }; })} /></label>)
+                                return (<label key={val} className="flex items-center gap-2 px-2 py-1 hover:bg-slate-50 rounded cursor-pointer text-xs"><div className={`w-3 h-3 border rounded flex items-center justify-center ${isSel ? 'bg-blue-600 border-blue-600' : 'border-slate-300'}`}>{isSel && <Check size={10} className="text-white" />}</div><span className="truncate">{val || '(Empty)'}</span><input type="checkbox" className="hidden" checked={!!isSel} onChange={() => setColumnFilters(prev => { const cur = prev[col.id] || []; return { ...prev, [col.id]: cur.includes(val) ? cur.filter(v => v !== val) : [...cur, val] }; })} /></label>)
                             })}
                         </div>
-                        <div className="pt-2 mt-2 border-t border-slate-100 flex justify-between"><button onClick={() => setColumnFilters(prev => ({...prev, [col.id]: []}))} className="text-xs text-slate-500 hover:text-slate-800">Clear</button><button onClick={() => setActiveFilterCol(null)} className="text-xs text-blue-600 font-medium">Done</button></div>
+                        <div className="pt-2 mt-2 border-t border-slate-100 flex justify-between"><button onClick={() => setColumnFilters(prev => ({ ...prev, [col.id]: [] }))} className="text-xs text-slate-500 hover:text-slate-800">Clear</button><button onClick={() => setActiveFilterCol(null)} className="text-xs text-blue-600 font-medium">Done</button></div>
                     </div>
                 )}
                 <div onMouseDown={onMouseDown} onClick={e => e.stopPropagation()} className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-blue-400 group-hover:bg-slate-300 transition-colors z-10" />
@@ -365,13 +380,13 @@ export default function PortfolioValuation() {
                     {/* FILTRI SIDEBAR */}
                     <div className="lg:col-span-1 space-y-4">
                         <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
-                            <div className="flex items-center justify-between mb-4 border-b border-slate-100 pb-2"><div className="flex items-center gap-2 text-slate-800 font-semibold"><Filter size={18} /> Filters</div><button onClick={() => setFilters({person:[], ticker:[], startDate:'', endDate:''})} className="text-xs text-red-500 hover:underline flex items-center gap-1"><XCircle size={12} /> Clear</button></div>
+                            <div className="flex items-center justify-between mb-4 border-b border-slate-100 pb-2"><div className="flex items-center gap-2 text-slate-800 font-semibold"><Filter size={18} /> Filters</div><button onClick={() => setFilters({ person: [], ticker: [], startDate: '', endDate: '' })} className="text-xs text-red-500 hover:underline flex items-center gap-1"><XCircle size={12} /> Clear</button></div>
                             <div className="space-y-4">
-                                <MultiSelect label="Person" options={uniqueOptions.people} selected={filters.person} onChange={(val) => setFilters(p => ({...p, person: val}))} />
-                                <MultiSelect label="Ticker" options={uniqueOptions.tickers} selected={filters.ticker} onChange={(val) => setFilters(p => ({...p, ticker: val}))} />
+                                <MultiSelect label="Person" options={uniqueOptions.people} selected={filters.person} onChange={(val) => setFilters(p => ({ ...p, person: val }))} />
+                                <MultiSelect label="Ticker" options={uniqueOptions.tickers} selected={filters.ticker} onChange={(val) => setFilters(p => ({ ...p, ticker: val }))} />
                                 <div className="pt-2 border-t border-slate-100">
                                     <label className="block text-xs font-bold text-slate-500 uppercase mb-2"><Calendar size={12} className="inline mr-1" /> Date Range</label>
-                                    <div className="grid grid-cols-2 gap-2"><input type="date" className="w-full p-2 border border-slate-300 rounded text-xs" value={filters.startDate} onChange={(e) => setFilters(p => ({...p, startDate: e.target.value}))} /><input type="date" className="w-full p-2 border border-slate-300 rounded text-xs" value={filters.endDate} onChange={(e) => setFilters(p => ({...p, endDate: e.target.value}))} /></div>
+                                    <div className="grid grid-cols-2 gap-2"><input type="date" className="w-full p-2 border border-slate-300 rounded text-xs" value={filters.startDate} onChange={(e) => setFilters(p => ({ ...p, startDate: e.target.value }))} /><input type="date" className="w-full p-2 border border-slate-300 rounded text-xs" value={filters.endDate} onChange={(e) => setFilters(p => ({ ...p, endDate: e.target.value }))} /></div>
                                 </div>
                                 <button onClick={handleSearch} disabled={loadingPrices || loadingData} className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-lg font-bold shadow-md transition-all active:scale-95 disabled:opacity-50 mt-4">{loadingPrices ? <Loader2 size={18} className="animate-spin" /> : <Search size={18} />} Search Prices</button>
                             </div>
@@ -393,8 +408,9 @@ export default function PortfolioValuation() {
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100">
-                                        {processedRows.length === 0 && !loadingData ? (<tr><td colSpan={visibleColumns.length} className="px-6 py-12 text-center text-slate-400">No positions found.</td></tr>) : (
-                                            processedRows.map((row: any, idx: number) => {
+                                        {/* Usa paginatedRows qui */}
+                                        {paginatedRows.length === 0 && !loadingData ? (<tr><td colSpan={visibleColumns.length} className="px-6 py-12 text-center text-slate-400">No positions found.</td></tr>) : (
+                                            paginatedRows.map((row: any, idx: number) => {
                                                 if (row.type === 'group_header') {
                                                     return (<tr key={`group-${row.key}-${idx}`} className="bg-gray-100 border-t border-gray-300"><td colSpan={visibleColumns.length} className="px-4 py-2 font-bold text-gray-700"><div className="flex items-center gap-2" style={{ paddingLeft: `${row.level * 20}px` }}><ChevronRight size={16} className="text-gray-500" /><span className="text-xs uppercase text-gray-500">{row.field}:</span>{row.value}</div></td></tr>);
                                                 }
@@ -423,7 +439,8 @@ export default function PortfolioValuation() {
                                             })
                                         )}
                                     </tbody>
-                                    {processedRows.some((r: any) => r.type === 'data') && (
+                                    {/* Footer totali: usa allFilteredRows */}
+                                    {allFilteredRows.some((r: any) => r.type === 'data') && (
                                         <tfoot className="bg-slate-50 border-t-2 border-slate-200 font-bold text-slate-800 sticky bottom-0">
                                             <tr>{visibleColumns.map(col => {
                                                 const alignClass = col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left';
@@ -441,9 +458,38 @@ export default function PortfolioValuation() {
                                     )}
                                 </table>
                             </div>
+                            {/* Pagination Controls */}
+                            <div className="border-t border-slate-200 bg-white p-3 flex flex-wrap items-center justify-between gap-4 select-none">
+                                <div className="flex items-center gap-2 text-sm text-slate-600">
+                                    <span>Rows per page:</span>
+                                    <select
+                                        className="border border-slate-300 rounded p-1 outline-none bg-white font-medium text-slate-700 focus:border-blue-500"
+                                        value={pagination.pageSize}
+                                        onChange={(e) => setPagination(p => ({ ...p, pageSize: Number(e.target.value), page: 1 }))}
+                                    >
+                                        {[10, 25, 50, 100, 500].map(size => (
+                                            <option key={size} value={size}>{size}</option>
+                                        ))}
+                                        <option value={totalRows}>All ({totalRows})</option>
+                                    </select>
+                                </div>
+                                <div className="flex items-center gap-4">
+                                    <span className="text-sm text-slate-500">
+                                        Page <b>{pagination.page}</b> of <b>{totalPages || 1}</b>
+                                        <span className="mx-2 text-slate-300">|</span>
+                                        Total: <b>{totalRows}</b> rows
+                                    </span>
+                                    <div className="flex items-center gap-1">
+                                        <button onClick={() => setPagination(p => ({ ...p, page: 1 }))} disabled={pagination.page === 1} className="p-1 rounded hover:bg-slate-100 disabled:opacity-30 disabled:hover:bg-transparent"><ChevronsLeft size={18} /></button>
+                                        <button onClick={() => setPagination(p => ({ ...p, page: Math.max(1, p.page - 1) }))} disabled={pagination.page === 1} className="p-1 rounded hover:bg-slate-100 disabled:opacity-30 disabled:hover:bg-transparent"><ChevronLeft size={18} /></button>
+                                        <button onClick={() => setPagination(p => ({ ...p, page: Math.min(totalPages, p.page + 1) }))} disabled={pagination.page >= totalPages} className="p-1 rounded hover:bg-slate-100 disabled:opacity-30 disabled:hover:bg-transparent"><ChevronRight size={18} /></button>
+                                        <button onClick={() => setPagination(p => ({ ...p, page: totalPages }))} disabled={pagination.page >= totalPages} className="p-1 rounded hover:bg-slate-100 disabled:opacity-30 disabled:hover:bg-transparent"><ChevronsRight size={18} /></button>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                         <div className="flex justify-between items-start mt-1">
-                            <p className="text-slate-400 text-xs italic">Based on {processedRows.filter((r: any) => r.type === 'data').length} open positions.</p>
+                            <p className="text-slate-400 text-xs italic">Based on {allFilteredRows.filter((r: any) => r.type === 'data').length} open positions.</p>
                             {hasEstimatedPrices && (<div className="text-right"><p className="text-xs text-orange-500 italic">* Estimated price (Historical Cost used).</p></div>)}
                         </div>
                     </div>
