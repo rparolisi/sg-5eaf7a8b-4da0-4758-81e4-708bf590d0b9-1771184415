@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { createClient } from '@supabase/supabase-js';
-import { ArrowUpRight, ArrowDownRight, RefreshCw, AlertCircle, Wallet, Loader2, Search, Filter, Check, ChevronDown, Calendar, XCircle } from 'lucide-react';
+import { ArrowUpRight, ArrowDownRight, RefreshCw, AlertCircle, Wallet, Loader2, Search, Filter, Check, ChevronDown, Calendar, XCircle, TrendingUp } from 'lucide-react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
 
@@ -304,6 +304,7 @@ export default function PortfolioValuation() {
     const fmtPerc = (num: number | null) => num !== null ? `${num > 0 ? '+' : ''}${num.toFixed(2)}%` : '-';
 
     const totalValue = portfolioData.reduce((acc, item) => acc + ((item.current_price || item.avg_price) * item.quantity), 0);
+    const totalExposure = portfolioData.reduce((acc, item) => acc + (item.total_exposure || 0), 0);
     const totalPL = portfolioData.reduce((acc, item) => acc + (item.profit_loss || 0), 0);
     const totalDividends = portfolioData.reduce((acc, item) => acc + (item.total_dividends || 0), 0);
 
@@ -313,6 +314,21 @@ export default function PortfolioValuation() {
     return (
         <div className="min-h-screen bg-slate-50 font-sans text-slate-900 p-6 pb-20">
             <div className="max-w-7xl mx-auto">
+                {/* Header con Titolo e Tasto Plot */}
+                <div className="flex justify-between items-center mb-8">
+                    <div>
+                        <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
+                            <Wallet className="text-blue-600" /> Portfolio Valuation
+                        </h1>
+                        <p className="text-slate-500 text-sm mt-1">Real-time analysis of your positions</p>
+                    </div>
+
+                    <Link href="/portfolio_valuation/plot" className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 text-slate-700 font-medium transition-colors shadow-sm">
+                        <TrendingUp size={18} className="text-purple-600" />
+                        Plot History
+                    </Link>
+                </div>
+
                 <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 mb-8">
                     {/* FILTERS */}
                     <div className="lg:col-span-1 space-y-4">
@@ -342,10 +358,10 @@ export default function PortfolioValuation() {
                     <div className="lg:col-span-3 flex flex-col gap-6">
                         <div className="flex flex-wrap items-center justify-between bg-white p-4 rounded-xl shadow-sm border border-slate-200">
                             <div>
-                                <h1 className="text-xl font-bold text-slate-800 flex items-center gap-2"><Wallet className="text-blue-600" /> Portfolio Valuation</h1>
                                 <p className="text-slate-400 text-xs mt-1">{loadingData ? "Loading..." : `Based on ${portfolioData.length} open positions.`}</p>
                             </div>
-                            <div className="flex gap-4 text-right">
+                            <div className="flex gap-6 text-right">
+                                <div><p className="text-[10px] text-slate-400 uppercase font-bold">Total Exposure</p><p className="text-lg font-bold text-slate-600">{fmt(totalExposure)}</p></div>
                                 <div><p className="text-[10px] text-slate-400 uppercase font-bold">Est. Value</p><p className="text-lg font-bold text-slate-800">{fmt(totalValue)}</p></div>
                                 <div><p className="text-[10px] text-slate-400 uppercase font-bold">Dividends</p><p className="text-lg font-bold text-blue-600">{fmt(totalDividends)}</p></div>
                                 <div><p className="text-[10px] text-slate-400 uppercase font-bold">Total P&L</p><p className={`text-lg font-bold ${totalPL >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{totalPL > 0 ? '+' : ''}{fmt(totalPL)}</p></div>
