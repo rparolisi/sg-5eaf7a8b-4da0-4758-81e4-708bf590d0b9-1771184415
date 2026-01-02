@@ -41,6 +41,7 @@ const ALL_COLUMNS: ColumnDef[] = [
     { id: 'account_owner', label: 'Account', visible: false, width: 100, type: 'text', align: 'left' },
     { id: 'sector', label: 'Sector', visible: false, width: 100, type: 'text', align: 'left' },
     { id: 'created_at', label: 'Created At', visible: false, width: 120, type: 'date', align: 'left' },
+    { id: 'transaction_id', label: 'Transaction_ID', visible: false, width: 80, type: 'number', align: 'left' },
 ];
 
 const PEOPLE_OPTIONS = ["Ale", "Peppe", "Raff"];
