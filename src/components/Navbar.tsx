@@ -3,7 +3,8 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { useRouter } from 'next/router';
 import { createClient } from '@supabase/supabase-js';
-import { List, PieChart, Info, Home, PlusCircle, LineChart, ChevronDown } from 'lucide-react';
+// 1. Aggiungi ScrollText agli import
+import { List, PieChart, Info, Home, PlusCircle, LineChart, ChevronDown, ScrollText } from 'lucide-react';
 
 // --- CONFIGURAZIONE SUPABASE ---
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
@@ -50,8 +51,10 @@ export default function Navbar() {
         {
             name: 'Transactions',
             path: '/transactions',
-            icon: List,
+            // 2. MODIFICA QUI: Usa ScrollText invece di List
+            icon: ScrollText,
             dropdown: [
+                // Puoi usare ScrollText anche qui nel sottomenu se vuoi coerenza
                 { name: 'Transactions', path: '/transactions', icon: ScrollText },
                 { name: 'Add', path: '/transactions?add=true', icon: PlusCircle },
                 { name: 'Plot', path: '/transactions/plot', icon: LineChart },
@@ -98,8 +101,8 @@ export default function Navbar() {
                             </div>
                         </div>
 
-                        {/* DESKTOP NAV (MODIFICATO: Più grande e più spaziato) */}
-                        <div className="hidden md:flex space-x-8 h-24 ml-10"> {/* Aumentato margine sinistro e spaziatura */}
+                        {/* DESKTOP NAV */}
+                        <div className="hidden md:flex space-x-8 h-24 ml-10">
                             {navItems.map((item) => {
                                 const active = isActive(item.path);
                                 const Icon = item.icon;
@@ -108,13 +111,11 @@ export default function Navbar() {
                                     <div key={item.name} className="relative group flex items-center">
                                         <Link
                                             href={item.path}
-                                            // MODIFICA QUI: text-lg (invece di text-sm) e font-semibold
                                             className={`inline-flex items-center px-1 pt-1 h-full text-lg font-semibold transition-colors border-b-4 ${active
                                                 ? 'border-blue-600 text-blue-600'
                                                 : 'border-transparent text-slate-600 hover:text-slate-900 hover:border-slate-300'
                                                 }`}
                                         >
-                                            {/* Icona leggermente più grande (size={20}) */}
                                             <Icon size={20} className="mr-2.5" />
                                             {item.name}
                                             {item.dropdown && <ChevronDown size={16} className="ml-1 opacity-50 group-hover:rotate-180 transition-transform" />}
@@ -128,7 +129,6 @@ export default function Navbar() {
                                                         <Link
                                                             key={subItem.name}
                                                             href={subItem.path}
-                                                            // MODIFICA QUI: Dropdown text-base (invece di text-sm)
                                                             className="flex items-center px-5 py-3 text-base text-gray-600 hover:bg-blue-50 hover:text-blue-600 transition-colors"
                                                         >
                                                             <subItem.icon size={18} className="mr-3 text-gray-400 group-hover:text-blue-500" />
@@ -147,7 +147,6 @@ export default function Navbar() {
                     {/* --- RIGHT SIDE: USER PROFILE --- */}
                     <div className="hidden md:flex items-center">
                         <Link href="/users">
-                            {/* Ingrandito anche il cerchio profilo */}
                             <div className={`
                                 w-11 h-11 rounded-full flex items-center justify-center text-base font-bold shadow-md transition-all border-2
                                 ${isActive('/users')
@@ -168,7 +167,6 @@ export default function Navbar() {
                             return (
                                 <Link key={item.path} href={item.path} className={`flex flex-col items-center ${active ? 'text-blue-600' : 'text-gray-400'}`}>
                                     <Icon size={26} strokeWidth={active ? 2.5 : 2} />
-                                    {/* Aumentato testo mobile a text-xs */}
                                     <span className="text-xs mt-1.5 font-medium">{item.name}</span>
                                 </Link>
                             );
