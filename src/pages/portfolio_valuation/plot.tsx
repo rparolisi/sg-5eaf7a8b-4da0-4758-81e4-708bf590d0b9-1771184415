@@ -193,7 +193,7 @@ export default function PortfolioPlotPage() {
         };
     }, [transactions]);
 
-    // Calcolo Statistiche (Spostato qui come richiesto)
+    // Calcolo Statistiche
     const getStats = () => {
         const numPeople = filters.person.length > 0 ? filters.person.length : options.people.length;
         const numTickers = filters.ticker.length > 0 ? filters.ticker.length : options.tickers.length;
@@ -217,20 +217,18 @@ export default function PortfolioPlotPage() {
     const handlePlot = async () => {
         setCalculating(true);
         try {
+            // A. (Opzionale) Alert locale se non troviamo nulla nel subset caricato,
+            // ma procediamo comunque per permettere al backend di cercare nel DB completo.
             const filteredTxs = transactions.filter(t => {
                 if (filters.person.length && !filters.person.includes(t.person)) return false;
                 if (filters.ticker.length && !filters.ticker.includes(t.ticker)) return false;
                 return true;
             });
 
-            if (filteredTxs.length === 0) {
-                setChartData([]);
-                setCalculating(false);
-                alert("Nessuna transazione trovata con questi filtri.");
-                return;
-            }
-
-            const uniqueTickers = Array.from(new Set(filteredTxs.map(t => t.ticker)));
+            // FIX CRITICO PER DATI MANCANTI:
+            // Non calcoliamo più 'uniqueTickers' dai dati parziali del frontend (limitati a 10k).
+            // Passiamo direttamente 'filters.ticker'.
+            // Se filters.ticker è vuoto (Tutti), inviamo [], e il backend userà tutto il DB (50k+ righe).
 
             console.log("Calling Python API for Portfolio History...");
 
@@ -238,7 +236,7 @@ export default function PortfolioPlotPage() {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    tickers: uniqueTickers,
+                    tickers: filters.ticker, // Usa direttamente il filtro (o vuoto per tutti)
                     people: filters.person.length > 0 ? filters.person : null,
                     start_date: filters.startDate,
                     end_date: filters.endDate
