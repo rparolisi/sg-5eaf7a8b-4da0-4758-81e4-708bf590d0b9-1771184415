@@ -63,7 +63,7 @@ export default function Navbar() {
             icon: PieChart,
             dropdown: [
                 { name: 'Portfolio', path: '/portfolio_valuation', icon: ScrollText },
-                { name: 'Update', path: '/transactions?update=true', icon: RefreshCw },
+                { name: 'Update', path: '/portfolio_valuation?update=true', icon: RefreshCw },
                 { name: 'Plot', path: '/portfolio_valuation/plot', icon: LineChart },
             ]
         },
