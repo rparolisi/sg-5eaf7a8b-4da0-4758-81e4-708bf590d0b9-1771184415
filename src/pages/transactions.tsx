@@ -3,7 +3,7 @@ import { useRouter } from 'next/router';
 import { createClient } from '@supabase/supabase-js';
 import {
     Plus, Settings, Download, X,
-    ArrowUp, ArrowDown, ChevronRight, Check,
+    ArrowUp, ArrowDown, ChevronRight,
     FileText, FileSpreadsheet, LineChart as LineChartIcon, AlertTriangle,
     Loader2
 } from 'lucide-react';
@@ -45,7 +45,7 @@ const ALL_COLUMNS: ColumnDef[] = [
 
 const PEOPLE_OPTIONS = ["Ale", "Peppe", "Raff"];
 
-// --- HEADER CELL COMPONENT (Minimalista: Solo Sort, Resize, Drag) ---
+// --- HEADER CELL COMPONENT ---
 const HeaderCell = ({
     col, index, activeSort, onSort, onResize, onMove
 }: any) => {
