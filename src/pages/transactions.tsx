@@ -24,7 +24,7 @@ const PYTHON_API_URL = "https://invest-monitor-api.onrender.com";
 
 // --- DEFINIZIONE COLONNE ---
 const ALL_COLUMNS: ColumnDef[] = [
-    { id: 'transaction_id', label: 'ID', visible: false, width: 80, type: 'number', align: 'left' },
+    { id: 'id', label: 'ID', visible: false, width: 80, type: 'number', align: 'left' },
     { id: 'operation_date', label: 'Date', visible: true, width: 100, type: 'date', align: 'left' },
     { id: 'ticker', label: 'Ticker', visible: true, width: 80, type: 'text', align: 'left' },
     { id: 'buy_or_sell', label: 'Side', visible: true, width: 80, type: 'text', align: 'center' },
