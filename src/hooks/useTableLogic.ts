@@ -27,9 +27,15 @@ export function useTableLogic<T>(
         Object.keys(columnFilters).forEach(colId => {
             const selectedVals = columnFilters[colId];
             if (selectedVals && selectedVals.length > 0) {
+                // Normalizza le selezioni del filtro
                 const normalizedSelection = selectedVals.map(v => safeString(v));
+
                 result = result.filter(item => {
-                    const valStr = safeString((item as any)[colId]);
+                    const rawVal = (item as any)[colId];
+                    // Normalizza il valore della cella
+                    const valStr = safeString(rawVal);
+
+                    // Verifica se il valore è incluso
                     return normalizedSelection.some(sel => valStr === sel);
                 });
             }
@@ -38,44 +44,36 @@ export function useTableLogic<T>(
         // B. Advanced Filters (Settings Modal - Ingranaggio)
         if (viewSettings.filters.length > 0) {
             result = result.filter(item => {
-                // Deve soddisfare TUTTE le regole (AND)
                 return viewSettings.filters.every(rule => {
                     const rawVal = (item as any)[rule.columnId];
-                    const valStr = safeString(rawVal);
-                    const filterStr = safeString(rule.value);
-                    const valNum = Number(rawVal);
-                    const filterNum = Number(rule.value);
 
-                    // Verifica se è un confronto numerico valido
-                    const isNum = !isNaN(valNum) && !isNaN(filterNum) && rawVal !== null && rawVal !== '' && rule.value !== '';
+                    const itemValStr = safeString(rawVal);
+                    const filterValStr = safeString(rule.value);
+                    const filterVal2Str = safeString(rule.value2);
+
+                    const itemValNum = Number(rawVal);
+                    const filterValNum = Number(rule.value);
+                    const filterVal2Num = Number(rule.value2);
+
+                    const isNumericComparison = !isNaN(itemValNum) && !isNaN(filterValNum) && rawVal !== null && rawVal !== '' && rule.value !== '';
 
                     let matches = false;
 
                     switch (rule.operator) {
-                        case 'contains':
-                            matches = valStr.includes(filterStr);
-                            break;
-                        case 'equals':
-                            matches = valStr === filterStr;
-                            break;
-                        case 'greater':
-                            matches = isNum ? valNum > filterNum : valStr > filterStr;
-                            break;
-                        case 'less':
-                            matches = isNum ? valNum < filterNum : valStr < filterStr;
-                            break;
+                        case 'contains': matches = itemValStr.includes(filterValStr); break;
+                        case 'equals': matches = itemValStr === filterValStr; break;
+                        case 'greater': matches = isNumericComparison ? itemValNum > filterValNum : itemValStr > filterValStr; break;
+                        case 'less': matches = isNumericComparison ? itemValNum < filterValNum : itemValStr < filterValStr; break;
                         case 'between':
-                            if (isNum) {
-                                matches = valNum >= filterNum && valNum <= Number(rule.value2);
+                            if (isNumericComparison) {
+                                const max = !isNaN(filterVal2Num) ? filterVal2Num : Infinity;
+                                matches = itemValNum >= filterValNum && itemValNum <= max;
                             } else {
-                                matches = valStr >= filterStr && valStr <= safeString(rule.value2);
+                                matches = itemValStr >= filterValStr && itemValStr <= filterVal2Str;
                             }
                             break;
-                        default:
-                            matches = true;
+                        default: matches = true;
                     }
-
-                    // Logica Include/Exclude applicata QUI, dentro lo scope di 'rule'
                     return rule.type === 'include' ? matches : !matches;
                 });
             });
@@ -91,21 +89,18 @@ export function useTableLogic<T>(
         if (sortRules.length > 0) {
             result.sort((a, b) => {
                 for (const rule of sortRules) {
-                    const rawA = (a as any)[rule.columnId];
-                    const rawB = (b as any)[rule.columnId];
+                    const valA = (a as any)[rule.columnId];
+                    const valB = (b as any)[rule.columnId];
 
-                    // Gestione Nulls
-                    if (rawA === rawB) continue;
-                    if (rawA === null || rawA === undefined) return 1;
-                    if (rawB === null || rawB === undefined) return -1;
+                    if (valA === valB) continue;
+                    if (valA === null || valA === undefined) return 1;
+                    if (valB === null || valB === undefined) return -1;
 
                     let comparison = 0;
-                    if (typeof rawA === 'number' && typeof rawB === 'number') {
-                        comparison = rawA - rawB;
+                    if (typeof valA === 'number' && typeof valB === 'number') {
+                        comparison = valA - valB;
                     } else {
-                        const strA = safeString(rawA);
-                        const strB = safeString(rawB);
-                        comparison = strA.localeCompare(strB);
+                        comparison = safeString(valA).localeCompare(safeString(valB));
                     }
 
                     if (comparison !== 0) {
@@ -126,7 +121,9 @@ export function useTableLogic<T>(
             result.forEach((item) => {
                 groupCols.forEach((groupCol, level) => {
                     const currentVal = (item as any)[groupCol];
-                    if (currentVal !== previousValues[groupCol]) {
+                    const prevVal = previousValues[groupCol];
+
+                    if (currentVal !== prevVal) {
                         const colDef = initialColumns.find(c => c.id === groupCol);
                         rows.push({
                             type: 'group_header',
