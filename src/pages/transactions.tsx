@@ -248,8 +248,8 @@ export default function Transactions() {
 
     // --- EXPORT ---
     const exportData = (format: 'csv' | 'xlsx') => {
-        const dataRows = allFilteredRows.filter(r => r.type === 'data').map(r => (r as any).data);
-        const ws = XLSX.utils.json_to_sheet(dataRows);
+        // 2. USA exportableRows DIRETTAMENTE (contiene già solo le colonne giuste)
+        const ws = XLSX.utils.json_to_sheet(exportableRows);
         const fname = `transactions_${new Date().toISOString().split('T')[0]}`;
 
         if (format === 'csv') {
