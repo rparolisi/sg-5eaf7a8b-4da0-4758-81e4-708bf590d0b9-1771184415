@@ -56,7 +56,14 @@ export default function Navbar() {
                 { name: 'Plot', path: '/transactions/plot', icon: LineChart },
             ]
         },
-        { name: 'Portfolio', path: '/portfolio_valuation', icon: PieChart },
+        {
+            name: 'Portfolio',
+            path: '/portfolio_valuation',
+            icon: PieChart,
+            dropdown: [
+                { name: 'Plot', path: '/portfolio_valuation/plot', icon: LineChart },
+            ]
+        },
         { name: 'Securities', path: '/securities_info', icon: Info },
     ];
 
