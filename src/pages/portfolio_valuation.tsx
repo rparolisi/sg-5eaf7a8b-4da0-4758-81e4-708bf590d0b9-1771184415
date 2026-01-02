@@ -3,7 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import {
     ArrowUpRight, ArrowDownRight, Wallet, Loader2, Search, Filter,
     ChevronDown, Calendar, XCircle, TrendingUp, Settings, Download,
-    FileText, FileSpreadsheet, GripVertical, Check
+    FileText, FileSpreadsheet, GripVertical, Check, ArrowUp, ArrowDown
 } from 'lucide-react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
@@ -16,7 +16,7 @@ const PYTHON_API_BASE_URL = "https://invest-monitor-api.onrender.com";
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-// --- COMPONENTE MULTI-SELECT ---
+// --- COMPONENTE MULTI-SELECT (Sidebar) ---
 const MultiSelect = ({ label, options, selected, onChange }: { label: string, options: string[], selected: string[], onChange: (val: string[]) => void }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [searchTerm, setSearchTerm] = useState("");
@@ -124,13 +124,19 @@ export default function PortfolioValuation() {
     const [loadingPrices, setLoadingPrices] = useState(false);
     const [pricesError, setPricesError] = useState("");
 
-    // Stato Filtri
+    // Stato Filtri Sidebar
     const [filters, setFilters] = useState({
         person: [] as string[],
         ticker: [] as string[],
         startDate: '',
         endDate: ''
     });
+
+    // Stato Filtri Colonne & Ordinamento
+    const [columnFilters, setColumnFilters] = useState < Record < string, string[]>> ({});
+    const [activeFilterCol, setActiveFilterCol] = useState < string | null > (null);
+    const [filterSearchTerm, setFilterSearchTerm] = useState("");
+    const [sortConfig, setSortConfig] = useState < { key: string | null, direction: 'asc' | 'desc' } > ({ key: null, direction: 'asc' });
 
     // Stato UI Colonne
     const [columns, setColumns] = useState < ColumnConfig[] > ([
@@ -149,14 +155,23 @@ export default function PortfolioValuation() {
 
     const [isColMenuOpen, setIsColMenuOpen] = useState(false);
     const [isDownloadOpen, setIsDownloadOpen] = useState(false);
+
+    // Refs
     const settingsRef = useRef < HTMLDivElement > (null);
     const downloadRef = useRef < HTMLDivElement > (null);
+    const headerFilterRef = useRef < HTMLDivElement > (null);
 
-    // Gestione click outside per menu
+    // Gestione click outside
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
             if (settingsRef.current && !settingsRef.current.contains(event.target as Node)) setIsColMenuOpen(false);
             if (downloadRef.current && !downloadRef.current.contains(event.target as Node)) setIsDownloadOpen(false);
+            if (headerFilterRef.current && !headerFilterRef.current.contains(event.target as Node)) {
+                // Non chiudere se stiamo cliccando dentro il menu del filtro
+                // Questa logica è gestita meglio localmente nel render del filtro se possibile,
+                // ma per ora chiudiamo se clicchiamo fuori
+                setActiveFilterCol(null);
+            }
         };
         document.addEventListener("mousedown", handleClickOutside);
         return () => document.removeEventListener("mousedown", handleClickOutside);
@@ -199,7 +214,7 @@ export default function PortfolioValuation() {
         return { people: getUnique('person') as string[], tickers: getUnique('ticker') as string[] };
     }, [rawTransactions]);
 
-    // --- MOTORE CALCOLO ---
+    // --- MOTORE CALCOLO (Aggregazione) ---
     const portfolioData = useMemo(() => {
         if (rawTransactions.length === 0) return [];
 
@@ -259,7 +274,6 @@ export default function PortfolioValuation() {
             const total_dividends = pyData ? pyData.dividends : null;
             let is_live_price = pyData ? pyData.is_live : false;
 
-            // Fallback se prezzo mancante
             if (current_price === null || current_price === 0) {
                 current_price = avg_price;
                 is_live_price = false;
@@ -277,19 +291,63 @@ export default function PortfolioValuation() {
             };
         }).filter(Boolean) as PortfolioItem[];
 
-        return items.sort((a, b) => b.total_exposure - a.total_exposure);
+        return items;
     }, [rawTransactions, filters, pythonData]);
+
+    // --- FILTRAGGIO & ORDINAMENTO TABELLA ---
+    const finalData = useMemo(() => {
+        let data = [...portfolioData];
+
+        // 1. Filtri Colonna
+        Object.keys(columnFilters).forEach(colKey => {
+            const selectedVals = columnFilters[colKey];
+            if (selectedVals && selectedVals.length > 0) {
+                data = data.filter(item => {
+                    const val = (item as any)[colKey];
+                    // Formattazione per confronto stringhe
+                    const strVal = typeof val === 'number' ? fmt(val) : String(val || '');
+                    // Nota: Per semplicità usiamo il valore stringa formattato o grezzo
+                    // Miglioria: usare valore grezzo se possibile, ma per il filtro UI usiamo stringhe
+                    return selectedVals.includes(String(val)) || selectedVals.includes(strVal);
+                });
+            }
+        });
+
+        // 2. Ordinamento
+        if (sortConfig.key) {
+            data.sort((a, b) => {
+                const aVal = (a as any)[sortConfig.key!];
+                const bVal = (b as any)[sortConfig.key!];
+
+                // Handle nulls
+                if (aVal === null) return 1;
+                if (bVal === null) return -1;
+
+                if (typeof aVal === 'number' && typeof bVal === 'number') {
+                    return sortConfig.direction === 'asc' ? aVal - bVal : bVal - aVal;
+                }
+                return sortConfig.direction === 'asc'
+                    ? String(aVal).localeCompare(String(bVal))
+                    : String(bVal).localeCompare(String(aVal));
+            });
+        } else {
+            // Default sort: Exposure desc
+            data.sort((a, b) => b.total_exposure - a.total_exposure);
+        }
+
+        return data;
+    }, [portfolioData, columnFilters, sortConfig]);
 
     // --- CALCOLO TOTALI ---
     const totals = useMemo(() => {
-        return portfolioData.reduce((acc, item) => ({
+        return finalData.reduce((acc, item) => ({
             exposure: acc.exposure + item.total_exposure,
             market_value: acc.market_value + item.market_value,
             gross_value: acc.gross_value + item.gross_value,
             dividends: acc.dividends + (item.total_dividends || 0),
             profit_loss: acc.profit_loss + (item.profit_loss || 0)
         }), { exposure: 0, market_value: 0, gross_value: 0, dividends: 0, profit_loss: 0 });
-    }, [portfolioData]);
+    }, [finalData]);
 
     const totalReturnPerc = totals.exposure !== 0 ? (totals.profit_loss / totals.exposure) * 100 : 0;
 
@@ -332,7 +390,14 @@ export default function PortfolioValuation() {
     const fmt = (num: number | null) => num !== null ? new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' }).format(num) : '-';
     const fmtPerc = (num: number | null) => num !== null ? `${num > 0 ? '+' : ''}${num.toFixed(2)}%` : '-';
 
-    // --- DRAG & DROP + RESIZING ---
+    // --- GESTIONE HEADER ---
+    const handleSort = (key: string) => {
+        setSortConfig(current => ({
+            key,
+            direction: current.key === key && current.direction === 'asc' ? 'desc' : 'asc'
+        }));
+    };
+
     const handleResize = useCallback((index: number, newWidth: number) => {
         setColumns(cols => {
             const newCols = [...cols];
@@ -351,67 +416,93 @@ export default function PortfolioValuation() {
         });
     }, []);
 
-    // Componente Intestazione (Sortable + Resizable)
-    const ResizableHeader = ({ col, index, moveColumn }: { col: ColumnConfig, index: number, moveColumn: (from: number, to: number) => void }) => {
-        const [w, setW] = useState(col.width);
+    // Helper per valori unici di colonna (per il menu filtro)
+    const getUniqueColValues = (colKey: string) => {
+        const rawValues = portfolioData.map(item => String((item as any)[colKey]));
+        return Array.from(new Set(rawValues)).sort();
+    };
 
+    const toggleColumnFilter = (colKey: string, value: string) => {
+        setColumnFilters(prev => {
+            const current = prev[colKey] || [];
+            const updated = current.includes(value) ? current.filter(v => v !== value) : [...current, value];
+            return { ...prev, [colKey]: updated };
+        });
+    };
+
+    // COMPONENTE HEADER
+    const HeaderCell = ({ col, index, moveColumn }: { col: ColumnConfig, index: number, moveColumn: (from: number, to: number) => void }) => {
+        const [w, setW] = useState(col.width);
         useEffect(() => setW(col.width), [col.width]);
 
+        const uniqueVals = useMemo(() => getUniqueColValues(col.id as string), [col.id]);
+        const filteredVals = uniqueVals.filter(v => v.toLowerCase().includes(filterSearchTerm.toLowerCase()));
+
         // Drag handlers
-        const handleDragStart = (e: React.DragEvent) => {
-            e.dataTransfer.setData("colIndex", index.toString());
-            e.dataTransfer.effectAllowed = "move";
-        };
-
-        const handleDragOver = (e: React.DragEvent) => {
-            e.preventDefault();
-        };
-
-        const handleDrop = (e: React.DragEvent) => {
-            e.preventDefault();
-            const fromIndex = parseInt(e.dataTransfer.getData("colIndex"));
-            moveColumn(fromIndex, index);
-        };
+        const handleDragStart = (e: React.DragEvent) => { e.dataTransfer.setData("colIndex", index.toString()); e.dataTransfer.effectAllowed = "move"; };
+        const handleDragOver = (e: React.DragEvent) => { e.preventDefault(); };
+        const handleDrop = (e: React.DragEvent) => { e.preventDefault(); const fromIndex = parseInt(e.dataTransfer.getData("colIndex")); moveColumn(fromIndex, index); };
 
         // Resize handlers
         const onMouseDown = (e: React.MouseEvent) => {
-            e.preventDefault();
-            e.stopPropagation();
-            const startX = e.pageX;
-            const startW = w;
-
-            const onMouseMove = (e: MouseEvent) => {
-                const newWidth = startW + (e.pageX - startX);
-                setW(newWidth);
-            };
-
-            const onMouseUp = (e: MouseEvent) => {
-                const newWidth = startW + (e.pageX - startX);
-                handleResize(index, newWidth);
-                document.removeEventListener('mousemove', onMouseMove);
-                document.removeEventListener('mouseup', onMouseUp);
-            };
-
-            document.addEventListener('mousemove', onMouseMove);
-            document.addEventListener('mouseup', onMouseUp);
+            e.preventDefault(); e.stopPropagation();
+            const startX = e.pageX; const startW = w;
+            const onMouseMove = (e: MouseEvent) => { setW(Math.max(50, startW + (e.pageX - startX))); };
+            const onMouseUp = (e: MouseEvent) => { handleResize(index, Math.max(50, startW + (e.pageX - startX))); document.removeEventListener('mousemove', onMouseMove); document.removeEventListener('mouseup', onMouseUp); };
+            document.addEventListener('mousemove', onMouseMove); document.addEventListener('mouseup', onMouseUp);
         };
 
         return (
             <th
                 style={{ width: w }}
                 draggable
-                onDragStart={handleDragStart}
-                onDragOver={handleDragOver}
-                onDrop={handleDrop}
-                className={`px-4 py-3 relative group cursor-move select-none active:bg-slate-100 ${col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left'}`}
+                onDragStart={handleDragStart} onDragOver={handleDragOver} onDrop={handleDrop}
+                className={`px-4 py-3 relative group cursor-grab active:cursor-grabbing select-none hover:bg-slate-100 ${col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left'}`}
             >
-                {col.label}
-                <div
-                    onMouseDown={onMouseDown}
-                    className="absolute right-0 top-0 bottom-0 w-4 cursor-col-resize flex items-center justify-center opacity-0 group-hover:opacity-100 hover:bg-slate-200 transition-opacity z-10"
-                >
-                    <GripVertical size={12} className="text-slate-400" />
+                <div className={`flex items-center gap-2 ${col.align === 'right' ? 'justify-end' : col.align === 'center' ? 'justify-center' : 'justify-start'}`}>
+                    <span onClick={() => handleSort(col.id as string)} className="cursor-pointer font-bold flex items-center gap-1 hover:text-blue-600">
+                        {col.label}
+                        {sortConfig.key === col.id && (sortConfig.direction === 'asc' ? <ArrowUp size={12} /> : <ArrowDown size={12} />)}
+                    </span>
+
+                    {/* FILTER ICON */}
+                    <button
+                        onClick={(e) => { e.stopPropagation(); setActiveFilterCol(activeFilterCol === col.id ? null : col.id as string); setFilterSearchTerm(""); }}
+                        className={`p-1 rounded hover:bg-slate-200 transition-opacity ${activeFilterCol === col.id || columnFilters[col.id as string]?.length ? 'opacity-100 text-blue-600' : 'opacity-0 group-hover:opacity-100 text-slate-400'}`}
+                    >
+                        <Filter size={12} fill={columnFilters[col.id as string]?.length ? "currentColor" : "none"} />
+                    </button>
                 </div>
+
+                {/* FILTER MENU */}
+                {activeFilterCol === col.id && (
+                    <div ref={headerFilterRef} className="absolute top-full left-0 mt-2 w-56 bg-white rounded-lg shadow-xl border border-slate-200 z-50 p-2 cursor-default text-left font-normal" onClick={e => e.stopPropagation()}>
+                        <div className="relative mb-2">
+                            <Search size={12} className="absolute left-2 top-2.5 text-slate-400" />
+                            <input autoFocus type="text" placeholder="Search..." className="w-full pl-7 pr-2 py-1.5 text-xs border border-slate-200 rounded focus:ring-1 focus:ring-blue-500 outline-none" value={filterSearchTerm} onChange={e => setFilterSearchTerm(e.target.value)} />
+                        </div>
+                        <div className="max-h-40 overflow-y-auto space-y-1 custom-scrollbar">
+                            {filteredVals.map(val => {
+                                const isSel = columnFilters[col.id as string]?.includes(val);
+                                return (
+                                    <label key={val} className="flex items-center gap-2 px-2 py-1 hover:bg-slate-50 rounded cursor-pointer text-xs">
+                                        <div className={`w-3 h-3 border rounded flex items-center justify-center ${isSel ? 'bg-blue-600 border-blue-600' : 'border-slate-300'}`}>{isSel && <Check size={10} className="text-white" />}</div>
+                                        <span className="truncate">{val || '(Empty)'}</span>
+                                        <input type="checkbox" className="hidden" checked={!!isSel} onChange={() => toggleColumnFilter(col.id as string, val)} />
+                                    </label>
+                                )
+                            })}
+                            {filteredVals.length === 0 && <p className="text-xs text-slate-400 text-center py-2">No results</p>}
+                        </div>
+                        <div className="pt-2 mt-2 border-t border-slate-100 flex justify-between">
+                            <button onClick={() => setColumnFilters(prev => ({ ...prev, [col.id]: [] }))} className="text-xs text-slate-500 hover:text-slate-800">Clear</button>
+                            <button onClick={() => setActiveFilterCol(null)} className="text-xs text-blue-600 font-medium">Done</button>
+                        </div>
+                    </div>
+                )}
+
+                {/* RESIZE HANDLE */}
+                <div onMouseDown={onMouseDown} onClick={e => e.stopPropagation()} className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-blue-400 group-hover:bg-slate-300 transition-colors z-10" />
             </th>
         );
     };
@@ -419,15 +510,11 @@ export default function PortfolioValuation() {
     // --- EXPORT ---
     const exportData = (format: 'csv' | 'xlsx') => {
         const visibleCols = columns.filter(c => c.visible && c.id !== 'return_perc_fmt');
-        const data = portfolioData.map(row => {
+        const data = finalData.map(row => {
             const r: any = {};
-            visibleCols.forEach(col => {
-                r[col.label] = (row as any)[col.id];
-            });
+            visibleCols.forEach(col => { r[col.label] = (row as any)[col.id]; });
             return r;
         });
-
-        // Aggiungi riga totale
         const totalRow: any = { 'Ticker': 'TOTAL' };
         visibleCols.forEach(col => {
             if (['total_exposure', 'market_value', 'gross_value', 'total_dividends', 'profit_loss'].includes(String(col.id))) {
@@ -435,20 +522,15 @@ export default function PortfolioValuation() {
             }
         });
         data.push(totalRow);
-
         const ws = XLSX.utils.json_to_sheet(data);
         const filename = `portfolio_valuation_${new Date().toISOString().split('T')[0]}`;
-
         if (format === 'csv') {
             const csv = XLSX.utils.sheet_to_csv(ws);
             const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
             const url = URL.createObjectURL(blob);
-            const link = document.createElement('a');
-            link.href = url; link.download = `${filename}.csv`; link.click();
+            const link = document.createElement('a'); link.href = url; link.download = `${filename}.csv`; link.click();
         } else {
-            const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, ws, "Valuation");
-            XLSX.writeFile(wb, `${filename}.xlsx`);
+            const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Valuation"); XLSX.writeFile(wb, `${filename}.xlsx`);
         }
         setIsDownloadOpen(false);
     };
@@ -459,18 +541,58 @@ export default function PortfolioValuation() {
     return (
         <div className="min-h-screen bg-slate-50 font-sans text-slate-900 p-6 pb-20">
             <div className="max-w-[1920px] mx-auto">
-                {/* Header */}
-                <div className="flex justify-between items-center mb-6">
+
+                {/* UNIFIED HEADER & TOOLBAR */}
+                <div className="flex flex-wrap gap-4 justify-between items-center mb-6">
+                    {/* LEFT: Title */}
                     <div>
                         <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
                             <Wallet className="text-blue-600" /> Portfolio Valuation
                         </h1>
-                        <p className="text-slate-500 text-sm mt-1">Real-time analysis of your positions</p>
+                    </div>
+
+                    {/* RIGHT: Toolbar (Plot, Settings, Download) */}
+                    <div className="flex items-center gap-3">
+                        <Link href="/portfolio_valuation/plot" className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 text-slate-700 font-medium transition-colors shadow-sm text-sm">
+                            <TrendingUp size={16} className="text-purple-600" />
+                            <span>Plot History</span>
+                        </Link>
+
+                        <div className="relative" ref={settingsRef}>
+                            <button onClick={() => setIsColMenuOpen(!isColMenuOpen)} className="p-2 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 text-slate-600 shadow-sm" title="Columns">
+                                <Settings size={18} />
+                            </button>
+                            {isColMenuOpen && (
+                                <div className="absolute right-0 top-full mt-2 w-56 bg-white rounded-xl shadow-xl border border-slate-200 z-50 p-2">
+                                    <div className="text-xs font-bold text-slate-400 uppercase mb-2 px-2">Visible Columns</div>
+                                    {columns.map((col, idx) => (
+                                        <div key={col.id} onClick={() => {
+                                            const newCols = [...columns]; newCols[idx].visible = !newCols[idx].visible; setColumns(newCols);
+                                        }} className="flex items-center gap-2 px-2 py-1.5 hover:bg-slate-50 rounded cursor-pointer text-sm">
+                                            <div className={`w-4 h-4 border rounded flex items-center justify-center ${col.visible ? 'bg-blue-600 border-blue-600' : 'border-slate-300'}`}>{col.visible && <Check size={12} className="text-white" />}</div>
+                                            {col.label}
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="relative" ref={downloadRef}>
+                            <button onClick={() => setIsDownloadOpen(!isDownloadOpen)} className="p-2 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 text-slate-600 shadow-sm" title="Export">
+                                <Download size={18} />
+                            </button>
+                            {isDownloadOpen && (
+                                <div className="absolute right-0 top-full mt-2 w-48 bg-white rounded-xl shadow-xl border border-slate-200 z-50 p-2">
+                                    <button onClick={() => exportData('csv')} className="w-full flex items-center gap-3 px-3 py-2 hover:bg-slate-50 rounded text-sm text-slate-700"><FileText size={16} className="text-green-500" /> Export CSV</button>
+                                    <button onClick={() => exportData('xlsx')} className="w-full flex items-center gap-3 px-3 py-2 hover:bg-slate-50 rounded text-sm text-slate-700"><FileSpreadsheet size={16} className="text-emerald-600" /> Export XLSX</button>
+                                </div>
+                            )}
+                        </div>
                     </div>
                 </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 mb-8">
-                    {/* FILTERS */}
+                    {/* FILTRI (Sidebar) */}
                     <div className="lg:col-span-1 space-y-4">
                         <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
                             <div className="flex items-center justify-between mb-4 border-b border-slate-100 pb-2">
@@ -496,85 +618,26 @@ export default function PortfolioValuation() {
 
                     {/* TABLE AREA */}
                     <div className="lg:col-span-4 flex flex-col gap-4">
-
-                        {/* TOOLBAR: Grid Layout a 3 Colonne */}
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-center mb-2">
-                            {/* Spazio Vuoto a Sinistra */}
-                            <div />
-
-                            {/* Centro: Tasto Plot History */}
-                            <div className="justify-self-center">
-                                <Link href="/portfolio_valuation/plot" className="flex items-center gap-2 px-6 py-2 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 text-slate-700 font-medium transition-colors shadow-sm">
-                                    <TrendingUp size={18} className="text-purple-600" />
-                                    <span>Plot History</span>
-                                </Link>
-                            </div>
-
-                            {/* Destra: Strumenti Tabella */}
-                            <div className="flex justify-end gap-2">
-                                {/* Column Visibility Menu */}
-                                <div className="relative" ref={settingsRef}>
-                                    <button onClick={() => setIsColMenuOpen(!isColMenuOpen)} className="p-2 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 text-slate-600">
-                                        <Settings size={18} />
-                                    </button>
-                                    {isColMenuOpen && (
-                                        <div className="absolute right-0 top-full mt-2 w-56 bg-white rounded-xl shadow-xl border border-slate-200 z-50 p-2">
-                                            <div className="text-xs font-bold text-slate-400 uppercase mb-2 px-2">Visible Columns</div>
-                                            {columns.map((col, idx) => (
-                                                <div key={col.id} onClick={() => {
-                                                    const newCols = [...columns];
-                                                    newCols[idx].visible = !newCols[idx].visible;
-                                                    setColumns(newCols);
-                                                }} className="flex items-center gap-2 px-2 py-1.5 hover:bg-slate-50 rounded cursor-pointer text-sm">
-                                                    <div className={`w-4 h-4 border rounded flex items-center justify-center ${col.visible ? 'bg-blue-600 border-blue-600' : 'border-slate-300'}`}>
-                                                        {col.visible && <Check size={12} className="text-white" />}
-                                                    </div>
-                                                    {col.label}
-                                                </div>
-                                            ))}
-                                        </div>
-                                    )}
-                                </div>
-
-                                {/* Download Menu */}
-                                <div className="relative" ref={downloadRef}>
-                                    <button onClick={() => setIsDownloadOpen(!isDownloadOpen)} className="p-2 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 text-slate-600">
-                                        <Download size={18} />
-                                    </button>
-                                    {isDownloadOpen && (
-                                        <div className="absolute right-0 top-full mt-2 w-48 bg-white rounded-xl shadow-xl border border-slate-200 z-50 p-2">
-                                            <button onClick={() => exportData('csv')} className="w-full flex items-center gap-3 px-3 py-2 hover:bg-slate-50 rounded text-sm text-slate-700">
-                                                <FileText size={16} className="text-green-500" /> Export CSV
-                                            </button>
-                                            <button onClick={() => exportData('xlsx')} className="w-full flex items-center gap-3 px-3 py-2 hover:bg-slate-50 rounded text-sm text-slate-700">
-                                                <FileSpreadsheet size={16} className="text-emerald-600" /> Export XLSX
-                                            </button>
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-                        </div>
-
                         {pricesError && <div className="bg-red-50 border border-red-200 text-red-700 p-3 rounded-lg text-sm flex items-center gap-2"><AlertCircle size={16} /> {pricesError}</div>}
 
-                        <div className="bg-white rounded-xl shadow-lg border border-slate-200 overflow-hidden relative min-h-[300px]">
+                        <div className="bg-white rounded-xl shadow-lg border border-slate-200 overflow-hidden relative min-h-[400px]">
                             {loadingData && <div className="absolute inset-0 bg-white/80 z-20 flex flex-col items-center justify-center text-slate-500"><Loader2 size={32} className="animate-spin text-blue-600 mb-2" /> <p>Loading...</p></div>}
-                            <div className="overflow-x-auto">
+                            <div className="overflow-x-auto min-h-[400px]">
                                 <table className="w-full text-sm text-left border-collapse">
                                     <thead className="bg-slate-50 text-slate-500 font-semibold uppercase text-[11px] tracking-wider border-b border-slate-200">
                                         <tr>
                                             {columns.map((col, i) => (
-                                                col.visible && <ResizableHeader key={col.id} col={col} index={i} moveColumn={moveColumn} />
+                                                col.visible && <HeaderCell key={col.id} col={col} index={i} moveColumn={moveColumn} />
                                             ))}
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100">
-                                        {portfolioData.length === 0 && !loadingData ? (
+                                        {finalData.length === 0 && !loadingData ? (
                                             <tr><td colSpan={visibleColumns.length} className="px-6 py-12 text-center text-slate-400">No positions found.</td></tr>
                                         ) : (
-                                            portfolioData.map((item) => {
+                                            finalData.map((item) => {
                                                 const isProfitable = (item.profit_loss || 0) >= 0;
-                                                const isEstimated = !item.is_live_price; // Se non è live, è stimato (o caricato da storico)
+                                                const isEstimated = !item.is_live_price;
 
                                                 return (
                                                     <tr key={item.ticker} className="hover:bg-slate-50/50 transition-colors">
@@ -585,23 +648,14 @@ export default function PortfolioValuation() {
                                                             let content: React.ReactNode = '-';
                                                             let cellClass = `px-4 py-3 ${alignClass}`;
 
-                                                            if (col.id === 'ticker') {
-                                                                content = <span className="font-bold text-slate-800">{item.ticker}</span>;
-                                                            } else if (col.id === 'quantity') {
-                                                                content = item.quantity.toFixed(2);
-                                                            } else if (col.id === 'avg_price') {
-                                                                content = fmt(item.avg_price);
-                                                            } else if (col.id === 'current_price') {
+                                                            if (col.id === 'ticker') content = <span className="font-bold text-slate-800">{item.ticker}</span>;
+                                                            else if (col.id === 'quantity') content = item.quantity.toFixed(2);
+                                                            else if (col.id === 'avg_price') content = fmt(item.avg_price);
+                                                            else if (col.id === 'current_price') {
                                                                 cellClass += ` bg-blue-50/30 ${isEstimated ? 'text-orange-500' : 'text-slate-800'}`;
-                                                                content = (
-                                                                    <>
-                                                                        {fmt(item.current_price)}
-                                                                        {isEstimated && <span className="ml-1 text-[10px] align-top">*</span>}
-                                                                    </>
-                                                                );
-                                                            } else if (col.id === 'avg_date') {
-                                                                content = <span className="text-xs text-slate-400">{item.avg_date}</span>;
-                                                            } else if (col.id === 'profit_loss') {
+                                                                content = <>{fmt(item.current_price)}{isEstimated && <span className="ml-1 text-[10px] align-top">*</span>}</>;
+                                                            } else if (col.id === 'avg_date') content = <span className="text-xs text-slate-400">{item.avg_date}</span>;
+                                                            else if (col.id === 'profit_loss') {
                                                                 cellClass += ` font-bold ${isProfitable ? 'text-emerald-600' : 'text-red-600'}`;
                                                                 content = fmt(item.profit_loss);
                                                             } else if (col.id === 'return_perc_fmt' as any) {
@@ -611,14 +665,12 @@ export default function PortfolioValuation() {
                                                                     </div>
                                                                 );
                                                             } else {
-                                                                // Generic number format for Exposure, Market Value, Dividends, Gross
                                                                 const val = (item as any)[col.id];
                                                                 if (typeof val === 'number') {
                                                                     if (col.id === 'total_dividends') cellClass += " text-blue-700 font-medium bg-yellow-50/30";
                                                                     content = fmt(val);
                                                                 }
                                                             }
-
                                                             return <td key={col.id} className={cellClass}>{content}</td>;
                                                         })}
                                                     </tr>
@@ -627,7 +679,7 @@ export default function PortfolioValuation() {
                                         )}
                                     </tbody>
                                     {/* FOOTER TOTALI */}
-                                    {portfolioData.length > 0 && (
+                                    {finalData.length > 0 && (
                                         <tfoot className="bg-slate-50 border-t-2 border-slate-200 font-bold text-slate-800">
                                             <tr>
                                                 {columns.map(col => {
@@ -654,7 +706,7 @@ export default function PortfolioValuation() {
 
                         <div className="flex justify-between items-start mt-1">
                             <p className="text-slate-400 text-xs italic">
-                                Based on {portfolioData.length} open positions.
+                                Based on {finalData.length} open positions.
                             </p>
                             {hasEstimatedPrices && (
                                 <div className="text-right">
