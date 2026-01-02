@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
+import Image from 'next/image'; // <--- IMPORTA QUESTO
 import { useRouter } from 'next/router';
 import { createClient } from '@supabase/supabase-js';
-import { TrendingUp, List, PieChart, Info, Home, PlusCircle, LineChart, ChevronDown } from 'lucide-react';
+import { List, PieChart, Info, Home, PlusCircle, LineChart, ChevronDown, TrendingUp } from 'lucide-react';
 
 // --- CONFIGURAZIONE SUPABASE ---
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
@@ -12,7 +13,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 export default function Navbar() {
     const router = useRouter();
     const isActive = (path: string) => router.pathname === path;
-    const [userInitials, setUserInitials] = useState < string > ('U');
+    const [userInitials, setUserInitials] = useState<string>('U');
 
     // --- FETCH USER INITIALS ---
     useEffect(() => {
@@ -51,7 +52,7 @@ export default function Navbar() {
             path: '/transactions',
             icon: List,
             dropdown: [
-                { name: 'Add', path: '/transactions?add=true', icon: PlusCircle }, // Gestibile con query param o anchor
+                { name: 'Add', path: '/transactions?add=true', icon: PlusCircle },
                 { name: 'Plot', path: '/transactions/plot', icon: LineChart },
             ]
         },
@@ -67,9 +68,21 @@ export default function Navbar() {
                     {/* --- LEFT SIDE: LOGO + DESKTOP LINKS --- */}
                     <div className="flex items-center gap-8">
                         <div className="flex-shrink-0 flex items-center cursor-pointer" onClick={() => router.push('/')}>
-                            <div className="bg-blue-600 p-1.5 rounded-lg mr-2">
-                                <TrendingUp size={20} className="text-white" />
+                            
+                            {/* --- INIZIO MODIFICA LOGO --- */}
+                            <div className="mr-2 relative w-10 h-10"> 
+                                {/* Assicurati che il file si chiami 'owl-logo.png' e sia nella cartella /public */}
+                                <Image 
+                                    src="/owl-logo.png" 
+                                    alt="Owl Logo" 
+                                    width={40} 
+                                    height={40} 
+                                    className="object-contain"
+                                    priority
+                                />
                             </div>
+                            {/* --- FINE MODIFICA LOGO --- */}
+
                             <span className="font-bold text-xl text-gray-800 tracking-tight">
                                 Invest<span className="text-blue-600">Monitor</span>
                             </span>
