@@ -83,9 +83,9 @@ export default function Navbar() {
                             </div>
                             {/* --- FINE MODIFICA LOGO --- */}
 
-                            <span className="font-bold text-xl text-gray-800 tracking-tight">
-                                O-W-L<span className="text-blue-600">Own Wealth Log</span>
-                            </span>
+                            <span className="font-bold text-xl text-gray-800 tracking-tight">O-W-L</span>
+                            <span className="text-blue-600">Own Wealth Log</span>
+                            
                         </div>
 
                         {/* DESKTOP NAV */}
