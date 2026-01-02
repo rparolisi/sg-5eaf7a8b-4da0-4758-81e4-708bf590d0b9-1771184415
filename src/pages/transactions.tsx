@@ -44,7 +44,7 @@ const ALL_COLUMNS: ColumnDef[] = [
 
 const PEOPLE_OPTIONS = ["Ale", "Peppe", "Raff"];
 
-// --- COMPONENTE MULTI-SELECT (Locale per Sidebar filtri) ---
+// --- COMPONENTE MULTI-SELECT LOCALE ---
 const MultiSelect = ({ label, options, selected, onChange }: { label: string, options: string[], selected: string[], onChange: (val: string[]) => void }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [searchTerm, setSearchTerm] = useState("");
@@ -81,11 +81,14 @@ const MultiSelect = ({ label, options, selected, onChange }: { label: string, op
                         <div className="relative"><Search size={14} className="absolute left-2.5 top-2.5 text-slate-400" /><input type="text" autoFocus className="w-full pl-8 pr-3 py-1.5 text-sm border border-slate-200 rounded-md focus:ring-2 focus:ring-blue-500 outline-none bg-slate-50" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} /></div>
                     </div>
                     <div className="overflow-y-auto flex-1 custom-scrollbar">
-                        {filteredOptions.length > 0 ? filteredOptions.map(o => (
-                            <div key={o} onClick={() => toggleOption(o)} className="px-3 py-2 flex items-center gap-2 cursor-pointer hover:bg-blue-50 transition-colors text-sm text-slate-700 border-l-2 border-transparent hover:border-blue-500">
-                                <div className={`w-4 h-4 border rounded flex items-center justify-center flex-shrink-0 ${selected.includes(o) ? 'bg-blue-600 border-blue-600' : 'border-slate-300'}`}>{selected.includes(o) && <Check size={12} className="text-white" />}</div><span className="truncate">{o}</span>
-                            </div>
-                        )) : <div className="px-4 py-3 text-xs text-slate-400 italic text-center">No results found</div>}
+                        {filteredOptions.length > 0 ? filteredOptions.map(option => {
+                            const isSelected = selected.includes(option);
+                            return (
+                                <div key={option} onClick={() => toggleOption(option)} className="px-3 py-2 flex items-center gap-2 cursor-pointer hover:bg-blue-50 transition-colors text-sm text-slate-700 border-l-2 border-transparent hover:border-blue-500">
+                                    <div className={`w-4 h-4 border rounded flex items-center justify-center flex-shrink-0 ${isSelected ? 'bg-blue-600 border-blue-600' : 'border-slate-300'}`}>{isSelected && <Check size={12} className="text-white" />}</div><span className="truncate">{option}</span>
+                                </div>
+                            );
+                        }) : <div className="px-4 py-3 text-xs text-slate-400 italic text-center">No results found</div>}
                     </div>
                 </div>
             )}
@@ -100,8 +103,7 @@ export default function Transactions() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState < string | null > (null);
 
-    // --- VIEW SETTINGS & LOGIC (SAP STYLE) ---
-    // Filtri rapidi header
+    // --- VIEW SETTINGS & LOGIC ---
     const [columnFilters, setColumnFilters] = useState < Record < string, string[]>> ({});
     const [activeFilterCol, setActiveFilterCol] = useState < string | null > (null);
     const [filterSearchTerm, setFilterSearchTerm] = useState("");
@@ -113,14 +115,6 @@ export default function Transactions() {
     const [isPlotModalOpen, setIsPlotModalOpen] = useState(false);
     const [plotConfig, setPlotConfig] = useState({ x: 'operation_date', y: 'total_outlay_eur' });
     const [rowsLimit, setRowsLimit] = useState < number > (25);
-
-    // Sidebar Filters (Global)
-    const [filters, setFilters] = useState({
-        person: [] as string[],
-        ticker: [] as string[],
-        startDate: '',
-        endDate: ''
-    });
 
     // Refs
     const downloadRef = useRef < HTMLDivElement > (null);
@@ -139,7 +133,6 @@ export default function Transactions() {
             setError("Supabase config missing."); setLoading(false); return;
         }
 
-        // Caricamento Supabase dinamico (se non presente)
         if (!(window as any).supabase) {
             const script = document.createElement('script');
             script.src = "https://unpkg.com/@supabase/supabase-js@2";
@@ -150,7 +143,6 @@ export default function Transactions() {
             setSupabase((window as any).supabase.createClient(SUPABASE_URL, SUPABASE_KEY));
         }
 
-        // Caricamento XLSX
         if (!(window as any).XLSX) {
             const script = document.createElement('script');
             script.src = "https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js";
@@ -158,7 +150,6 @@ export default function Transactions() {
             document.body.appendChild(script);
         }
 
-        // Gestione Click Outside
         const handleClickOutside = (e: MouseEvent) => {
             if (downloadRef.current && !downloadRef.current.contains(e.target as Node)) setIsDownloadOpen(false);
             if (headerFilterRef.current && !headerFilterRef.current.contains(e.target as Node)) setActiveFilterCol(null);
@@ -191,8 +182,15 @@ export default function Transactions() {
         }
     }, [router.isReady, router.query.add]);
 
+    // Sidebar Filters (Global)
+    const [filters, setFilters] = useState({
+        person: [] as string[],
+        ticker: [] as string[],
+        startDate: '',
+        endDate: ''
+    });
+
     // --- PRE-FILTERING (SIDEBAR) ---
-    // Filtra i dati grezzi PRIMA di passarli alla logica della tabella
     const filteredTransactions = useMemo(() => {
         if (rawTransactions.length === 0) return [];
         return rawTransactions.filter(t => {
@@ -205,7 +203,6 @@ export default function Transactions() {
         });
     }, [rawTransactions, filters]);
 
-    // Unique options for sidebar
     const uniqueOptions = useMemo(() => {
         const getUnique = (key: string) => Array.from(new Set(rawTransactions.map(t => t[key]).filter(Boolean))).sort();
         return { people: getUnique('person'), tickers: getUnique('ticker') };
@@ -216,7 +213,7 @@ export default function Transactions() {
         viewSettings, setViewSettings, processedRows, visibleColumns
     } = useTableLogic(filteredTransactions, ALL_COLUMNS, columnFilters);
 
-    // Limitazione righe per visualizzazione
+    // Limitazione righe
     const displayRows = useMemo(() => {
         return processedRows.slice(0, rowsLimit);
     }, [processedRows, rowsLimit]);
@@ -236,11 +233,10 @@ export default function Transactions() {
     const chartData = useMemo(() => {
         const dataRows = processedRows.filter(r => r.type === 'data').map(r => (r as any).data);
         if (!dataRows.length) return [];
-
         return [...dataRows]
             .map(item => ({
                 ...item,
-                displayX: new Date(item[plotConfig.x]).toLocaleDateString('it-IT'), // Assumendo date
+                displayX: new Date(item[plotConfig.x]).toLocaleDateString('it-IT'),
                 valX: item[plotConfig.x],
                 valY: Number(item[plotConfig.y]) || 0
             }))
@@ -249,7 +245,6 @@ export default function Transactions() {
 
     // --- ACTIONS ---
     const handleSort = (key: string) => {
-        // Quick sort override
         const currentSort = viewSettings.sorts.find(s => s.columnId === key);
         const newDirection = currentSort?.direction === 'asc' ? 'desc' : 'asc';
         setViewSettings(prev => ({
@@ -300,13 +295,6 @@ export default function Transactions() {
         });
     };
 
-    const handleMultiShareChange = (person: string, value: string) => {
-        setFormData(prev => ({
-            ...prev,
-            shares_multi: { ...prev.shares_multi, [person]: value }
-        }));
-    };
-
     const handleSubmit = async () => {
         if (formData.people.length === 0 || !formData.security || !formData.price) {
             alert("Please fill required fields."); return;
@@ -318,10 +306,8 @@ export default function Transactions() {
             });
             const result = await response.json();
             if (!response.ok) throw new Error(result.detail || "Error");
-
             alert(result.message);
             setIsModalOpen(false);
-            // Reset form...
             await fetchTransactions();
         } catch (e: any) { alert(`Error: ${e.message}`); } finally { setLoading(false); }
     };
@@ -359,11 +345,9 @@ export default function Transactions() {
         const uniqueVals = useMemo(() => Array.from(new Set(rawTransactions.map(item => String(item[col.id] || '')))).sort(), [col.id]);
         const filteredVals = uniqueVals.filter(v => v.toLowerCase().includes(filterSearchTerm.toLowerCase()));
 
-        // Drag
         const handleDragStart = (e: React.DragEvent) => { e.dataTransfer.setData("colIndex", index.toString()); e.dataTransfer.effectAllowed = "move"; };
         const handleDrop = (e: React.DragEvent) => { e.preventDefault(); const fromIndex = parseInt(e.dataTransfer.getData("colIndex")); moveColumn(fromIndex, index); };
 
-        // Resize
         const onMouseDown = (e: React.MouseEvent) => {
             e.preventDefault(); e.stopPropagation();
             const startX = e.pageX; const startW = w;
@@ -426,7 +410,7 @@ export default function Transactions() {
                 </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 mb-8">
-                    {/* FILTRI SIDEBAR */}
+                    {/* FILTERS SIDEBAR */}
                     <div className="lg:col-span-1 space-y-4">
                         <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
                             <div className="flex items-center justify-between mb-4 border-b border-slate-100 pb-2">
@@ -456,8 +440,8 @@ export default function Transactions() {
 
                         <div className="bg-white rounded-xl shadow-lg border border-slate-200 overflow-hidden relative min-h-[300px]">
                             {loading && <div className="absolute inset-0 bg-white/80 z-20 flex flex-col items-center justify-center text-slate-500"><Loader2 size={32} className="animate-spin text-blue-600 mb-2" /> <p>Loading...</p></div>}
-                            <div className="overflow-x-auto min-h-[300px]">
-                                <table className="w-full text-sm text-left border-collapse">
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-sm text-left">
                                     <thead className="bg-slate-50 text-slate-500 font-semibold uppercase text-[11px] tracking-wider border-b border-slate-200">
                                         <tr>
                                             {visibleColumns.map((col, i) => (
@@ -565,6 +549,6 @@ export default function Transactions() {
                 )}
 
             </div>
-        </div>
+        </main>
     );
 }
