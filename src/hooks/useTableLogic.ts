@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { ViewSettings, ColumnDef, ProcessedRow } from '../types/table';
 
-// Helper per normalizzare i valori (stringhe, numeri, null) per confronti sicuri
+// Helper: Pulisce e normalizza i valori per confronti sicuri
 const safeString = (val: any) => {
     if (val === null || val === undefined) return '';
     return String(val).trim().toLowerCase();
@@ -22,63 +22,45 @@ export function useTableLogic<T>(
     const processedRows = useMemo(() => {
         let result = [...data];
 
-        // 1A. FILTRI HEADER (Quick Filters)
+        // 1. FILTRI
+        // A. Header (Quick Filters)
         Object.keys(columnFilters).forEach(colId => {
             const selectedVals = columnFilters[colId];
             if (selectedVals && selectedVals.length > 0) {
-                // Normalizza le selezioni del filtro
                 const normalizedSelection = selectedVals.map(v => safeString(v));
-
                 result = result.filter(item => {
-                    const rawVal = (item as any)[colId];
-                    // Normalizza il valore della cella
-                    const valStr = safeString(rawVal);
-
-                    // Verifica se il valore è incluso
+                    const valStr = safeString((item as any)[colId]);
                     return normalizedSelection.some(sel => valStr === sel);
                 });
             }
         });
 
-        // 1B. FILTRI AVANZATI (Settings Modal)
+        // B. Advanced Filters
         if (viewSettings.filters.length > 0) {
             result = result.filter(item => {
                 return viewSettings.filters.every(rule => {
                     const rawVal = (item as any)[rule.columnId];
-
-                    const itemValStr = safeString(rawVal);
-                    const filterValStr = safeString(rule.value);
-                    const filterVal2Str = safeString(rule.value2);
-
-                    const itemValNum = Number(rawVal);
-                    const filterValNum = Number(rule.value);
-                    const filterVal2Num = Number(rule.value2);
-
-                    const isNumericComparison = !isNaN(itemValNum) && !isNaN(filterValNum) && rawVal !== null && rawVal !== '' && rule.value !== '';
-
-                    let matches = false;
+                    const valStr = safeString(rawVal);
+                    const filterStr = safeString(rule.value);
+                    const valNum = Number(rawVal);
+                    const filterNum = Number(rule.value);
+                    const isNum = !isNaN(valNum) && !isNaN(filterNum) && rawVal !== null && rawVal !== '';
 
                     switch (rule.operator) {
-                        case 'contains': matches = itemValStr.includes(filterValStr); break;
-                        case 'equals': matches = itemValStr === filterValStr; break;
-                        case 'greater': matches = isNumericComparison ? itemValNum > filterValNum : itemValStr > filterValStr; break;
-                        case 'less': matches = isNumericComparison ? itemValNum < filterValNum : itemValStr < filterValStr; break;
-                        case 'between':
-                            if (isNumericComparison) {
-                                const max = !isNaN(filterVal2Num) ? filterVal2Num : Infinity;
-                                matches = itemValNum >= filterValNum && itemValNum <= max;
-                            } else {
-                                matches = itemValStr >= filterValStr && itemValStr <= filterVal2Str;
-                            }
-                            break;
-                        default: matches = true;
+                        case 'contains': return valStr.includes(filterStr);
+                        case 'equals': return valStr === filterStr;
+                        case 'greater': return isNum ? valNum > filterNum : valStr > filterStr;
+                        case 'less': return isNum ? valNum < filterNum : valStr < filterStr;
+                        case 'between': return isNum
+                            ? (valNum >= filterNum && valNum <= Number(rule.value2))
+                            : (valStr >= filterStr && valStr <= safeString(rule.value2));
+                        default: return true;
                     }
-                    return rule.type === 'include' ? matches : !matches;
-                });
+                }) ? (rule.type === 'include') : (rule.type !== 'include');
             });
         }
 
-        // 2 & 3. ORDINAMENTO
+        // 2. ORDINAMENTO
         const groupCols = viewSettings.groups.map(g => g.columnId);
         const sortRules = [
             ...groupCols.map(col => ({ columnId: col, direction: 'asc' as const })),
@@ -88,21 +70,34 @@ export function useTableLogic<T>(
         if (sortRules.length > 0) {
             result.sort((a, b) => {
                 for (const rule of sortRules) {
-                    const valA = (a as any)[rule.columnId];
-                    const valB = (b as any)[rule.columnId];
-                    if (valA === valB) continue;
-                    if (valA === null || valA === undefined) return 1;
-                    if (valB === null || valB === undefined) return -1;
+                    const rawA = (a as any)[rule.columnId];
+                    const rawB = (b as any)[rule.columnId];
+
+                    // Gestione Nulls (sempre in fondo)
+                    if (rawA === rawB) continue;
+                    if (rawA === null || rawA === undefined) return 1;
+                    if (rawB === null || rawB === undefined) return -1;
+
                     let comparison = 0;
-                    if (typeof valA === 'number' && typeof valB === 'number') comparison = valA - valB;
-                    else comparison = String(valA).localeCompare(String(valB));
-                    return rule.direction === 'asc' ? comparison : -comparison;
+                    // Se entrambi sono numeri validi, usa sottrazione
+                    if (typeof rawA === 'number' && typeof rawB === 'number') {
+                        comparison = rawA - rawB;
+                    } else {
+                        // Altrimenti usa safeString per confronto alfabetico sicuro
+                        const strA = safeString(rawA);
+                        const strB = safeString(rawB);
+                        comparison = strA.localeCompare(strB);
+                    }
+
+                    if (comparison !== 0) {
+                        return rule.direction === 'asc' ? comparison : -comparison;
+                    }
                 }
                 return 0;
             });
         }
 
-        // 4. RAGGRUPPAMENTO
+        // 3. RAGGRUPPAMENTO
         if (groupCols.length === 0) {
             return result.map(item => ({ type: 'data', data: item } as ProcessedRow<T>));
         } else {
@@ -112,15 +107,14 @@ export function useTableLogic<T>(
             result.forEach((item) => {
                 groupCols.forEach((groupCol, level) => {
                     const currentVal = (item as any)[groupCol];
-                    const prevVal = previousValues[groupCol];
-
-                    if (currentVal !== prevVal) {
+                    if (currentVal !== previousValues[groupCol]) {
+                        const colDef = initialColumns.find(c => c.id === groupCol);
                         rows.push({
                             type: 'group_header',
                             key: groupCol,
                             value: currentVal,
                             level: level,
-                            field: initialColumns.find(c => c.id === groupCol)?.label || groupCol
+                            field: colDef ? colDef.label : groupCol
                         });
                         previousValues[groupCol] = currentVal;
                         for (let l = level + 1; l < groupCols.length; l++) delete previousValues[groupCols[l]];
@@ -133,10 +127,5 @@ export function useTableLogic<T>(
 
     }, [data, viewSettings, columnFilters, initialColumns]);
 
-    return {
-        viewSettings,
-        setViewSettings,
-        processedRows,
-        visibleColumns: viewSettings.columns.filter(c => c.visible)
-    };
+    return { viewSettings, setViewSettings, processedRows, visibleColumns: viewSettings.columns.filter(c => c.visible) };
 }
