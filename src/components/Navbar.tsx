@@ -54,8 +54,8 @@ export default function Navbar() {
             icon: ScrollText, // Ora funzionerà perché è importato
             dropdown: [
                 { name: 'Transactions', path: '/transactions', icon: ScrollText },
-                { name: 'Add', path: '/transactions?add=true', icon: PlusCircle },
                 { name: 'Plot', path: '/transactions/plot', icon: LineChart },
+                { name: 'Add', path: '/transactions?add=true', icon: PlusCircle },
             ]
         },
         {
@@ -63,6 +63,7 @@ export default function Navbar() {
             path: '/portfolio_valuation',
             icon: PieChart,
             dropdown: [
+                { name: 'Portfolio', path: '/portfolio_valuation', icon: ScrollText },              
                 { name: 'Plot', path: '/portfolio_valuation/plot', icon: LineChart },
             ]
         },
