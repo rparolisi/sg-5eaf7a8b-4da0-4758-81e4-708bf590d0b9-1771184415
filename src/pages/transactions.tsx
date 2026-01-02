@@ -4,7 +4,7 @@ import { createClient } from '@supabase/supabase-js';
 import {
     Plus, Search, Filter, Settings, Download, X,
     TrendingUp, TrendingDown, GripVertical, Check, ArrowUp, ArrowDown, ChevronRight, ChevronDown,
-    FileText, FileSpreadsheet, List, LineChart as LineChartIcon, BarChart3, AlertTriangle, Info,
+    FileText, FileSpreadsheet, LineChart as LineChartIcon, BarChart3, AlertTriangle, Info,
     Calendar, Loader2
 } from 'lucide-react';
 import {
@@ -115,7 +115,6 @@ export default function Transactions() {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isPlotModalOpen, setIsPlotModalOpen] = useState(false);
     const [plotConfig, setPlotConfig] = useState({ x: 'operation_date', y: 'total_outlay_eur' });
-    const [rowsLimit, setRowsLimit] = useState < number > (25);
 
     // Sidebar Filters
     const [filters, setFilters] = useState({
@@ -191,8 +190,7 @@ export default function Transactions() {
         }
     }, [router.isReady, router.query.add]);
 
-    // --- FILTRAGGIO SIDEBAR (PRE-PROCESSING) ---
-    // Questo era il passaggio mancante: i dati devono passare prima da qui!
+    // --- PRE-FILTERING (SIDEBAR) ---
     const filteredTransactions = useMemo(() => {
         if (rawTransactions.length === 0) return [];
         return rawTransactions.filter(t => {
@@ -211,15 +209,10 @@ export default function Transactions() {
     }, [rawTransactions]);
 
     // --- HOOK TABLE LOGIC ---
-    // FIX: Ora passiamo filteredTransactions invece di rawTransactions
+    // Gestione filtri avanzati, sort e group
     const {
         viewSettings, setViewSettings, processedRows, visibleColumns
     } = useTableLogic(filteredTransactions, ALL_COLUMNS, columnFilters);
-
-    // Limitazione righe
-    const displayRows = useMemo(() => {
-        return processedRows.slice(0, rowsLimit);
-    }, [processedRows, rowsLimit]);
 
     // --- CALCOLO TOTALI ---
     const totals = useMemo(() => {
@@ -232,7 +225,7 @@ export default function Transactions() {
         }), { total_outlay_eur: 0, shares_count: 0, transaction_fees_eur: 0, transaction_taxes_eur: 0 });
     }, [processedRows]);
 
-    // --- CHART DATA ---
+    // --- CHART DATA PREP ---
     const chartData = useMemo(() => {
         const dataRows = processedRows.filter(r => r.type === 'data').map(r => (r as any).data);
         if (!dataRows.length) return [];
@@ -254,12 +247,16 @@ export default function Transactions() {
     };
 
     const handleResize = useCallback((idx: number, w: number) => {
-        setViewSettings(prev => { const cols = [...prev.columns]; cols[idx] = { ...cols[idx], width: w }; return { ...prev, columns: cols }; });
+        setViewSettings(prev => {
+            const cols = [...prev.columns]; cols[idx] = { ...cols[idx], width: w }; return { ...prev, columns: cols };
+        });
     }, []);
 
     const moveColumn = useCallback((from: number, to: number) => {
         if (from === to) return;
-        setViewSettings(prev => { const cols = [...prev.columns]; const [moved] = cols.splice(from, 1); cols.splice(to, 0, moved); return { ...prev, columns: cols }; });
+        setViewSettings(prev => {
+            const cols = [...prev.columns]; const [moved] = cols.splice(from, 1); cols.splice(to, 0, moved); return { ...prev, columns: cols };
+        });
     }, []);
 
     const toggleColumnFilter = (colKey: string, value: string) => {
@@ -291,6 +288,13 @@ export default function Transactions() {
         });
     };
 
+    const handleMultiShareChange = (person: string, value: string) => {
+        setFormData(prev => ({
+            ...prev,
+            shares_multi: { ...prev.shares_multi, [person]: value }
+        }));
+    };
+
     const handleSubmit = async () => {
         if (formData.people.length === 0 || !formData.security || !formData.price) {
             alert("Please fill required fields."); return;
@@ -302,6 +306,7 @@ export default function Transactions() {
             });
             const result = await response.json();
             if (!response.ok) throw new Error(result.detail || "Error");
+
             alert(result.message);
             setIsModalOpen(false);
             await fetchTransactions();
@@ -325,6 +330,7 @@ export default function Transactions() {
         setIsDownloadOpen(false);
     };
 
+    // --- RENDER HELPERS ---
     const fmt = (val: any, type: string) => {
         if (val === null || val === undefined) return '-';
         if (type === 'date') return new Date(val).toLocaleDateString('it-IT');
@@ -337,7 +343,8 @@ export default function Transactions() {
         const [w, setW] = useState(col.width);
         useEffect(() => setW(col.width), [col.width]);
 
-        const uniqueVals = useMemo(() => Array.from(new Set(rawTransactions.map(item => String(item[col.id] || '')))).sort(), [col.id]);
+        // Dipendenza rawTransactions aggiunta per aggiornare i filtri all'arrivo dei dati
+        const uniqueVals = useMemo(() => Array.from(new Set(rawTransactions.map(item => String(item[col.id] || '')))).sort(), [col.id, rawTransactions]);
         const filteredVals = uniqueVals.filter(v => v.toLowerCase().includes(filterSearchTerm.toLowerCase()));
 
         const handleDragStart = (e: React.DragEvent) => { e.dataTransfer.setData("colIndex", index.toString()); e.dataTransfer.effectAllowed = "move"; };
@@ -389,26 +396,6 @@ export default function Transactions() {
                         <button onClick={() => setIsModalOpen(true)} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-full font-medium shadow-sm transition-transform hover:-translate-y-0.5"><Plus size={18} /> Add</button>
                         <button onClick={() => setIsPlotModalOpen(true)} className="flex items-center gap-2 bg-white hover:bg-purple-50 text-purple-600 border border-purple-200 px-4 py-2 rounded-full font-medium shadow-sm transition-transform hover:-translate-y-0.5"><LineChartIcon size={18} /> Plot</button>
 
-                        {/* ROWS LIMIT UI FIX */}
-                        <div className="flex items-center gap-2 bg-white border border-gray-300 rounded-lg px-3 py-2 shadow-sm ml-2">
-                            <List size={16} className="text-gray-400" />
-                            <input
-                                type="number"
-                                min="1"
-                                max={processedRows.length}
-                                value={rowsLimit}
-                                onChange={(e) => setRowsLimit(Number(e.target.value))}
-                                onBlur={() => {
-                                    // Auto-clamp when user finishes typing
-                                    if (rowsLimit < 1) setRowsLimit(1);
-                                    // Optional: cap at max length? Usually people prefer keeping their preference (e.g. 100) even if results are few.
-                                    // So we don't force clamp downwards here to avoid annoying resets.
-                                }}
-                                className="w-12 text-sm text-right font-semibold text-gray-700 outline-none"
-                            />
-                            <span className="text-xs text-gray-400 border-l pl-2">/ {processedRows.length}</span>
-                        </div>
-
                         <button onClick={() => setIsSettingsOpen(true)} className="p-2 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 text-slate-600 shadow-sm"><Settings size={18} /></button>
 
                         <div className="relative" ref={downloadRef}>
@@ -449,8 +436,8 @@ export default function Transactions() {
 
                         <div className="bg-white rounded-xl shadow-lg border border-slate-200 overflow-hidden relative min-h-[300px]">
                             {loading && <div className="absolute inset-0 bg-white/80 z-20 flex flex-col items-center justify-center text-slate-500"><Loader2 size={32} className="animate-spin text-blue-600 mb-2" /> <p>Loading...</p></div>}
-                            <div className="overflow-x-auto">
-                                <table className="w-full text-sm text-left">
+                            <div className="overflow-x-auto min-h-[500px]">
+                                <table className="w-full text-sm text-left border-collapse">
                                     <thead className="bg-slate-50 text-slate-500 font-semibold uppercase text-[11px] tracking-wider border-b border-slate-200">
                                         <tr>
                                             {visibleColumns.map((col, i) => (
@@ -459,7 +446,7 @@ export default function Transactions() {
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100">
-                                        {displayRows.map((row: any, idx: number) => {
+                                        {processedRows.map((row: any, idx: number) => {
                                             if (row.type === 'group_header') {
                                                 return (<tr key={`group-${idx}`} className="bg-gray-100 border-t border-gray-300"><td colSpan={visibleColumns.length} className="px-4 py-2 font-bold text-gray-700"><div className="flex items-center gap-2" style={{ paddingLeft: `${row.level * 20}px` }}><ChevronRight size={16} /> <span className="text-xs uppercase text-gray-500">{row.field}:</span> {row.value}</div></td></tr>);
                                             }
