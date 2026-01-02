@@ -4,7 +4,7 @@ import { createClient } from '@supabase/supabase-js';
 import {
     Plus, Search, Filter, Settings, Download, X,
     TrendingUp, TrendingDown, GripVertical, Check, ArrowUp, ArrowDown, ChevronRight,
-    FileText, FileSpreadsheet, List, LineChart as LineChartIcon, BarChart3, AlertTriangle
+    FileText, FileSpreadsheet, List, LineChart as LineChartIcon, BarChart3, AlertTriangle, Info
 } from 'lucide-react';
 import {
     LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
@@ -44,6 +44,55 @@ const ALL_COLUMNS: ColumnDef[] = [
 
 const PEOPLE_OPTIONS = ["Ale", "Peppe", "Raff"];
 
+// --- COMPONENTE MULTI-SELECT (Locale per Sidebar filtri) ---
+const MultiSelect = ({ label, options, selected, onChange }: { label: string, options: string[], selected: string[], onChange: (val: string[]) => void }) => {
+    const [isOpen, setIsOpen] = useState(false);
+    const [searchTerm, setSearchTerm] = useState("");
+    const dropdownRef = useRef < HTMLDivElement > (null);
+
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+                setIsOpen(false);
+                setSearchTerm("");
+            }
+        };
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, []);
+
+    const toggleOption = (option: string) => {
+        if (selected.includes(option)) onChange(selected.filter(item => item !== option));
+        else onChange([...selected, option]);
+    };
+
+    const filteredOptions = options.filter(opt => opt.toLowerCase().includes(searchTerm.toLowerCase()));
+
+    return (
+        <div className="relative" ref={dropdownRef}>
+            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">{label}</label>
+            <button onClick={() => setIsOpen(!isOpen)} className="w-full p-2 border border-slate-300 rounded-lg text-sm bg-slate-50 flex justify-between items-center outline-none focus:ring-2 focus:ring-blue-500 hover:bg-white transition-colors">
+                <span className={`truncate ${selected.length === 0 ? 'text-slate-400' : 'text-slate-800'}`}>{selected.length === 0 ? `Select ${label}...` : `${selected.length} selected`}</span>
+                <ChevronDown size={16} className={`text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+            </button>
+            {isOpen && (
+                <div className="absolute top-full left-0 w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-xl z-50 overflow-hidden flex flex-col max-h-60">
+                    <div className="p-2 border-b border-slate-100 bg-white sticky top-0 z-10">
+                        <div className="relative"><Search size={14} className="absolute left-2.5 top-2.5 text-slate-400" /><input type="text" autoFocus className="w-full pl-8 pr-3 py-1.5 text-sm border border-slate-200 rounded-md focus:ring-2 focus:ring-blue-500 outline-none bg-slate-50" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} /></div>
+                    </div>
+                    <div className="overflow-y-auto flex-1 custom-scrollbar">
+                        {filteredOptions.length > 0 ? filteredOptions.map(o => (
+                            <div key={o} onClick={() => toggleOption(o)} className="px-3 py-2 flex items-center gap-2 cursor-pointer hover:bg-blue-50 transition-colors text-sm text-slate-700 border-l-2 border-transparent hover:border-blue-500">
+                                <div className={`w-4 h-4 border rounded flex items-center justify-center flex-shrink-0 ${selected.includes(o) ? 'bg-blue-600 border-blue-600' : 'border-slate-300'}`}>{selected.includes(o) && <Check size={12} className="text-white" />}</div><span className="truncate">{o}</span>
+                            </div>
+                        )) : <div className="px-4 py-3 text-xs text-slate-400 italic text-center">No results found</div>}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
 export default function Transactions() {
     const router = useRouter();
     const [supabase, setSupabase] = useState < any > (null);
@@ -64,6 +113,14 @@ export default function Transactions() {
     const [isPlotModalOpen, setIsPlotModalOpen] = useState(false);
     const [plotConfig, setPlotConfig] = useState({ x: 'operation_date', y: 'total_outlay_eur' });
     const [rowsLimit, setRowsLimit] = useState < number > (25);
+
+    // Sidebar Filters (Global)
+    const [filters, setFilters] = useState({
+        person: [] as string[],
+        ticker: [] as string[],
+        startDate: '',
+        endDate: ''
+    });
 
     // Refs
     const downloadRef = useRef < HTMLDivElement > (null);
@@ -134,15 +191,46 @@ export default function Transactions() {
         }
     }, [router.isReady, router.query.add]);
 
+    // --- PRE-FILTERING (SIDEBAR) ---
+    // Filtra i dati grezzi PRIMA di passarli alla logica della tabella
+    const filteredTransactions = useMemo(() => {
+        if (rawTransactions.length === 0) return [];
+        return rawTransactions.filter(t => {
+            if (filters.person.length && !filters.person.includes(t.person)) return false;
+            if (filters.ticker.length && !filters.ticker.includes(t.ticker)) return false;
+            const tDate = t.operation_date ? String(t.operation_date).split('T')[0] : '';
+            if (filters.startDate && tDate < filters.startDate) return false;
+            if (filters.endDate && tDate > filters.endDate) return false;
+            return true;
+        });
+    }, [rawTransactions, filters]);
+
+    // Unique options for sidebar
+    const uniqueOptions = useMemo(() => {
+        const getUnique = (key: string) => Array.from(new Set(rawTransactions.map(t => t[key]).filter(Boolean))).sort();
+        return { people: getUnique('person'), tickers: getUnique('ticker') };
+    }, [rawTransactions]);
+
     // --- HOOK TABLE LOGIC ---
     const {
         viewSettings, setViewSettings, processedRows, visibleColumns
-    } = useTableLogic(rawTransactions, ALL_COLUMNS, columnFilters);
+    } = useTableLogic(filteredTransactions, ALL_COLUMNS, columnFilters);
 
     // Limitazione righe per visualizzazione
     const displayRows = useMemo(() => {
         return processedRows.slice(0, rowsLimit);
     }, [processedRows, rowsLimit]);
+
+    // --- CALCOLO TOTALI ---
+    const totals = useMemo(() => {
+        const dataRows = processedRows.filter(r => r.type === 'data').map(r => (r as any).data);
+        return dataRows.reduce((acc, item) => ({
+            total_outlay_eur: acc.total_outlay_eur + (item.total_outlay_eur || 0),
+            shares_count: acc.shares_count + (item.shares_count || 0),
+            transaction_fees_eur: acc.transaction_fees_eur + (item.transaction_fees_eur || 0),
+            transaction_taxes_eur: acc.transaction_taxes_eur + (item.transaction_taxes_eur || 0),
+        }), { total_outlay_eur: 0, shares_count: 0, transaction_fees_eur: 0, transaction_taxes_eur: 0 });
+    }, [processedRows]);
 
     // --- CHART DATA PREP ---
     const chartData = useMemo(() => {
@@ -191,6 +279,9 @@ export default function Transactions() {
         });
     };
 
+    const handleFilterChange = (key: keyof typeof filters, val: any) => setFilters(prev => ({ ...prev, [key]: val }));
+    const clearFilters = () => setFilters({ person: [], ticker: [], startDate: '', endDate: '' });
+
     // --- FORM ACTIONS ---
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
         const { name, value } = e.target;
@@ -207,6 +298,13 @@ export default function Transactions() {
             }
             return { ...prev, people: [...current, person] };
         });
+    };
+
+    const handleMultiShareChange = (person: string, value: string) => {
+        setFormData(prev => ({
+            ...prev,
+            shares_multi: { ...prev.shares_multi, [person]: value }
+        }));
     };
 
     const handleSubmit = async () => {
@@ -327,49 +425,88 @@ export default function Transactions() {
                     </div>
                 </div>
 
-                {loading && <div className="p-8 text-center text-gray-500">Loading...</div>}
-                {error && <div className="bg-red-50 text-red-600 p-4 rounded-lg mb-4">{error}</div>}
-
-                {/* TABLE */}
-                {!loading && !error && (
-                    <div className="bg-white shadow-lg rounded-xl border border-gray-200 overflow-hidden">
-                        <div className="overflow-x-auto min-h-[400px]">
-                            <table className="w-full text-sm text-left border-collapse">
-                                <thead className="bg-gray-50 text-slate-500 font-semibold uppercase text-[11px] tracking-wider border-b border-slate-200">
-                                    <tr>
-                                        {visibleColumns.map((col, i) => (
-                                            <HeaderCell key={col.id} col={col} index={i} />
-                                        ))}
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-slate-100">
-                                    {displayRows.map((row: any, idx: number) => {
-                                        if (row.type === 'group_header') {
-                                            return (<tr key={`group-${idx}`} className="bg-gray-100 border-t border-gray-300"><td colSpan={visibleColumns.length} className="px-4 py-2 font-bold text-gray-700"><div className="flex items-center gap-2" style={{ paddingLeft: `${row.level * 20}px` }}><ChevronRight size={16} /> <span className="text-xs uppercase text-gray-500">{row.field}:</span> {row.value}</div></td></tr>);
-                                        }
-                                        const item = row.data;
-                                        return (
-                                            <tr key={item.transaction_id} className="hover:bg-slate-50/50">
-                                                {visibleColumns.map(col => {
-                                                    const alignClass = col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left';
-                                                    let val = item[col.id];
-                                                    let content: React.ReactNode = fmt(val, col.type);
-
-                                                    // Custom renders
-                                                    if (col.id === 'buy_or_sell') content = <span className={`px-2 py-1 rounded-full text-xs font-medium ${val === 'Buy' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>{item.category || val}</span>;
-                                                    else if (col.id === 'operation_sign') content = <span className={`font-bold ${val > 0 ? 'text-green-600' : 'text-red-600'}`}>{val > 0 ? '+' : ''}{val}</span>;
-                                                    else if (col.id === 'ticker') content = <span className="font-bold">{val}</span>;
-
-                                                    return <td key={col.id} className={`px-4 py-3 ${alignClass}`}>{content}</td>;
-                                                })}
-                                            </tr>
-                                        );
-                                    })}
-                                </tbody>
-                            </table>
+                <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 mb-8">
+                    {/* FILTRI SIDEBAR */}
+                    <div className="lg:col-span-1 space-y-4">
+                        <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+                            <div className="flex items-center justify-between mb-4 border-b border-slate-100 pb-2">
+                                <div className="flex items-center gap-2 text-slate-800 font-semibold"><Filter size={18} /> Filters</div>
+                                {(filters.person.length > 0 || filters.ticker.length > 0) && <button onClick={clearFilters} className="text-xs text-red-500 hover:underline flex items-center gap-1"><XCircle size={12} /> Clear</button>}
+                            </div>
+                            <div className="space-y-4">
+                                <MultiSelect label="Person" options={uniqueOptions.people} selected={filters.person} onChange={(val) => handleFilterChange('person', val)} />
+                                <MultiSelect label="Ticker" options={uniqueOptions.tickers} selected={filters.ticker} onChange={(val) => handleFilterChange('ticker', val)} />
+                                <div className="pt-2 border-t border-slate-100">
+                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-2"><Calendar size={12} className="inline mr-1" /> Date Range</label>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <input type="date" className="w-full p-2 border border-slate-300 rounded text-xs" value={filters.startDate} onChange={(e) => handleFilterChange('startDate', e.target.value)} />
+                                        <input type="date" className="w-full p-2 border border-slate-300 rounded text-xs" value={filters.endDate} onChange={(e) => handleFilterChange('endDate', e.target.value)} />
+                                    </div>
+                                </div>
+                                <button onClick={() => fetchTransactions()} disabled={loading} className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-lg font-bold shadow-md transition-all active:scale-95 disabled:opacity-50 mt-4">
+                                    {loading ? <Loader2 size={18} className="animate-spin" /> : <Search size={18} />} Search Prices
+                                </button>
+                            </div>
                         </div>
                     </div>
-                )}
+
+                    {/* TABLE */}
+                    <div className="lg:col-span-3 flex flex-col gap-6">
+                        {error && <div className="bg-red-50 border border-red-200 text-red-700 p-3 rounded-lg text-sm flex items-center gap-2"><AlertTriangle size={16} /> {error}</div>}
+
+                        <div className="bg-white rounded-xl shadow-lg border border-slate-200 overflow-hidden relative min-h-[300px]">
+                            {loading && <div className="absolute inset-0 bg-white/80 z-20 flex flex-col items-center justify-center text-slate-500"><Loader2 size={32} className="animate-spin text-blue-600 mb-2" /> <p>Loading...</p></div>}
+                            <div className="overflow-x-auto min-h-[300px]">
+                                <table className="w-full text-sm text-left border-collapse">
+                                    <thead className="bg-slate-50 text-slate-500 font-semibold uppercase text-[11px] tracking-wider border-b border-slate-200">
+                                        <tr>
+                                            {visibleColumns.map((col, i) => (
+                                                <HeaderCell key={col.id} col={col} index={i} />
+                                            ))}
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {displayRows.map((row: any, idx: number) => {
+                                            if (row.type === 'group_header') {
+                                                return (<tr key={`group-${idx}`} className="bg-gray-100 border-t border-gray-300"><td colSpan={visibleColumns.length} className="px-4 py-2 font-bold text-gray-700"><div className="flex items-center gap-2" style={{ paddingLeft: `${row.level * 20}px` }}><ChevronRight size={16} /> <span className="text-xs uppercase text-gray-500">{row.field}:</span> {row.value}</div></td></tr>);
+                                            }
+                                            const item = row.data;
+                                            return (
+                                                <tr key={item.transaction_id || idx} className="hover:bg-slate-50/50 transition-colors">
+                                                    {visibleColumns.map(col => {
+                                                        const alignClass = col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left';
+                                                        let val = item[col.id];
+                                                        let content: React.ReactNode = fmt(val, col.type);
+
+                                                        if (col.id === 'buy_or_sell') content = <span className={`px-2 py-1 rounded-full text-xs font-medium ${val === 'Buy' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>{item.category || val}</span>;
+                                                        else if (col.id === 'ticker') content = <span className="font-bold text-slate-800">{val}</span>;
+
+                                                        return <td key={col.id} className={`px-4 py-3 ${alignClass}`}>{content}</td>;
+                                                    })}
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                    {/* FOOTER TOTALI */}
+                                    {processedRows.some((r: any) => r.type === 'data') && (
+                                        <tfoot className="bg-slate-50 border-t-2 border-slate-200 font-bold text-slate-800 sticky bottom-0">
+                                            <tr>{visibleColumns.map(col => {
+                                                const alignClass = col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left';
+                                                let content: React.ReactNode = '';
+                                                if (col.id === 'ticker') content = "TOTAL";
+                                                else if (col.id === 'total_outlay_eur') content = fmt(totals.total_outlay_eur, 'number');
+                                                else if (col.id === 'shares_count') content = fmt(totals.shares_count, 'number');
+                                                else if (col.id === 'transaction_fees_eur') content = fmt(totals.transaction_fees_eur, 'number');
+                                                else if (col.id === 'transaction_taxes_eur') content = fmt(totals.transaction_taxes_eur, 'number');
+                                                return <td key={col.id} className={`px-4 py-3 ${alignClass}`}>{content}</td>;
+                                            })}</tr>
+                                        </tfoot>
+                                    )}
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
 
                 {/* MODALS */}
                 <TableSettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} settings={viewSettings} onUpdate={setViewSettings} allColumns={ALL_COLUMNS} />
@@ -402,13 +539,12 @@ export default function Transactions() {
                     </div>
                 )}
 
-                {/* ADD TRANSACTION MODAL (Semplificato per brevità, usare quello esistente) */}
+                {/* ADD TRANSACTION MODAL */}
                 {isModalOpen && (
                     <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
                         <div className="bg-white rounded-xl w-full max-w-2xl p-6 relative">
                             <button onClick={() => setIsModalOpen(false)} className="absolute top-4 right-4"><X size={24} /></button>
                             <h2 className="text-xl font-bold mb-4">Add Transaction</h2>
-                            {/* ... Form ... */}
                             <div className="grid gap-4">
                                 <div className="flex gap-2">
                                     <button onClick={() => setFormData(p => ({ ...p, type: 'Buy' }))} className={`flex-1 py-2 rounded border ${formData.type === 'Buy' ? 'bg-green-100 border-green-500 text-green-700' : ''}`}>Buy</button>
@@ -416,12 +552,12 @@ export default function Transactions() {
                                 </div>
                                 <div className="flex gap-2 flex-wrap">
                                     {PEOPLE_OPTIONS.map(p => (
-                                        <button key={p} onClick={() => setFormData(pr => { const exists = pr.people.includes(p); return { ...pr, people: exists ? pr.people.filter(x => x !== p) : [...pr.people, p] }; })} className={`px-3 py-1 rounded border ${formData.people.includes(p) ? 'bg-blue-600 text-white' : ''}`}>{p}</button>
+                                        <button key={p} onClick={() => togglePerson(p)} className={`px-3 py-1 rounded border ${formData.people.includes(p) ? 'bg-blue-600 text-white' : ''}`}>{p}</button>
                                     ))}
                                 </div>
                                 <input placeholder="Ticker (e.g. AAPL)" className="p-2 border rounded" name="security" value={formData.security} onChange={handleInputChange} />
                                 <input type="number" placeholder="Price" className="p-2 border rounded" name="price" value={formData.price} onChange={handleInputChange} />
-                                {/* ... Altri campi ... */}
+                                <input type="date" className="p-2 border rounded" name="date" value={formData.date} onChange={handleInputChange} />
                                 <button onClick={handleSubmit} className="bg-blue-600 text-white py-2 rounded">Submit</button>
                             </div>
                         </div>
@@ -429,6 +565,6 @@ export default function Transactions() {
                 )}
 
             </div>
-        </main>
+        </div>
     );
 }
