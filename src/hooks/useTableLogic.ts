@@ -1,6 +1,4 @@
-// src/hooks/useTableLogic.ts
-
-import { useState, useMemo, useEffect } from 'react'; // Aggiungi useEffect
+import { useState, useMemo, useEffect } from 'react';
 import { ViewSettings, ColumnDef, ProcessedRow } from '../types/table';
 
 // Helper: Pulisce e normalizza i valori per confronti sicuri
@@ -13,9 +11,9 @@ const safeString = (val: any) => {
 export function useTableLogic<T>(
     data: T[],
     initialColumns: ColumnDef[],
-    initialPageSize: number = 25 // Nuova prop default
+    initialPageSize: number = 25
 ) {
-    // --- STATI ESISTENTI ---
+    // --- STATI ---
     const [viewSettings, setViewSettings] = useState < ViewSettings > ({
         columns: initialColumns,
         filters: [],
@@ -23,21 +21,21 @@ export function useTableLogic<T>(
         groups: []
     });
 
-    // --- NUOVO STATO PAGINAZIONE ---
     const [pagination, setPagination] = useState({
         page: 1,
         pageSize: initialPageSize
     });
 
-    // Reset pagina a 1 se cambiano filtri o raggruppamenti
+    // Reset pagina a 1 se cambiano filtri
     useEffect(() => {
         setPagination(prev => ({ ...prev, page: 1 }));
     }, [viewSettings.filters, viewSettings.groups, data]);
 
+    // --- 1. FILTRARE, ORDINARE E RAGGRUPPARE (Logica esistente) ---
     const processedRows = useMemo(() => {
         let result = [...data];
 
-        // 1. FILTRI AVANZATI
+        // A. Filtri
         if (viewSettings.filters.length > 0) {
             result = result.filter(item => {
                 return viewSettings.filters.every(rule => {
@@ -70,7 +68,7 @@ export function useTableLogic<T>(
             });
         }
 
-        // 2. ORDINAMENTO
+        // B. Ordinamento
         const groupCols = viewSettings.groups.map(g => g.columnId);
         const sortRules = [
             ...groupCols.map(col => ({ columnId: col, direction: 'asc' as const })),
@@ -85,19 +83,18 @@ export function useTableLogic<T>(
                     if (valA === valB) continue;
                     if (valA === null || valA === undefined) return 1;
                     if (valB === null || valB === undefined) return -1;
+
                     let comparison = 0;
-                    if (typeof valA === 'number' && typeof valB === 'number') {
-                        comparison = valA - valB;
-                    } else {
-                        comparison = safeString(valA).localeCompare(safeString(valB));
-                    }
+                    if (typeof valA === 'number' && typeof valB === 'number') comparison = valA - valB;
+                    else comparison = safeString(valA).localeCompare(safeString(valB));
+
                     if (comparison !== 0) return rule.direction === 'asc' ? comparison : -comparison;
                 }
                 return 0;
             });
         }
 
-        // 3. RAGGRUPPAMENTO
+        // C. Raggruppamento
         if (groupCols.length === 0) {
             return result.map(item => ({ type: 'data', data: item } as ProcessedRow<T>));
         } else {
@@ -126,21 +123,41 @@ export function useTableLogic<T>(
         }
     }, [data, viewSettings, initialColumns]);
 
-    // 4. PAGINAZIONE (Calcolata sui processedRows finali)
+    // --- 2. PAGINAZIONE (Per la visualizzazione a schermo) ---
     const paginatedRows = useMemo(() => {
         const start = (pagination.page - 1) * pagination.pageSize;
         return processedRows.slice(start, start + pagination.pageSize);
     }, [processedRows, pagination]);
 
+    // --- 3. PREPARAZIONE EXPORT (Nuova logica per tutte le tabelle) ---
+    const exportableRows = useMemo(() => {
+        // Prende solo le colonne visibili
+        const visibleCols = viewSettings.columns.filter(c => c.visible);
+
+        // Prende tutte le righe di dati (escludendo header dei gruppi)
+        return processedRows
+            .filter(r => r.type === 'data')
+            .map((r: any) => {
+                const item = r.data;
+                const exportRow: Record<string, any> = {};
+
+                // Crea un nuovo oggetto usando l'etichetta (Label) come chiave
+                visibleCols.forEach(col => {
+                    // Mappa: Chiave (Excel Header) -> Valore
+                    exportRow[col.label] = item[col.id];
+                });
+
+                return exportRow;
+            });
+    }, [processedRows, viewSettings.columns]);
+
     return {
         viewSettings,
         setViewSettings,
-        // Restituisci paginatedRows per la tabella visualizzata
-        paginatedRows,
-        // Restituisci processedRows per l'export (così scarichi tutto il filtrato, non solo la pagina)
-        allFilteredRows: processedRows,
+        paginatedRows,     // Dati paginati per la UI
+        allFilteredRows: processedRows, // Dati grezzi filtrati per calcoli
+        exportableRows,    // NUOVO: Dati pronti per l'export (solo colonne visibili)
         visibleColumns: viewSettings.columns.filter(c => c.visible),
-        // Nuovi ritorni per la paginazione
         pagination,
         setPagination,
         totalRows: processedRows.length,
