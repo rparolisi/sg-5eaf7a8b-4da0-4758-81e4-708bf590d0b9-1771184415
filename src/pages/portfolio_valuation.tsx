@@ -96,7 +96,7 @@ export default function PortfolioValuation() {
     const [pythonData, setPythonData] = useState < Record < string, { price: number, dividends: number, is_live: boolean }>> ({});
     const [loadingPrices, setLoadingPrices] = useState(false);
     const [pricesError, setPricesError] = useState("");
-    const [isUpdatingMarket, setIsUpdatingMarket] = useState(false); // Nuovo stato per il bottone Update
+    const [isUpdatingMarket, setIsUpdatingMarket] = useState(false);
 
     // Filtri Sidebar
     const [filters, setFilters] = useState({ person: [] as string[], ticker: [] as string[], startDate: '', endDate: '' });
@@ -251,7 +251,8 @@ export default function PortfolioValuation() {
     const totalReturnPerc = totals.exposure !== 0 ? (totals.profit_loss / totals.exposure) * 100 : 0;
 
     // --- ACTIONS ---
-    const handleSearch = async () => {
+    // [MODIFICA] Avvolto in useCallback per poterlo usare come dipendenza
+    const handleSearch = useCallback(async () => {
         setLoadingPrices(true);
         setPricesError("");
         try {
@@ -267,10 +268,11 @@ export default function PortfolioValuation() {
             }
             setPythonData(dataMap);
         } catch (e: any) { setPricesError("Failed to fetch data."); } finally { setLoadingPrices(false); }
-    };
+    }, [filters]);
 
-    // --- NUOVA FUNZIONE: TRIGGER AGGIORNAMENTO MERCATO ---
-    const triggerUpdateMarketData = async () => {
+    // --- TRIGGER AGGIORNAMENTO MERCATO ---
+    // [MODIFICA] Avvolto in useCallback per poterlo usare come dipendenza
+    const triggerUpdateMarketData = useCallback(async () => {
         setIsUpdatingMarket(true);
         try {
             const response = await fetch(`${PYTHON_API_BASE_URL}/api/cron/update_market_data`);
@@ -278,7 +280,6 @@ export default function PortfolioValuation() {
 
             if (response.ok) {
                 alert(`Update successful! Updated ${data.tickers_updated || 0} tickers.`);
-                // Ricarica i dati locali e se necessario rilancia la ricerca prezzi
                 initData();
                 if (Object.keys(pythonData).length > 0) {
                     handleSearch();
@@ -292,7 +293,17 @@ export default function PortfolioValuation() {
         } finally {
             setIsUpdatingMarket(false);
         }
-    };
+    }, [initData, handleSearch, pythonData]);
+
+    // --- [NUOVO] EFFETTO PER IL LINK ?update=true ---
+    useEffect(() => {
+        if (router.isReady && router.query.update === 'true') {
+            triggerUpdateMarketData();
+            // Pulisce l'URL rimuovendo la query string
+            router.replace('/portfolio_valuation', undefined, { shallow: true });
+        }
+    }, [router.isReady, router.query.update, triggerUpdateMarketData, router]);
+
 
     const exportData = (format: 'csv' | 'xlsx') => {
         const ws = XLSX.utils.json_to_sheet(exportableRows);
@@ -379,8 +390,6 @@ export default function PortfolioValuation() {
         <div className="min-h-screen bg-slate-50 font-sans text-slate-900 p-6 pb-20">
             <div className="max-w-[1920px] mx-auto">
 
-                {/* --- HEADER AGGIORNATO (LAYOUT A 3 COLONNE) --- */}
-                {/* --- HEADER AGGIORNATO (LAYOUT A 3 COLONNE BILANCIATE) --- */}
                 {/* --- HEADER (Tasti a Destra) --- */}
                 <div className="flex flex-col md:flex-row flex-wrap gap-4 justify-between items-center mb-6">
 
