@@ -15,7 +15,7 @@ import * as XLSX from 'xlsx';
 // IMPORT MODULI CONDIVISI
 import { TableSettingsModal } from '../components/TableSettingsModal';
 import { useTableLogic } from '../hooks/useTableLogic';
-import { ColumnDef, SortRule } from '../types/table';
+import { ColumnDef } from '../types/table';
 
 // --- CONFIGURAZIONE ---
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
@@ -45,29 +45,65 @@ const ALL_COLUMNS: ColumnDef[] = [
 
 const PEOPLE_OPTIONS = ["Ale", "Peppe", "Raff"];
 
-// --- HEADER CELL COMPONENT (ESTRATTO PER PRESTAZIONI E FIX REACT) ---
-const HeaderCell = ({
-    col, index, rawData, activeSort, columnFilters, activeFilterCol, filterSearchTerm,
-    onSort, onResize, onMove, onToggleFilter, onFilterClick, setFilterSearchTerm, onClearFilter, setActiveFilterCol
-}: any) => {
-    const [w, setW] = useState(col.width);
-    const headerFilterRef = useRef < HTMLDivElement > (null);
+// --- COMPONENTE MULTI-SELECT ---
+const MultiSelect = ({ label, options, selected, onChange }: { label: string, options: string[], selected: string[], onChange: (val: string[]) => void }) => {
+    const [isOpen, setIsOpen] = useState(false);
+    const [searchTerm, setSearchTerm] = useState("");
+    const dropdownRef = useRef < HTMLDivElement > (null);
 
-    useEffect(() => setW(col.width), [col.width]);
-
-    // Click outside per chiudere il filtro locale
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
-            if (activeFilterCol === col.id && headerFilterRef.current && !headerFilterRef.current.contains(event.target as Node)) {
-                setActiveFilterCol(null);
+            if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+                setIsOpen(false);
+                setSearchTerm("");
             }
         };
         document.addEventListener("mousedown", handleClickOutside);
         return () => document.removeEventListener("mousedown", handleClickOutside);
-    }, [activeFilterCol, col.id, setActiveFilterCol]);
+    }, []);
 
-    const uniqueVals = useMemo(() => Array.from(new Set(rawData.map((item: any) => String(item[col.id] || '')))).sort(), [col.id, rawData]);
-    const filteredVals = uniqueVals.filter((v: string) => v.toLowerCase().includes(filterSearchTerm.toLowerCase()));
+    const toggleOption = (option: string) => {
+        if (selected.includes(option)) onChange(selected.filter(item => item !== option));
+        else onChange([...selected, option]);
+    };
+
+    const filteredOptions = options.filter(opt => opt.toLowerCase().includes(searchTerm.toLowerCase()));
+
+    return (
+        <div className="relative" ref={dropdownRef}>
+            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">{label}</label>
+            <button onClick={() => setIsOpen(!isOpen)} className="w-full p-2 border border-slate-300 rounded-lg text-sm bg-slate-50 flex justify-between items-center outline-none focus:ring-2 focus:ring-blue-500 hover:bg-white transition-colors">
+                <span className={`truncate ${selected.length === 0 ? 'text-slate-400' : 'text-slate-800'}`}>{selected.length === 0 ? `Select ${label}...` : `${selected.length} selected`}</span>
+                <ChevronDown size={16} className={`text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+            </button>
+            {isOpen && (
+                <div className="absolute top-full left-0 w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-xl z-50 overflow-hidden flex flex-col max-h-60">
+                    <div className="p-2 border-b border-slate-100 bg-white sticky top-0 z-10">
+                        <div className="relative"><Search size={14} className="absolute left-2.5 top-2.5 text-slate-400" /><input type="text" autoFocus className="w-full pl-8 pr-3 py-1.5 text-sm border border-slate-200 rounded-md focus:ring-2 focus:ring-blue-500 outline-none bg-slate-50" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} /></div>
+                    </div>
+                    <div className="overflow-y-auto flex-1 custom-scrollbar">
+                        {filteredOptions.length > 0 ? filteredOptions.map(option => {
+                            const isSelected = selected.includes(option);
+                            return (
+                                <div key={option} onClick={() => toggleOption(option)} className="px-3 py-2 flex items-center gap-2 cursor-pointer hover:bg-blue-50 transition-colors text-sm text-slate-700 border-l-2 border-transparent hover:border-blue-500">
+                                    <div className={`w-4 h-4 border rounded flex items-center justify-center flex-shrink-0 ${isSelected ? 'bg-blue-600 border-blue-600' : 'border-slate-300'}`}>{isSelected && <Check size={12} className="text-white" />}</div><span className="truncate">{option}</span>
+                                </div>
+                            );
+                        }) : <div className="px-4 py-3 text-xs text-slate-400 italic text-center">No results found</div>}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
+// --- HEADER CELL COMPONENT (SEMPLIFICATO: SOLO SORT, RESIZE, DRAG) ---
+const HeaderCell = ({
+    col, index, activeSort, onSort, onResize, onMove
+}: any) => {
+    const [w, setW] = useState(col.width);
+
+    useEffect(() => setW(col.width), [col.width]);
 
     const handleDragStart = (e: React.DragEvent) => { e.dataTransfer.setData("colIndex", index.toString()); e.dataTransfer.effectAllowed = "move"; };
     const handleDrop = (e: React.DragEvent) => { e.preventDefault(); const fromIndex = parseInt(e.dataTransfer.getData("colIndex")); onMove(fromIndex, index); };
@@ -82,29 +118,15 @@ const HeaderCell = ({
 
     return (
         <th style={{ width: w }} draggable onDragStart={handleDragStart} onDragOver={e => e.preventDefault()} onDrop={handleDrop} className={`px-4 py-3 relative group cursor-grab active:cursor-grabbing select-none hover:bg-slate-100 ${col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left'}`}>
-            <div className={`flex items-center gap-2 ${col.align === 'right' ? 'justify-end' : col.align === 'center' ? 'justify-center' : 'justify-start'}`}>
-                <span onClick={() => onSort(col.id)} className="cursor-pointer font-bold flex items-center gap-1 hover:text-blue-600 text-xs uppercase tracking-wider text-gray-600">
+            <div className={`flex items-center gap-2 ${col.align === 'right' ? 'justify-end' : col.align === 'center' ? 'justify-center' : 'justify-start'}`} onClick={() => onSort(col.id)}>
+                <span className="cursor-pointer font-bold flex items-center gap-1 hover:text-blue-600 text-xs uppercase tracking-wider text-gray-600">
                     {col.label} {activeSort && (activeSort.direction === 'asc' ? <ArrowUp size={12} /> : <ArrowDown size={12} />)}
                 </span>
-                <button onClick={(e) => { e.stopPropagation(); onFilterClick(col.id); }} className={`p-1 rounded hover:bg-slate-200 transition-opacity ${activeFilterCol === col.id || columnFilters[col.id]?.length ? 'opacity-100 text-blue-600' : 'opacity-0 group-hover:opacity-100 text-slate-400'}`}><Filter size={12} fill={columnFilters[col.id]?.length ? "currentColor" : "none"} /></button>
             </div>
-            {activeFilterCol === col.id && (
-                <div ref={headerFilterRef} className="absolute top-full left-0 mt-2 w-56 bg-white rounded-lg shadow-xl border border-slate-200 z-50 p-2 cursor-default text-left font-normal" onClick={e => e.stopPropagation()}>
-                    <div className="relative mb-2"><Search size={12} className="absolute left-2 top-2.5 text-slate-400" /><input autoFocus type="text" placeholder="Search..." className="w-full pl-7 pr-2 py-1.5 text-xs border border-slate-200 rounded focus:ring-1 focus:ring-blue-500 outline-none" value={filterSearchTerm} onChange={e => setFilterSearchTerm(e.target.value)} /></div>
-                    <div className="max-h-40 overflow-y-auto space-y-1 custom-scrollbar">
-                        {filteredVals.map((val: string) => {
-                            const isSel = columnFilters[col.id]?.includes(val);
-                            return (<label key={val} className="flex items-center gap-2 px-2 py-1 hover:bg-slate-50 rounded cursor-pointer text-xs"><div className={`w-3 h-3 border rounded flex items-center justify-center ${isSel ? 'bg-blue-600 border-blue-600' : 'border-slate-300'}`}>{isSel && <Check size={10} className="text-white" />}</div><span className="truncate">{val || '(Empty)'}</span><input type="checkbox" className="hidden" checked={!!isSel} onChange={() => onToggleFilter(col.id, val)} /></label>)
-                        })}
-                    </div>
-                    <div className="pt-2 mt-2 border-t border-slate-100 flex justify-between"><button onClick={() => onClearFilter(col.id)} className="text-xs text-slate-500 hover:text-slate-800">Clear</button><button onClick={() => setActiveFilterCol(null)} className="text-xs text-blue-600 font-medium">Done</button></div>
-                </div>
-            )}
             <div onMouseDown={onMouseDown} onClick={e => e.stopPropagation()} className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-blue-400 group-hover:bg-slate-300 transition-colors z-10" />
         </th>
     );
 };
-
 
 export default function Transactions() {
     const router = useRouter();
@@ -114,9 +136,7 @@ export default function Transactions() {
     const [error, setError] = useState < string | null > (null);
 
     // --- VIEW SETTINGS & LOGIC ---
-    const [columnFilters, setColumnFilters] = useState < Record < string, string[]>> ({});
-    const [activeFilterCol, setActiveFilterCol] = useState < string | null > (null);
-    const [filterSearchTerm, setFilterSearchTerm] = useState("");
+    // Rimossi columnFilters (header filters)
 
     // UI States
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -125,9 +145,18 @@ export default function Transactions() {
     const [isPlotModalOpen, setIsPlotModalOpen] = useState(false);
     const [plotConfig, setPlotConfig] = useState({ x: 'operation_date', y: 'total_outlay_eur' });
 
+    // Sidebar Filters
+    const [filters, setFilters] = useState({
+        person: [] as string[],
+        ticker: [] as string[],
+        startDate: '',
+        endDate: ''
+    });
+
     // Refs
     const downloadRef = useRef < HTMLDivElement > (null);
 
+    // Stato Form Add
     const [formData, setFormData] = useState({
         type: 'Buy', people: [] as string[], security: '', date: new Date().toISOString().split('T')[0],
         price: '', currency: 'EUR', exchange_rate: '1', shares_single: '', shares_multi: {} as Record<string, string>,
@@ -181,11 +210,35 @@ export default function Transactions() {
 
     useEffect(() => { if (supabase) fetchTransactions(); }, [supabase, fetchTransactions]);
 
+    useEffect(() => {
+        if (router.isReady && router.query.add === 'true') {
+            setIsModalOpen(true);
+            router.replace('/transactions', undefined, { shallow: true });
+        }
+    }, [router.isReady, router.query.add]);
+
+    // --- PRE-FILTERING (SIDEBAR) ---
+    const filteredTransactions = useMemo(() => {
+        if (rawTransactions.length === 0) return [];
+        return rawTransactions.filter(t => {
+            if (filters.person.length && !filters.person.includes(t.person)) return false;
+            if (filters.ticker.length && !filters.ticker.includes(t.ticker)) return false;
+            const tDate = t.operation_date ? String(t.operation_date).split('T')[0] : '';
+            if (filters.startDate && tDate < filters.startDate) return false;
+            if (filters.endDate && tDate > filters.endDate) return false;
+            return true;
+        });
+    }, [rawTransactions, filters]);
+
+    const uniqueOptions = useMemo(() => {
+        const getUnique = (key: string) => Array.from(new Set(rawTransactions.map(t => t[key]).filter(Boolean))).sort();
+        return { people: getUnique('person'), tickers: getUnique('ticker') };
+    }, [rawTransactions]);
+
     // --- HOOK TABLE LOGIC ---
-    // Passiamo rawTransactions direttamente. L'hook gestisce tutto (filtri, sort, group).
     const {
         viewSettings, setViewSettings, processedRows, visibleColumns
-    } = useTableLogic(rawTransactions, ALL_COLUMNS, columnFilters);
+    } = useTableLogic(filteredTransactions, ALL_COLUMNS); // Rimosso columnFilters
 
     // --- CALCOLO TOTALI ---
     const totals = useMemo(() => {
@@ -220,30 +273,20 @@ export default function Transactions() {
     };
 
     const handleResize = useCallback((idx: number, w: number) => {
-        setViewSettings(prev => { const cols = [...prev.columns]; cols[idx] = { ...cols[idx], width: w }; return { ...prev, columns: cols }; });
+        setViewSettings(prev => {
+            const cols = [...prev.columns]; cols[idx] = { ...cols[idx], width: w }; return { ...prev, columns: cols };
+        });
     }, []);
 
     const moveColumn = useCallback((from: number, to: number) => {
         if (from === to) return;
-        setViewSettings(prev => { const cols = [...prev.columns]; const [moved] = cols.splice(from, 1); cols.splice(to, 0, moved); return { ...prev, columns: cols }; });
+        setViewSettings(prev => {
+            const cols = [...prev.columns]; const [moved] = cols.splice(from, 1); cols.splice(to, 0, moved); return { ...prev, columns: cols };
+        });
     }, []);
 
-    const toggleColumnFilter = (colKey: string, value: string) => {
-        setColumnFilters(prev => {
-            const current = prev[colKey] || [];
-            const updated = current.includes(value) ? current.filter(v => v !== value) : [...current, value];
-            return { ...prev, [colKey]: updated };
-        });
-    };
-
-    const handleHeaderFilterClick = (colKey: string | null) => {
-        setActiveFilterCol(colKey);
-        setFilterSearchTerm("");
-    };
-
-    const handleClearColFilter = (colKey: string) => {
-        setColumnFilters(prev => ({ ...prev, [colKey]: [] }));
-    };
+    const handleFilterChange = (key: keyof typeof filters, val: any) => setFilters(prev => ({ ...prev, [key]: val }));
+    const clearFilters = () => setFilters({ person: [], ticker: [], startDate: '', endDate: '' });
 
     // --- FORM ACTIONS ---
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
@@ -263,6 +306,13 @@ export default function Transactions() {
         });
     };
 
+    const handleMultiShareChange = (person: string, value: string) => {
+        setFormData(prev => ({
+            ...prev,
+            shares_multi: { ...prev.shares_multi, [person]: value }
+        }));
+    };
+
     const handleSubmit = async () => {
         if (formData.people.length === 0 || !formData.security || !formData.price) {
             alert("Please fill required fields."); return;
@@ -274,7 +324,10 @@ export default function Transactions() {
             });
             const result = await response.json();
             if (!response.ok) throw new Error(result.detail || "Error");
-            alert(result.message); setIsModalOpen(false); await fetchTransactions();
+
+            alert(result.message);
+            setIsModalOpen(false);
+            await fetchTransactions();
         } catch (e: any) { alert(`Error: ${e.message}`); } finally { setLoading(false); }
     };
 
@@ -323,75 +376,93 @@ export default function Transactions() {
                     </div>
                 </div>
 
-                <div className="flex flex-col gap-6">
-                    {error && <div className="bg-red-50 border border-red-200 text-red-700 p-3 rounded-lg text-sm flex items-center gap-2"><AlertTriangle size={16} /> {error}</div>}
+                <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 mb-8">
+                    {/* FILTERS SIDEBAR */}
+                    <div className="lg:col-span-1 space-y-4">
+                        <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+                            <div className="flex items-center justify-between mb-4 border-b border-slate-100 pb-2">
+                                <div className="flex items-center gap-2 text-slate-800 font-semibold"><Filter size={18} /> Filters</div>
+                                {(filters.person.length > 0 || filters.ticker.length > 0) && <button onClick={clearFilters} className="text-xs text-red-500 hover:underline flex items-center gap-1"><XCircle size={12} /> Clear</button>}
+                            </div>
+                            <div className="space-y-4">
+                                <MultiSelect label="Person" options={uniqueOptions.people} selected={filters.person} onChange={(val) => handleFilterChange('person', val)} />
+                                <MultiSelect label="Ticker" options={uniqueOptions.tickers} selected={filters.ticker} onChange={(val) => handleFilterChange('ticker', val)} />
+                                <div className="pt-2 border-t border-slate-100">
+                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-2"><Calendar size={12} className="inline mr-1" /> Date Range</label>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <input type="date" className="w-full p-2 border border-slate-300 rounded text-xs" value={filters.startDate} onChange={(e) => handleFilterChange('startDate', e.target.value)} />
+                                        <input type="date" className="w-full p-2 border border-slate-300 rounded text-xs" value={filters.endDate} onChange={(e) => handleFilterChange('endDate', e.target.value)} />
+                                    </div>
+                                </div>
+                                <button onClick={() => fetchTransactions()} disabled={loading} className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-lg font-bold shadow-md transition-all active:scale-95 disabled:opacity-50 mt-4">
+                                    {loading ? <Loader2 size={18} className="animate-spin" /> : <Search size={18} />} Search Prices
+                                </button>
+                            </div>
+                        </div>
+                    </div>
 
-                    <div className="bg-white rounded-xl shadow-lg border border-slate-200 overflow-hidden relative min-h-[500px]">
-                        {loading && <div className="absolute inset-0 bg-white/80 z-20 flex flex-col items-center justify-center text-slate-500"><Loader2 size={32} className="animate-spin text-blue-600 mb-2" /> <p>Loading...</p></div>}
-                        <div className="overflow-x-auto min-h-[500px]">
-                            <table className="w-full text-sm text-left border-collapse">
-                                <thead className="bg-slate-50 text-slate-500 font-semibold uppercase text-[11px] tracking-wider border-b border-slate-200">
-                                    <tr>
-                                        {visibleColumns.map((col, i) => (
-                                            <HeaderCell
-                                                key={col.id}
-                                                col={col}
-                                                index={i}
-                                                rawData={rawTransactions}
-                                                activeSort={viewSettings.sorts.find(s => s.columnId === col.id)}
-                                                columnFilters={columnFilters}
-                                                activeFilterCol={activeFilterCol}
-                                                filterSearchTerm={filterSearchTerm}
-                                                onSort={handleSort}
-                                                onResize={handleResize}
-                                                onMove={moveColumn}
-                                                onToggleFilter={toggleColumnFilter}
-                                                onFilterClick={handleHeaderFilterClick}
-                                                setFilterSearchTerm={setFilterSearchTerm}
-                                                onClearFilter={handleClearColFilter}
-                                                setActiveFilterCol={setActiveFilterCol}
-                                            />
-                                        ))}
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-slate-100">
-                                    {processedRows.map((row: any, idx: number) => {
-                                        if (row.type === 'group_header') {
-                                            return (<tr key={`group-${idx}`} className="bg-gray-100 border-t border-gray-300"><td colSpan={visibleColumns.length} className="px-4 py-2 font-bold text-gray-700"><div className="flex items-center gap-2" style={{ paddingLeft: `${row.level * 20}px` }}><ChevronRight size={16} /> <span className="text-xs uppercase text-gray-500">{row.field}:</span> {row.value}</div></td></tr>);
-                                        }
-                                        const item = row.data;
-                                        return (
-                                            <tr key={item.transaction_id || idx} className="hover:bg-slate-50/50 transition-colors">
-                                                {visibleColumns.map(col => {
-                                                    const alignClass = col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left';
-                                                    let val = item[col.id];
-                                                    let content: React.ReactNode = fmt(val, col.type);
+                    {/* TABLE */}
+                    <div className="lg:col-span-3 flex flex-col gap-6">
+                        {error && <div className="bg-red-50 border border-red-200 text-red-700 p-3 rounded-lg text-sm flex items-center gap-2"><AlertTriangle size={16} /> {error}</div>}
 
-                                                    if (col.id === 'buy_or_sell') content = <span className={`px-2 py-1 rounded-full text-xs font-medium ${val === 'Buy' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>{item.category || val}</span>;
-                                                    else if (col.id === 'ticker') content = <span className="font-bold text-slate-800">{val}</span>;
+                        <div className="bg-white rounded-xl shadow-lg border border-slate-200 overflow-hidden relative min-h-[500px]">
+                            {loading && <div className="absolute inset-0 bg-white/80 z-20 flex flex-col items-center justify-center text-slate-500"><Loader2 size={32} className="animate-spin text-blue-600 mb-2" /> <p>Loading...</p></div>}
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-sm text-left border-collapse">
+                                    <thead className="bg-slate-50 text-slate-500 font-semibold uppercase text-[11px] tracking-wider border-b border-slate-200">
+                                        <tr>
+                                            {visibleColumns.map((col, i) => (
+                                                <HeaderCell
+                                                    key={col.id}
+                                                    col={col}
+                                                    index={i}
+                                                    activeSort={viewSettings.sorts.find(s => s.columnId === col.id)}
+                                                    onSort={handleSort}
+                                                    onResize={handleResize}
+                                                    onMove={moveColumn}
+                                                />
+                                            ))}
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {processedRows.map((row: any, idx: number) => {
+                                            if (row.type === 'group_header') {
+                                                return (<tr key={`group-${idx}`} className="bg-gray-100 border-t border-gray-300"><td colSpan={visibleColumns.length} className="px-4 py-2 font-bold text-gray-700"><div className="flex items-center gap-2" style={{ paddingLeft: `${row.level * 20}px` }}><ChevronRight size={16} /> <span className="text-xs uppercase text-gray-500">{row.field}:</span> {row.value}</div></td></tr>);
+                                            }
+                                            const item = row.data;
+                                            return (
+                                                <tr key={item.transaction_id || idx} className="hover:bg-slate-50/50 transition-colors">
+                                                    {visibleColumns.map(col => {
+                                                        const alignClass = col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left';
+                                                        let val = item[col.id];
+                                                        let content: React.ReactNode = fmt(val, col.type);
 
-                                                    return <td key={col.id} className={`px-4 py-3 ${alignClass}`}>{content}</td>;
-                                                })}
-                                            </tr>
-                                        );
-                                    })}
-                                </tbody>
-                                {/* FOOTER TOTALI */}
-                                {processedRows.some((r: any) => r.type === 'data') && (
-                                    <tfoot className="bg-slate-50 border-t-2 border-slate-200 font-bold text-slate-800 sticky bottom-0">
-                                        <tr>{visibleColumns.map(col => {
-                                            const alignClass = col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left';
-                                            let content: React.ReactNode = '';
-                                            if (col.id === 'ticker') content = "TOTAL";
-                                            else if (col.id === 'total_outlay_eur') content = fmt(totals.total_outlay_eur, 'number');
-                                            else if (col.id === 'shares_count') content = fmt(totals.shares_count, 'number');
-                                            else if (col.id === 'transaction_fees_eur') content = fmt(totals.transaction_fees_eur, 'number');
-                                            else if (col.id === 'transaction_taxes_eur') content = fmt(totals.transaction_taxes_eur, 'number');
-                                            return <td key={col.id} className={`px-4 py-3 ${alignClass}`}>{content}</td>;
-                                        })}</tr>
-                                    </tfoot>
-                                )}
-                            </table>
+                                                        if (col.id === 'buy_or_sell') content = <span className={`px-2 py-1 rounded-full text-xs font-medium ${val === 'Buy' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>{item.category || val}</span>;
+                                                        else if (col.id === 'ticker') content = <span className="font-bold text-slate-800">{val}</span>;
+
+                                                        return <td key={col.id} className={`px-4 py-3 ${alignClass}`}>{content}</td>;
+                                                    })}
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                    {/* FOOTER TOTALI */}
+                                    {processedRows.some((r: any) => r.type === 'data') && (
+                                        <tfoot className="bg-slate-50 border-t-2 border-slate-200 font-bold text-slate-800 sticky bottom-0">
+                                            <tr>{visibleColumns.map(col => {
+                                                const alignClass = col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left';
+                                                let content: React.ReactNode = '';
+                                                if (col.id === 'ticker') content = "TOTAL";
+                                                else if (col.id === 'total_outlay_eur') content = fmt(totals.total_outlay_eur, 'number');
+                                                else if (col.id === 'shares_count') content = fmt(totals.shares_count, 'number');
+                                                else if (col.id === 'transaction_fees_eur') content = fmt(totals.transaction_fees_eur, 'number');
+                                                else if (col.id === 'transaction_taxes_eur') content = fmt(totals.transaction_taxes_eur, 'number');
+                                                return <td key={col.id} className={`px-4 py-3 ${alignClass}`}>{content}</td>;
+                                            })}</tr>
+                                        </tfoot>
+                                    )}
+                                </table>
+                            </div>
                         </div>
                     </div>
                 </div>
