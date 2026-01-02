@@ -4,7 +4,7 @@ import { createClient } from '@supabase/supabase-js';
 import {
     ArrowLeft, BarChart3, Settings, Filter, ChevronDown, Check, Search,
     TrendingUp, Download, Image as ImageIcon, FileText, FileSpreadsheet, Loader2,
-    CheckSquare, Square
+    CheckSquare, Square, Info
 } from 'lucide-react';
 import {
     LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Area, ComposedChart, ReferenceLine
@@ -49,40 +49,27 @@ const MultiSelect = ({ label, options, selected, onChange }: { label: string, op
         onChange(selected.includes(option) ? selected.filter(i => i !== option) : [...selected, option]);
     };
 
-    // Filtra le opzioni in base alla ricerca
     const filtered = options.filter(o => o.toLowerCase().includes(searchTerm.toLowerCase()));
-
-    // Gestione "Select All" / "Deselect All" (basato sui risultati filtrati)
     const isAllFilteredSelected = filtered.length > 0 && filtered.every(o => selected.includes(o));
 
     const handleSelectAll = () => {
         if (isAllFilteredSelected) {
-            // Deseleziona quelli visibili
             onChange(selected.filter(s => !filtered.includes(s)));
         } else {
-            // Seleziona quelli visibili (mantenendo quelli già selezionati non visibili)
             onChange(Array.from(new Set([...selected, ...filtered])));
         }
     };
 
-    // Gestione Paste da Clipboard (Spazi, Tab, Virgole, Newlines)
     const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
         e.preventDefault();
         const text = e.clipboardData.getData('text');
         if (!text) return;
-
-        // Splitta per qualsiasi spazio bianco o virgola
         const tokens = text.split(/[\s,]+/).map(t => t.trim()).filter(Boolean);
-
-        // Trova quali token corrispondono a opzioni valide (case insensitive)
         const validTokens = options.filter(opt =>
             tokens.some(t => t.toLowerCase() === opt.toLowerCase())
         );
-
         if (validTokens.length > 0) {
-            // Aggiungi alla selezione esistente
             onChange(Array.from(new Set([...selected, ...validTokens])));
-            // Opzionale: Feedback visivo o clear search
             setSearchTerm("");
         }
     };
@@ -96,7 +83,6 @@ const MultiSelect = ({ label, options, selected, onChange }: { label: string, op
             </button>
             {isOpen && (
                 <div className="absolute top-full left-0 w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-xl z-50 overflow-hidden flex flex-col max-h-60">
-                    {/* Header con Search e Select All */}
                     <div className="p-2 border-b border-slate-100 bg-white sticky top-0 flex flex-col gap-2">
                         <div className="relative">
                             <Search size={14} className="absolute left-2.5 top-2.5 text-slate-400" />
@@ -120,8 +106,6 @@ const MultiSelect = ({ label, options, selected, onChange }: { label: string, op
                             </button>
                         )}
                     </div>
-
-                    {/* Lista Opzioni */}
                     <div className="overflow-y-auto flex-1 custom-scrollbar">
                         {filtered.length > 0 ? filtered.map(o => (
                             <div key={o} onClick={() => toggleOption(o)} className="px-3 py-2 flex items-center gap-2 cursor-pointer hover:bg-blue-50 text-sm text-slate-700 hover:text-blue-600 transition-colors">
@@ -150,7 +134,7 @@ export default function PortfolioPlotPage() {
     const [visibleSeries, setVisibleSeries] = useState({
         grossValue: true,
         exposure: true,
-        plArea: false, // Area Profit/Loss (Verde/Rossa tra le linee)
+        plArea: false,
         marketValue: false,
         dividends: false
     });
@@ -170,7 +154,6 @@ export default function PortfolioPlotPage() {
         const loadData = async () => {
             setLoading(true);
             try {
-                // FIX: Aggiunto .limit(10000) per evitare che Supabase tagli i dati a 1000 righe
                 const { data } = await supabase
                     .from('transactions')
                     .select('transaction_id, operation_date, ticker, person, category')
@@ -201,7 +184,7 @@ export default function PortfolioPlotPage() {
         loadData();
     }, []);
 
-    // 2. Opzioni per i filtri
+    // 2. Opzioni per i filtri e Calcoli Stats
     const options = useMemo(() => {
         const getU = (k: string) => Array.from(new Set(transactions.map(t => t[k]).filter(Boolean))).sort();
         return {
@@ -209,6 +192,26 @@ export default function PortfolioPlotPage() {
             tickers: getU('ticker')
         };
     }, [transactions]);
+
+    // Calcolo Statistiche (Spostato qui come richiesto)
+    const getStats = () => {
+        const numPeople = filters.person.length > 0 ? filters.person.length : options.people.length;
+        const numTickers = filters.ticker.length > 0 ? filters.ticker.length : options.tickers.length;
+
+        let days = 0;
+        if (filters.startDate && filters.endDate) {
+            const start = new Date(filters.startDate);
+            const end = new Date(filters.endDate);
+            const diffTime = end.getTime() - start.getTime();
+            days = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+            if (days < 0) days = 0;
+        }
+
+        const totalPoints = numPeople * numTickers * days;
+        return { numPeople, numTickers, days, totalPoints };
+    };
+
+    const stats = getStats();
 
     // 3. Calcolo e Fetch Dati Storici
     const handlePlot = async () => {
@@ -251,16 +254,10 @@ export default function PortfolioPlotPage() {
                 const gross = d.market_value + (d.dividends || 0);
                 const exp = d.exposure;
 
-                // Logica per le aree "fill between":
-                // Se Gross > Exposure (Profitto): Range [Exposure, Gross]
-                // Se Gross < Exposure (Perdita): Range [Gross, Exposure]
-
                 return {
                     ...d,
                     gross_value: gross,
-                    // Area Verde: esiste solo se Gross > Exposure
                     profit_area: gross >= exp ? [exp, gross] : [exp, exp],
-                    // Area Rossa: esiste solo se Gross < Exposure
                     loss_area: gross < exp ? [gross, exp] : [exp, exp]
                 };
             });
@@ -366,6 +363,20 @@ export default function PortfolioPlotPage() {
                                     <input type="date" className="w-full p-2 border border-slate-300 rounded text-xs focus:ring-2 focus:ring-blue-500 outline-none" value={filters.startDate} onChange={e => setFilters({ ...filters, startDate: e.target.value })} />
                                     <input type="date" className="w-full p-2 border border-slate-300 rounded text-xs focus:ring-2 focus:ring-blue-500 outline-none" value={filters.endDate} onChange={e => setFilters({ ...filters, endDate: e.target.value })} />
                                 </div>
+
+                                {/* NUOVA SEZIONE STATISTICHE CALCOLATE */}
+                                <div className="mt-3 p-2 bg-slate-50 rounded border border-slate-200 text-xs space-y-1">
+                                    <div className="flex justify-between">
+                                        <span className="text-slate-500">Days:</span>
+                                        <span className="font-semibold text-slate-700">{stats.days}</span>
+                                    </div>
+                                    <div className="flex justify-between border-t border-slate-200 pt-1 mt-1">
+                                        <span className="text-slate-500 flex items-center gap-1" title="People * Tickers * Days">
+                                            Total Points <Info size={10} />:
+                                        </span>
+                                        <span className="font-bold text-blue-600">{stats.totalPoints.toLocaleString()}</span>
+                                    </div>
+                                </div>
                             </div>
 
                             <button
@@ -404,12 +415,10 @@ export default function PortfolioPlotPage() {
                                         <Tooltip
                                             contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)', padding: '12px' }}
                                             formatter={(v: number, name: string) => {
-                                                // Nascondi tooltip per le aree "range" che servono solo per il colore
                                                 if (name.includes('Area')) return [null, null];
                                                 return [v.toLocaleString('it-IT', { style: 'currency', currency: 'EUR' }), name];
                                             }}
                                             labelStyle={{ color: '#1e293b', fontWeight: 'bold', marginBottom: '8px' }}
-                                            // Filtra le righe del tooltip che sono null (le aree di background)
                                             filterNull={true}
                                         />
                                         <Legend wrapperStyle={{ paddingTop: '20px' }} iconType="circle" />
@@ -418,7 +427,6 @@ export default function PortfolioPlotPage() {
                                         {/* AREE P&L (SOTTOSTANTI LE LINEE) */}
                                         {visibleSeries.plArea && (
                                             <>
-                                                {/* Area Verde (Profitto: Tra Exp e Gross) */}
                                                 <Area
                                                     type="monotone"
                                                     dataKey="profit_area"
@@ -429,7 +437,6 @@ export default function PortfolioPlotPage() {
                                                     activeDot={false}
                                                     isAnimationActive={false}
                                                 />
-                                                {/* Area Rossa (Perdita: Tra Gross e Exp) */}
                                                 <Area
                                                     type="monotone"
                                                     dataKey="loss_area"
@@ -508,10 +515,9 @@ export default function PortfolioPlotPage() {
                             )}
                         </div>
                     </div>
-                    {/* Stats Footer */}
+                    {/* Stats Footer - Pulito come richiesto */}
                     {chartData.length > 0 && (
-                        <div className="flex justify-between text-xs text-slate-400 px-2 mt-2">
-                            <span>{chartData.length} daily points calculated</span>
+                        <div className="flex justify-end text-xs text-slate-400 px-2 mt-2">
                             <span>Source: Yahoo Finance & Internal DB</span>
                         </div>
                     )}
@@ -537,7 +543,6 @@ export default function PortfolioPlotPage() {
                                     <span className="capitalize text-sm font-medium text-slate-600 group-hover:text-slate-900 transition-colors">
                                         {k.replace(/([A-Z])/g, ' $1').replace('plArea', 'Profit/Loss Area').trim()}
                                     </span>
-                                    {/* Pallino colore legenda */}
                                     <div className="ml-auto w-2 h-2 rounded-full" style={{
                                         backgroundColor: k === 'plArea' ? COLORS.plAreaPos : COLORS[k as keyof typeof COLORS],
                                         background: k === 'plArea' ? `linear-gradient(90deg, ${COLORS.plAreaPos} 50%, ${COLORS.plAreaNeg} 50%)` : undefined
