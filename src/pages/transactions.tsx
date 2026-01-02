@@ -5,7 +5,7 @@ import {
     Plus, Search, Filter, Settings, Download, X,
     TrendingUp, TrendingDown, GripVertical, Check, ArrowUp, ArrowDown, ChevronRight,
     FileText, FileSpreadsheet, List, LineChart as LineChartIcon, BarChart3, AlertTriangle, Info,
-    Calendar // <--- AGGIUNTO QUI
+    Calendar, Loader2 // <--- AGGIUNTO ANCHE QUESTO
 } from 'lucide-react';
 import {
     LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
@@ -82,14 +82,11 @@ const MultiSelect = ({ label, options, selected, onChange }: { label: string, op
                         <div className="relative"><Search size={14} className="absolute left-2.5 top-2.5 text-slate-400" /><input type="text" autoFocus className="w-full pl-8 pr-3 py-1.5 text-sm border border-slate-200 rounded-md focus:ring-2 focus:ring-blue-500 outline-none bg-slate-50" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} /></div>
                     </div>
                     <div className="overflow-y-auto flex-1 custom-scrollbar">
-                        {filteredOptions.length > 0 ? filteredOptions.map(option => {
-                            const isSelected = selected.includes(option);
-                            return (
-                                <div key={option} onClick={() => toggleOption(option)} className="px-3 py-2 flex items-center gap-2 cursor-pointer hover:bg-blue-50 transition-colors text-sm text-slate-700 border-l-2 border-transparent hover:border-blue-500">
-                                    <div className={`w-4 h-4 border rounded flex items-center justify-center flex-shrink-0 ${isSelected ? 'bg-blue-600 border-blue-600' : 'border-slate-300'}`}>{isSelected && <Check size={12} className="text-white" />}</div><span className="truncate">{option}</span>
-                                </div>
-                            );
-                        }) : <div className="px-4 py-3 text-xs text-slate-400 italic text-center">No results found</div>}
+                        {filteredOptions.length > 0 ? filteredOptions.map(o => (
+                            <div key={o} onClick={() => toggleOption(o)} className="px-3 py-2 flex items-center gap-2 cursor-pointer hover:bg-blue-50 transition-colors text-sm text-slate-700 border-l-2 border-transparent hover:border-blue-500">
+                                <div className={`w-4 h-4 border rounded flex items-center justify-center flex-shrink-0 ${isSelected ? 'bg-blue-600 border-blue-600' : 'border-slate-300'}`}>{isSelected && <Check size={12} className="text-white" />}</div><span className="truncate">{o}</span>
+                            </div>
+                        )) : <div className="px-4 py-3 text-xs text-slate-400 italic text-center">No results found</div>}
                     </div>
                 </div>
             )}
@@ -251,7 +248,6 @@ export default function Transactions() {
 
     // --- ACTIONS ---
     const handleSort = (key: string) => {
-        // Quick sort override
         const currentSort = viewSettings.sorts.find(s => s.columnId === key);
         const newDirection = currentSort?.direction === 'asc' ? 'desc' : 'asc';
         setViewSettings(prev => ({
@@ -323,7 +319,6 @@ export default function Transactions() {
 
             alert(result.message);
             setIsModalOpen(false);
-            // Reset form...
             await fetchTransactions();
         } catch (e: any) { alert(`Error: ${e.message}`); } finally { setLoading(false); }
     };
