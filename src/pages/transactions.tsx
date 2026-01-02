@@ -3,8 +3,8 @@ import { useRouter } from 'next/router';
 import { createClient } from '@supabase/supabase-js';
 import {
     Plus, Settings, Download, X,
-    TrendingUp, TrendingDown, ArrowUp, ArrowDown, ChevronRight,
-    FileText, FileSpreadsheet, LineChart as LineChartIcon, BarChart3, AlertTriangle,
+    ArrowUp, ArrowDown, ChevronRight, Check,
+    FileText, FileSpreadsheet, LineChart as LineChartIcon, AlertTriangle,
     Loader2
 } from 'lucide-react';
 import {
@@ -45,7 +45,7 @@ const ALL_COLUMNS: ColumnDef[] = [
 
 const PEOPLE_OPTIONS = ["Ale", "Peppe", "Raff"];
 
-// --- HEADER CELL COMPONENT (Minimalista) ---
+// --- HEADER CELL COMPONENT (Minimalista: Solo Sort, Resize, Drag) ---
 const HeaderCell = ({
     col, index, activeSort, onSort, onResize, onMove
 }: any) => {
@@ -155,7 +155,7 @@ export default function Transactions() {
     }, [router.isReady, router.query.add]);
 
     // --- HOOK TABLE LOGIC ---
-    // Passiamo direttamente rawTransactions. L'hook si occupa di filtrare in base ai settings.
+    // Passiamo rawTransactions direttamente. L'hook gestisce tutto (filtri, sort, group).
     const {
         viewSettings, setViewSettings, processedRows, visibleColumns
     } = useTableLogic(rawTransactions, ALL_COLUMNS);
