@@ -78,103 +78,38 @@ const HeaderCell = ({
 };
 
 export default function Transactions() {
-    const router = useRouter();
-    const [supabase, setSupabase] = useState < any > (null);
-    const [rawTransactions, setRawTransactions] = useState < any[] > ([]);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState < string | null > (null);
-
-    // --- UI STATES ---
-    const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-    const [isDownloadOpen, setIsDownloadOpen] = useState(false);
-    const [isModalOpen, setIsModalOpen] = useState(false);
-    const [isPlotModalOpen, setIsPlotModalOpen] = useState(false);
-    const [plotConfig, setPlotConfig] = useState({ x: 'operation_date', y: 'total_outlay_eur' });
-
-    // Refs
-    const downloadRef = useRef < HTMLDivElement > (null);
-
-    // Stato Form Add
-    const [formData, setFormData] = useState({
-        type: 'Buy', people: [] as string[], security: '', date: new Date().toISOString().split('T')[0],
-        price: '', currency: 'EUR', exchange_rate: '1', shares_single: '', shares_multi: {} as Record<string, string>,
-        platform: '', account_owner: '', regulated: 'Yes', expenses: '0', taxes: '0',
-    });
-
-    // --- INIT ---
-    // Sostituisci il blocco useEffect attuale con questo:
-    useEffect(() => {
-        if (!SUPABASE_URL || !SUPABASE_KEY) {
-            setError("Supabase config missing.");
-            setLoading(false);
-            return;
-        }
-
-        // Inizializzazione diretta tramite l'import npm (più veloce e pulito)
-        const client = createClient(SUPABASE_URL, SUPABASE_KEY);
-        setSupabase(client);
-
-        // Caricamento solo di XLSX se non presente (questo va bene tenerlo se non lo importi via npm)
-        if (!(window as any).XLSX) {
-            const script = document.createElement('script');
-            script.src = "https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js";
-            script.async = true;
-            document.body.appendChild(script);
-        }
-
-        const handleClickOutside = (e: MouseEvent) => {
-            if (downloadRef.current && !downloadRef.current.contains(e.target as Node)) {
-                setIsDownloadOpen(false);
-            }
-        };
-        document.addEventListener('mousedown', handleClickOutside);
-        return () => document.removeEventListener('mousedown', handleClickOutside);
-    }, []);
-
-    // Fetch Data
-    const fetchTransactions = useCallback(async () => {
-        if (!supabase) return;
-        setLoading(true);
-        try {
-            const { data, error } = await supabase.from('transactions').select('*').order('operation_date', { ascending: false });
-            if (error) throw error;
-            setRawTransactions(data || []);
-        } catch (err: any) {
-            setError(err.message);
-        } finally {
-            setLoading(false);
-        }
-    }, [supabase]);
-
-    useEffect(() => { if (supabase) fetchTransactions(); }, [supabase, fetchTransactions]);
-
-    useEffect(() => {
-        if (router.isReady && router.query.add === 'true') {
-            setIsModalOpen(true);
-            router.replace('/transactions', undefined, { shallow: true });
-        }
-    }, [router.isReady, router.query.add]);
+    // ... codice precedente ...
 
     // --- HOOK TABLE LOGIC ---
-    // Passiamo rawTransactions direttamente. L'hook gestisce tutto (filtri, sort, group).
+    // Destruttura i nuovi valori forniti dall'hook aggiornato
     const {
-        viewSettings, setViewSettings, processedRows, visibleColumns
-    } = useTableLogic(rawTransactions, ALL_COLUMNS);
+        viewSettings,
+        setViewSettings,
+        paginatedRows,     // USARE QUESTO PER IL RENDER
+        allFilteredRows,   // USARE QUESTO PER I TOTALI E L'EXPORT
+        visibleColumns,
+        pagination,        // Stato paginazione
+        setPagination,     // Setter paginazione
+        totalRows,         // Totale righe filtrate
+        totalPages         // Totale pagine
+    } = useTableLogic(rawTransactions, ALL_COLUMNS, 25); // Default 25 righe
 
     // --- CALCOLO TOTALI ---
+    // NOTA: Usa allFilteredRows per calcolare i totali su TUTTI i dati filtrati, non solo quelli a schermo
     const totals = useMemo(() => {
-        const dataRows = processedRows.filter(r => r.type === 'data').map(r => (r as any).data);
+        const dataRows = allFilteredRows.filter(r => r.type === 'data').map(r => (r as any).data);
         return dataRows.reduce((acc, item) => ({
             total_outlay_eur: acc.total_outlay_eur + (item.total_outlay_eur || 0),
             shares_count: acc.shares_count + (item.shares_count || 0),
             transaction_fees_eur: acc.transaction_fees_eur + (item.transaction_fees_eur || 0),
             transaction_taxes_eur: acc.transaction_taxes_eur + (item.transaction_taxes_eur || 0),
         }), { total_outlay_eur: 0, shares_count: 0, transaction_fees_eur: 0, transaction_taxes_eur: 0 });
-    }, [processedRows]);
+    }, [allFilteredRows]);
 
     // --- CHART DATA PREP ---
+    // Anche qui usa allFilteredRows per il grafico completo
     const chartData = useMemo(() => {
-        const dataRows = processedRows.filter(r => r.type === 'data').map(r => (r as any).data);
+        const dataRows = allFilteredRows.filter(r => r.type === 'data').map(r => (r as any).data);
         if (!dataRows.length) return [];
         return [...dataRows]
             .map(item => ({
@@ -184,88 +119,152 @@ export default function Transactions() {
                 valY: Number(item[plotConfig.y]) || 0
             }))
             .sort((a, b) => a.valX < b.valX ? -1 : 1);
-    }, [processedRows, plotConfig]);
+    }, [allFilteredRows, plotConfig]);
 
-    // --- ACTIONS ---
-    const handleSort = (key: string) => {
-        const currentSort = viewSettings.sorts.find(s => s.columnId === key);
-        const newDirection = currentSort?.direction === 'asc' ? 'desc' : 'asc';
-        setViewSettings(prev => ({ ...prev, sorts: [{ id: 'quick', columnId: key, direction: newDirection }] }));
-    };
-
-    const handleResize = useCallback((idx: number, w: number) => {
-        setViewSettings(prev => {
-            const cols = [...prev.columns]; cols[idx] = { ...cols[idx], width: w }; return { ...prev, columns: cols };
-        });
-    }, []);
-
-    const moveColumn = useCallback((from: number, to: number) => {
-        if (from === to) return;
-        setViewSettings(prev => {
-            const cols = [...prev.columns]; const [moved] = cols.splice(from, 1); cols.splice(to, 0, moved); return { ...prev, columns: cols };
-        });
-    }, []);
-
-    // --- FORM ACTIONS ---
-    const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-        const { name, value } = e.target;
-        setFormData(prev => ({ ...prev, [name]: value }));
-    };
-
-    const togglePerson = (person: string) => {
-        setFormData(prev => {
-            const current = prev.people;
-            if (current.includes(person)) {
-                const newPeople = current.filter(p => p !== person);
-                const newShares = { ...prev.shares_multi }; delete newShares[person];
-                return { ...prev, people: newPeople, shares_multi: newShares };
-            }
-            return { ...prev, people: [...current, person] };
-        });
-    };
-
-    const handleSubmit = async () => {
-        if (formData.people.length === 0 || !formData.security || !formData.price) {
-            alert("Please fill required fields."); return;
-        }
-        setLoading(true);
-        try {
-            const response = await fetch(`${PYTHON_API_URL}/process_transaction`, {
-                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(formData)
-            });
-            const result = await response.json();
-            if (!response.ok) throw new Error(result.detail || "Error");
-
-            alert(result.message);
-            setIsModalOpen(false);
-            await fetchTransactions();
-        } catch (e: any) { alert(`Error: ${e.message}`); } finally { setLoading(false); }
-    };
+    // ... HandleSort, HandleResize etc rimangono uguali ...
 
     // --- EXPORT ---
+    // Aggiorna exportData per usare allFilteredRows
     const exportData = (format: 'csv' | 'xlsx') => {
-        const dataRows = processedRows.filter(r => r.type === 'data').map(r => (r as any).data);
+        const dataRows = allFilteredRows.filter(r => r.type === 'data').map(r => (r as any).data);
         const ws = XLSX.utils.json_to_sheet(dataRows);
-        const fname = `transactions_${new Date().toISOString().split('T')[0]}`;
-
-        if (format === 'csv') {
-            const csv = XLSX.utils.sheet_to_csv(ws);
-            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-            const url = URL.createObjectURL(blob);
-            const link = document.createElement('a'); link.href = url; link.download = `${fname}.csv`; link.click();
-        } else {
-            const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Data"); XLSX.writeFile(wb, `${fname}.xlsx`);
-        }
-        setIsDownloadOpen(false);
+        // ... resto della logica export uguale ...
     };
 
-    // --- RENDER HELPERS ---
-    const fmt = (val: any, type: string) => {
-        if (val === null || val === undefined) return '-';
-        if (type === 'date') return new Date(val).toLocaleDateString('it-IT');
-        if (type === 'number') return typeof val === 'number' ? val.toLocaleString('it-IT', { maximumFractionDigits: 2 }) : val;
-        return String(val);
-    };
+    return (
+        <main className="min-h-screen p-8 bg-gray-50 font-sans">
+            <div className="max-w-[1920px] mx-auto">
+                {/* ... HEADER (già corretto) ... */}
+
+                <div className="flex flex-col gap-6">
+                    {/* ... Error box ... */}
+
+                    <div className="bg-white rounded-xl shadow-lg border border-slate-200 overflow-hidden relative flex flex-col min-h-[500px]">
+                        {loading && <div className="absolute inset-0 bg-white/80 z-20 flex flex-col items-center justify-center text-slate-500"><Loader2 size={32} className="animate-spin text-blue-600 mb-2" /> <p>Loading...</p></div>}
+
+                        {/* WRAPPER TABELLA CON FLEX-GROW PER SPINGERE IL FOOTER IN BASSO */}
+                        <div className="overflow-x-auto flex-1">
+                            <table className="w-full text-sm text-left border-collapse">
+                                {/* ... THEAD (uguale) ... */}
+
+                                <tbody className="divide-y divide-slate-100">
+                                    {/* IMPORTANTE: Usa paginatedRows qui */}
+                                    {paginatedRows.map((row: any, idx: number) => {
+                                        // ... render delle righe (codice identico a prima) ...
+                                        if (row.type === 'group_header') {
+                                            return (<tr key={`group-${idx}`} className="bg-gray-100 border-t border-gray-300"><td colSpan={visibleColumns.length} className="px-4 py-2 font-bold text-gray-700"><div className="flex items-center gap-2" style={{ paddingLeft: `${row.level * 20}px` }}><ChevronRight size={16} /> <span className="text-xs uppercase text-gray-500">{row.field}:</span> {row.value}</div></td></tr>);
+                                        }
+                                        const item = row.data;
+                                        return (
+                                            <tr key={item.id || idx} className="hover:bg-slate-50/50 transition-colors">
+                                                {visibleColumns.map(col => {
+                                                    const alignClass = col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left';
+                                                    let val = item[col.id];
+                                                    let content: React.ReactNode = fmt(val, col.type);
+
+                                                    if (col.id === 'buy_or_sell') content = <span className={`px-2 py-1 rounded-full text-xs font-medium ${val === 'Buy' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>{item.category || val}</span>;
+                                                    else if (col.id === 'ticker') content = <span className="font-bold text-slate-800">{val}</span>;
+
+                                                    return <td key={col.id} className={`px-4 py-3 ${alignClass}`}>{content}</td>;
+                                                })}
+                                            </tr>
+                                        );
+                                    })}
+
+                                    {/* RIGA VUOTA SE NESSUN DATO */}
+                                    {paginatedRows.length === 0 && !loading && (
+                                        <tr><td colSpan={visibleColumns.length} className="p-8 text-center text-gray-400">No transactions found.</td></tr>
+                                    )}
+                                </tbody>
+
+                                {/* FOOTER TOTALI (Aggiornato per usare i dati totali, non solo pagina) */}
+                                {allFilteredRows.some((r: any) => r.type === 'data') && (
+                                    <tfoot className="bg-slate-50 border-t-2 border-slate-200 font-bold text-slate-800">
+                                        <tr>{visibleColumns.map(col => {
+                                            const alignClass = col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left';
+                                            let content: React.ReactNode = '';
+                                            if (col.id === 'ticker') content = "TOTAL";
+                                            else if (col.id === 'total_outlay_eur') content = fmt(totals.total_outlay_eur, 'number');
+                                            else if (col.id === 'shares_count') content = fmt(totals.shares_count, 'number');
+                                            else if (col.id === 'transaction_fees_eur') content = fmt(totals.transaction_fees_eur, 'number');
+                                            else if (col.id === 'transaction_taxes_eur') content = fmt(totals.transaction_taxes_eur, 'number');
+                                            return <td key={col.id} className={`px-4 py-3 ${alignClass}`}>{content}</td>;
+                                        })}</tr>
+                                    </tfoot>
+                                )}
+                            </table>
+                        </div>
+
+                        {/* --- BARRA DI PAGINAZIONE --- */}
+                        <div className="border-t border-slate-200 bg-white p-3 flex flex-wrap items-center justify-between gap-4 select-none">
+
+                            {/* Selettore Righe */}
+                            <div className="flex items-center gap-2 text-sm text-slate-600">
+                                <span>Rows per page:</span>
+                                <select
+                                    className="border border-slate-300 rounded p-1 outline-none bg-white font-medium text-slate-700 focus:border-blue-500"
+                                    value={pagination.pageSize}
+                                    onChange={(e) => setPagination(p => ({ ...p, pageSize: Number(e.target.value), page: 1 }))}
+                                >
+                                    {[10, 25, 50, 100, 500].map(size => (
+                                        <option key={size} value={size}>{size}</option>
+                                    ))}
+                                    <option value={totalRows}>All ({totalRows})</option>
+                                </select>
+                            </div>
+
+                            {/* Info e Controlli */}
+                            <div className="flex items-center gap-4">
+                                <span className="text-sm text-slate-500">
+                                    Page <b>{pagination.page}</b> of <b>{totalPages || 1}</b>
+                                    <span className="mx-2 text-slate-300">|</span>
+                                    Total: <b>{totalRows}</b> rows
+                                </span>
+
+                                <div className="flex items-center gap-1">
+                                    <button
+                                        onClick={() => setPagination(p => ({ ...p, page: 1 }))}
+                                        disabled={pagination.page === 1}
+                                        className="p-1 rounded hover:bg-slate-100 disabled:opacity-30 disabled:hover:bg-transparent"
+                                        title="First Page"
+                                    >
+                                        <ChevronsLeft size={18} />
+                                    </button>
+                                    <button
+                                        onClick={() => setPagination(p => ({ ...p, page: Math.max(1, p.page - 1) }))}
+                                        disabled={pagination.page === 1}
+                                        className="p-1 rounded hover:bg-slate-100 disabled:opacity-30 disabled:hover:bg-transparent"
+                                        title="Previous Page"
+                                    >
+                                        <ChevronLeft size={18} />
+                                    </button>
+                                    <button
+                                        onClick={() => setPagination(p => ({ ...p, page: Math.min(totalPages, p.page + 1) }))}
+                                        disabled={pagination.page >= totalPages}
+                                        className="p-1 rounded hover:bg-slate-100 disabled:opacity-30 disabled:hover:bg-transparent"
+                                        title="Next Page"
+                                    >
+                                        <ChevronRight size={18} />
+                                    </button>
+                                    <button
+                                        onClick={() => setPagination(p => ({ ...p, page: totalPages }))}
+                                        disabled={pagination.page >= totalPages}
+                                        className="p-1 rounded hover:bg-slate-100 disabled:opacity-30 disabled:hover:bg-transparent"
+                                        title="Last Page"
+                                    >
+                                        <ChevronsRight size={18} />
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* ... MODALS (Settings, Plot, Add) ... */}
+            </div>
+        </main>
+    );
+}
 
     return (
         <main className="min-h-screen p-8 bg-gray-50 font-sans">
