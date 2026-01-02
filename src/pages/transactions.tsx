@@ -326,7 +326,7 @@ export default function Transactions() {
                                             <tr key={item.id || idx} className="hover:bg-slate-50/50 transition-colors">
                                                 {visibleColumns.map(col => {
                                                     const alignClass = col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left';
-                                                    let val = item[col.id];
+                                                    const val = item[col.id];
                                                     let content: React.ReactNode = fmt(val, col.type);
 
                                                     if (col.id === 'buy_or_sell') content = <span className={`px-2 py-1 rounded-full text-xs font-medium ${val === 'Buy' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>{item.category || val}</span>;
