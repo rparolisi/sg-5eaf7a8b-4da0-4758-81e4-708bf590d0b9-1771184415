@@ -71,9 +71,9 @@ export default function Navbar() {
                             
                             {/* --- INIZIO MODIFICA LOGO --- */}
                             <div className="mr-2 relative w-10 h-10"> 
-                                {/* Assicurati che il file si chiami 'owl-logo.png' e sia nella cartella /public */}
+                                {/* Assicurati che il file si chiami 'owl-logo-no_backgroung.png' e sia nella cartella /public */}
                                 <Image 
-                                    src="/owl-logo.png" 
+                                    src="/owl-logo-no_backgroungo.png" 
                                     alt="Owl Logo" 
                                     width={40} 
                                     height={40} 
