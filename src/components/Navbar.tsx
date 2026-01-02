@@ -3,7 +3,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { useRouter } from 'next/router';
 import { createClient } from '@supabase/supabase-js';
-// 1. Aggiungi ScrollText agli import
+// CORREZIONE QUI SOTTO: Aggiunto ScrollText agli import
 import { List, PieChart, Info, Home, PlusCircle, LineChart, ChevronDown, ScrollText } from 'lucide-react';
 
 // --- CONFIGURAZIONE SUPABASE ---
@@ -51,10 +51,8 @@ export default function Navbar() {
         {
             name: 'Transactions',
             path: '/transactions',
-            // 2. MODIFICA QUI: Usa ScrollText invece di List
-            icon: ScrollText,
+            icon: ScrollText, // Ora funzionerà perché è importato
             dropdown: [
-                // Puoi usare ScrollText anche qui nel sottomenu se vuoi coerenza
                 { name: 'Transactions', path: '/transactions', icon: ScrollText },
                 { name: 'Add', path: '/transactions?add=true', icon: PlusCircle },
                 { name: 'Plot', path: '/transactions/plot', icon: LineChart },
