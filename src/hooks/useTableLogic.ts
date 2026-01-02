@@ -4,7 +4,9 @@ import { ViewSettings, ColumnDef, ProcessedRow } from '../types/table';
 // Helper: Pulisce e normalizza i valori per confronti sicuri
 const safeString = (val: any) => {
     if (val === null || val === undefined) return '';
-    return String(val).trim().toLowerCase();
+    // Converte oggetti/array in stringa se necessario, altrimenti stringa standard
+    const str = typeof val === 'object' ? JSON.stringify(val) : String(val);
+    return str.trim().toLowerCase();
 };
 
 export function useTableLogic<T>(
@@ -23,13 +25,16 @@ export function useTableLogic<T>(
 
         // 1. FILTRI AVANZATI (Settings Modal)
         if (viewSettings.filters.length > 0) {
+            console.log("--- DEBUG FILTER ---"); // DEBUG
             result = result.filter(item => {
-                // Deve soddisfare TUTTE le regole (AND)
                 return viewSettings.filters.every(rule => {
                     const rawVal = (item as any)[rule.columnId];
 
                     const itemValStr = safeString(rawVal);
                     const filterValStr = safeString(rule.value);
+
+                    // Log per capire cosa stiamo confrontando
+                    // console.log(`Checking ${rule.columnId}: '${itemValStr}' vs '${filterValStr}' (${rule.operator})`);
 
                     const itemValNum = Number(rawVal);
                     const filterValNum = Number(rule.value);
@@ -72,6 +77,7 @@ export function useTableLogic<T>(
         }
 
         // 2. ORDINAMENTO
+        // Priorità: Gruppi > Sort Utente
         const groupCols = viewSettings.groups.map(g => g.columnId);
         const sortRules = [
             ...groupCols.map(col => ({ columnId: col, direction: 'asc' as const })),
@@ -133,7 +139,7 @@ export function useTableLogic<T>(
             return rows;
         }
 
-    }, [data, viewSettings, initialColumns]); // Rimosso columnFilters dalle dipendenze
+    }, [data, viewSettings, initialColumns]);
 
     return {
         viewSettings,
