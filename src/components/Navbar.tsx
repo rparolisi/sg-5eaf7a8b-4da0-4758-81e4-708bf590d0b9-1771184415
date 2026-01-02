@@ -52,7 +52,7 @@ export default function Navbar() {
             path: '/transactions',
             icon: List,
             dropdown: [
-                { name: 'Transactions', path: '/transactions', icon: Scroll-Text },
+                { name: 'Transactions', path: '/transactions', icon: ScrollText },
                 { name: 'Add', path: '/transactions?add=true', icon: PlusCircle },
                 { name: 'Plot', path: '/transactions/plot', icon: LineChart },
             ]
