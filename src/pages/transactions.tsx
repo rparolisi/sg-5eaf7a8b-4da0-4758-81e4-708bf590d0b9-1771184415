@@ -22,34 +22,10 @@ const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
 const SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
 const PYTHON_API_URL = "https://invest-monitor-api.onrender.com";
 
-// --- DEFINIZIONE COLONNE ---
-const ALL_COLUMNS: ColumnDef[] = [
-    { id: 'id', label: 'ID', visible: false, width: 80, type: 'number', align: 'left' },
-    { id: 'operation_date', label: 'Date', visible: true, width: 100, type: 'date', align: 'left' },
-    { id: 'ticker', label: 'Ticker', visible: true, width: 80, type: 'text', align: 'left' },
-    { id: 'buy_or_sell', label: 'Side', visible: true, width: 80, type: 'text', align: 'center' },
-    { id: 'shares_count', label: 'Shares', visible: true, width: 90, type: 'number', align: 'right' },
-    { id: 'purchase_price_per_share_eur', label: 'Price (€)', visible: true, width: 100, type: 'number', align: 'right' },
-    { id: 'total_outlay_eur', label: 'Total (€)', visible: true, width: 110, type: 'number', align: 'right' },
-    { id: 'person', label: 'Person', visible: true, width: 100, type: 'text', align: 'left' },
-    { id: 'category', label: 'Category', visible: false, width: 100, type: 'text', align: 'left' },
-    { id: 'asset_currency', label: 'Curr.', visible: false, width: 60, type: 'text', align: 'center' },
-    { id: 'exchange_rate_at_purchase', label: 'FX Rate', visible: false, width: 80, type: 'number', align: 'right' },
-    { id: 'transaction_fees_eur', label: 'Fees (€)', visible: false, width: 80, type: 'number', align: 'right' },
-    { id: 'transaction_taxes_eur', label: 'Taxes (€)', visible: false, width: 80, type: 'number', align: 'right' },
-    { id: 'platform', label: 'Platform', visible: false, width: 100, type: 'text', align: 'left' },
-    { id: 'account_owner', label: 'Account', visible: false, width: 100, type: 'text', align: 'left' },
-    { id: 'sector', label: 'Sector', visible: false, width: 100, type: 'text', align: 'left' },
-    { id: 'created_at', label: 'Created At', visible: false, width: 120, type: 'date', align: 'left' },
-    { id: 'transaction_id', label: 'Transaction_ID', visible: false, width: 80, type: 'number', align: 'left' },
-];
-
 const PEOPLE_OPTIONS = ["Ale", "Peppe", "Raff"];
 
 // --- HEADER CELL COMPONENT ---
-const HeaderCell = ({
-    col, index, activeSort, onSort, onResize, onMove
-}: any) => {
+const HeaderCell = ({ col, index, activeSort, onSort, onResize, onMove, currencySymbol }: any) => {
     const [w, setW] = useState(col.width);
 
     useEffect(() => setW(col.width), [col.width]);
@@ -65,11 +41,14 @@ const HeaderCell = ({
         document.addEventListener('mousemove', onMouseMove); document.addEventListener('mouseup', onMouseUp);
     };
 
+    // Replace placeholder currency in label
+    const label = col.label.replace('(User)', `(${currencySymbol})`);
+
     return (
         <th style={{ width: w }} draggable onDragStart={handleDragStart} onDragOver={e => e.preventDefault()} onDrop={handleDrop} className={`px-4 py-3 relative group cursor-grab active:cursor-grabbing select-none hover:bg-slate-100 ${col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left'}`}>
             <div className={`flex items-center gap-2 ${col.align === 'right' ? 'justify-end' : col.align === 'center' ? 'justify-center' : 'justify-start'}`} onClick={() => onSort(col.id)}>
                 <span className="cursor-pointer font-bold flex items-center gap-1 hover:text-blue-600 text-xs uppercase tracking-wider text-gray-600">
-                    {col.label} {activeSort && (activeSort.direction === 'asc' ? <ArrowUp size={12} /> : <ArrowDown size={12} />)}
+                    {label} {activeSort && (activeSort.direction === 'asc' ? <ArrowUp size={12} /> : <ArrowDown size={12} />)}
                 </span>
             </div>
             <div onMouseDown={onMouseDown} onClick={e => e.stopPropagation()} className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-blue-400 group-hover:bg-slate-300 transition-colors z-10" />
@@ -80,22 +59,45 @@ const HeaderCell = ({
 export default function Transactions() {
     const router = useRouter();
     const [supabase, setSupabase] = useState < any > (null);
-    const [userId, setUserId] = useState < string | null > (null); // STATO USER ID
+    const [userId, setUserId] = useState < string | null > (null);
+    const [userCurrency, setUserCurrency] = useState('EUR'); // Default
     const [rawTransactions, setRawTransactions] = useState < any[] > ([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState < string | null > (null);
+
+    // --- DEFINIZIONE COLONNE (AGGIORNATA CON _user_curr) ---
+    // Usiamo "(User)" come placeholder che verrà sostituito dal simbolo reale
+    const ALL_COLUMNS: ColumnDef[] = useMemo(() => [
+        { id: 'id', label: 'ID', visible: false, width: 80, type: 'number', align: 'left' },
+        { id: 'operation_date', label: 'Date', visible: true, width: 100, type: 'date', align: 'left' },
+        { id: 'ticker', label: 'Ticker', visible: true, width: 80, type: 'text', align: 'left' },
+        { id: 'buy_or_sell', label: 'Side', visible: true, width: 80, type: 'text', align: 'center' },
+        { id: 'shares_count', label: 'Shares', visible: true, width: 90, type: 'number', align: 'right' },
+        { id: 'price_per_share_user_curr', label: 'Price (User)', visible: true, width: 110, type: 'number', align: 'right' },
+        { id: 'total_outlay_user_curr', label: 'Total (User)', visible: true, width: 120, type: 'number', align: 'right' },
+        { id: 'person', label: 'Person', visible: true, width: 100, type: 'text', align: 'left' },
+        { id: 'asset_currency', label: 'Asset Curr.', visible: false, width: 80, type: 'text', align: 'center' },
+        { id: 'price_per_share_asset_curr', label: 'Price (Asset)', visible: false, width: 110, type: 'number', align: 'right' },
+        { id: 'exchange_rate_at_purchase', label: 'FX Rate', visible: false, width: 80, type: 'number', align: 'right' },
+        { id: 'transaction_fees_user_curr', label: 'Fees (User)', visible: false, width: 90, type: 'number', align: 'right' },
+        { id: 'transaction_taxes_user_curr', label: 'Taxes (User)', visible: false, width: 90, type: 'number', align: 'right' },
+        { id: 'platform', label: 'Platform', visible: false, width: 100, type: 'text', align: 'left' },
+        { id: 'account_owner', label: 'Account', visible: false, width: 100, type: 'text', align: 'left' },
+        { id: 'category', label: 'Category', visible: false, width: 100, type: 'text', align: 'left' },
+        { id: 'created_at', label: 'Created At', visible: false, width: 120, type: 'date', align: 'left' },
+        { id: 'transaction_id', label: 'Trans_ID', visible: false, width: 80, type: 'number', align: 'left' },
+    ], []);
 
     // --- UI STATES ---
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const [isDownloadOpen, setIsDownloadOpen] = useState(false);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isPlotModalOpen, setIsPlotModalOpen] = useState(false);
-    const [plotConfig, setPlotConfig] = useState({ x: 'operation_date', y: 'total_outlay_eur' });
+    // Updated plot config to new column names
+    const [plotConfig, setPlotConfig] = useState({ x: 'operation_date', y: 'total_outlay_user_curr' });
 
-    // --- REFS ---
     const downloadRef = useRef < HTMLDivElement > (null);
 
-    // Stato Form Add
     const [formData, setFormData] = useState({
         type: 'Buy', people: [] as string[], security: '', date: new Date().toISOString().split('T')[0],
         price: '', currency: 'EUR', exchange_rate: '1', shares_single: '', shares_multi: {} as Record<string, string>,
@@ -113,12 +115,16 @@ export default function Transactions() {
         const client = createClient(SUPABASE_URL, SUPABASE_KEY);
         setSupabase(client);
 
-        // RECUPERA UTENTE LOGGATO
-        const getUser = async () => {
+        const initSession = async () => {
             const { data: { session } } = await client.auth.getSession();
-            if (session) setUserId(session.user.id);
+            if (session) {
+                setUserId(session.user.id);
+                // Fetch User Currency Preference
+                const { data } = await client.from('users').select('currency').eq('user_id', session.user.id).single();
+                if (data?.currency) setUserCurrency(data.currency);
+            }
         };
-        getUser();
+        initSession();
 
         if (!(window as any).XLSX) {
             const script = document.createElement('script');
@@ -141,7 +147,7 @@ export default function Transactions() {
         if (!supabase) return;
         setLoading(true);
         try {
-            // SE RLS È ATTIVA, QUESTA QUERY RESTITUISCE AUTOMATICAMENTE SOLO I DATI DELL'UTENTE
+            // RLS automatically filters by user_id
             const { data, error } = await supabase.from('transactions').select('*').order('operation_date', { ascending: false });
             if (error) throw error;
             setRawTransactions(data || []);
@@ -175,15 +181,15 @@ export default function Transactions() {
         totalPages
     } = useTableLogic(rawTransactions, ALL_COLUMNS, 25);
 
-    // --- CALCOLO TOTALI ---
+    // --- CALCOLO TOTALI (Aggiornato con nuovi nomi colonne) ---
     const totals = useMemo(() => {
         const dataRows = allFilteredRows.filter(r => r.type === 'data').map(r => (r as any).data);
         return dataRows.reduce((acc, item) => ({
-            total_outlay_eur: acc.total_outlay_eur + (item.total_outlay_eur || 0),
+            total_outlay_user_curr: acc.total_outlay_user_curr + (item.total_outlay_user_curr || 0),
             shares_count: acc.shares_count + (item.shares_count || 0),
-            transaction_fees_eur: acc.transaction_fees_eur + (item.transaction_fees_eur || 0),
-            transaction_taxes_eur: acc.transaction_taxes_eur + (item.transaction_taxes_eur || 0),
-        }), { total_outlay_eur: 0, shares_count: 0, transaction_fees_eur: 0, transaction_taxes_eur: 0 });
+            transaction_fees_user_curr: acc.transaction_fees_user_curr + (item.transaction_fees_user_curr || 0),
+            transaction_taxes_user_curr: acc.transaction_taxes_user_curr + (item.transaction_taxes_user_curr || 0),
+        }), { total_outlay_user_curr: 0, shares_count: 0, transaction_fees_user_curr: 0, transaction_taxes_user_curr: 0 });
     }, [allFilteredRows]);
 
     // --- CHART DATA PREP ---
@@ -243,21 +249,18 @@ export default function Transactions() {
             alert("Please fill required fields."); return;
         }
 
-        // CONTROLLO LOGIN
         if (!userId) {
-            alert("You must be logged in to add a transaction.");
-            return;
+            alert("User not logged in."); return;
         }
 
         setLoading(true);
         try {
-            // INVIO DATI AL BACKEND CON USER_ID AGGIUNTO
             const response = await fetch(`${PYTHON_API_URL}/process_transaction`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     ...formData,
-                    user_id: userId // PASSAGGIO ID UTENTE
+                    user_id: userId
                 })
             });
             const result = await response.json();
@@ -289,7 +292,12 @@ export default function Transactions() {
     const fmt = (val: any, type: string) => {
         if (val === null || val === undefined) return '-';
         if (type === 'date') return new Date(val).toLocaleDateString('it-IT');
-        if (type === 'number') return typeof val === 'number' ? val.toLocaleString('it-IT', { maximumFractionDigits: 2 }) : val;
+        // Usiamo la valuta utente per formattare
+        if (type === 'number') {
+            return typeof val === 'number'
+                ? new Intl.NumberFormat('it-IT', { style: 'currency', currency: userCurrency }).format(val)
+                : val;
+        }
         return String(val);
     };
 
@@ -304,7 +312,6 @@ export default function Transactions() {
                         <button onClick={() => setIsModalOpen(true)} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-full font-medium shadow-sm transition-transform hover:-translate-y-0.5"><Plus size={18} /> Add</button>
                         <button onClick={() => setIsPlotModalOpen(true)} className="flex items-center gap-2 bg-white hover:bg-purple-50 text-purple-600 border border-purple-200 px-4 py-2 rounded-full font-medium shadow-sm transition-transform hover:-translate-y-0.5"><LineChartIcon size={18} /> Plot</button>
 
-                        {/* Separatore verticale opzionale per pulizia visiva */}
                         <div className="h-6 w-px bg-slate-300 mx-1"></div>
 
                         <button onClick={() => setIsSettingsOpen(true)} className="p-2 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 text-slate-600 shadow-sm"><Settings size={18} /></button>
@@ -322,7 +329,6 @@ export default function Transactions() {
                     <div className="bg-white rounded-xl shadow-lg border border-slate-200 overflow-hidden relative flex flex-col min-h-[500px]">
                         {loading && <div className="absolute inset-0 bg-white/80 z-20 flex flex-col items-center justify-center text-slate-500"><Loader2 size={32} className="animate-spin text-blue-600 mb-2" /> <p>Loading...</p></div>}
 
-                        {/* WRAPPER TABELLA CON FLEX-GROW PER SPINGERE IL FOOTER IN BASSO */}
                         <div className="overflow-x-auto flex-1">
                             <table className="w-full text-sm text-left border-collapse">
                                 <thead className="bg-slate-50 text-slate-500 font-semibold uppercase text-[11px] tracking-wider border-b border-slate-200">
@@ -336,6 +342,7 @@ export default function Transactions() {
                                                 onSort={handleSort}
                                                 onResize={handleResize}
                                                 onMove={moveColumn}
+                                                currencySymbol={userCurrency === 'USD' ? '$' : userCurrency === 'GBP' ? '£' : '€'}
                                             />
                                         ))}
                                     </tr>
@@ -362,23 +369,21 @@ export default function Transactions() {
                                         );
                                     })}
 
-                                    {/* RIGA VUOTA SE NESSUN DATO */}
                                     {paginatedRows.length === 0 && !loading && (
                                         <tr><td colSpan={visibleColumns.length} className="p-8 text-center text-gray-400">No transactions found.</td></tr>
                                     )}
                                 </tbody>
 
-                                {/* FOOTER TOTALI */}
                                 {allFilteredRows.some((r: any) => r.type === 'data') && (
                                     <tfoot className="bg-slate-50 border-t-2 border-slate-200 font-bold text-slate-800 sticky bottom-0">
                                         <tr>{visibleColumns.map(col => {
                                             const alignClass = col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left';
                                             let content: React.ReactNode = '';
                                             if (col.id === 'ticker') content = "TOTAL";
-                                            else if (col.id === 'total_outlay_eur') content = fmt(totals.total_outlay_eur, 'number');
+                                            else if (col.id === 'total_outlay_user_curr') content = fmt(totals.total_outlay_user_curr, 'number');
                                             else if (col.id === 'shares_count') content = fmt(totals.shares_count, 'number');
-                                            else if (col.id === 'transaction_fees_eur') content = fmt(totals.transaction_fees_eur, 'number');
-                                            else if (col.id === 'transaction_taxes_eur') content = fmt(totals.transaction_taxes_eur, 'number');
+                                            else if (col.id === 'transaction_fees_user_curr') content = fmt(totals.transaction_fees_user_curr, 'number');
+                                            else if (col.id === 'transaction_taxes_user_curr') content = fmt(totals.transaction_taxes_user_curr, 'number');
                                             return <td key={col.id} className={`px-4 py-3 ${alignClass}`}>{content}</td>;
                                         })}</tr>
                                     </tfoot>
@@ -386,7 +391,7 @@ export default function Transactions() {
                             </table>
                         </div>
 
-                        {/* --- BARRA DI PAGINAZIONE --- */}
+                        {/* Pagination Section (Identica a prima) */}
                         <div className="border-t border-slate-200 bg-white p-3 flex flex-wrap items-center justify-between gap-4 select-none">
                             <div className="flex items-center gap-2 text-sm text-slate-600">
                                 <span>Rows per page:</span>
@@ -410,38 +415,10 @@ export default function Transactions() {
                                 </span>
 
                                 <div className="flex items-center gap-1">
-                                    <button
-                                        onClick={() => setPagination(p => ({ ...p, page: 1 }))}
-                                        disabled={pagination.page === 1}
-                                        className="p-1 rounded hover:bg-slate-100 disabled:opacity-30 disabled:hover:bg-transparent"
-                                        title="First Page"
-                                    >
-                                        <ChevronsLeft size={18} />
-                                    </button>
-                                    <button
-                                        onClick={() => setPagination(p => ({ ...p, page: Math.max(1, p.page - 1) }))}
-                                        disabled={pagination.page === 1}
-                                        className="p-1 rounded hover:bg-slate-100 disabled:opacity-30 disabled:hover:bg-transparent"
-                                        title="Previous Page"
-                                    >
-                                        <ChevronLeft size={18} />
-                                    </button>
-                                    <button
-                                        onClick={() => setPagination(p => ({ ...p, page: Math.min(totalPages, p.page + 1) }))}
-                                        disabled={pagination.page >= totalPages}
-                                        className="p-1 rounded hover:bg-slate-100 disabled:opacity-30 disabled:hover:bg-transparent"
-                                        title="Next Page"
-                                    >
-                                        <ChevronRight size={18} />
-                                    </button>
-                                    <button
-                                        onClick={() => setPagination(p => ({ ...p, page: totalPages }))}
-                                        disabled={pagination.page >= totalPages}
-                                        className="p-1 rounded hover:bg-slate-100 disabled:opacity-30 disabled:hover:bg-transparent"
-                                        title="Last Page"
-                                    >
-                                        <ChevronsRight size={18} />
-                                    </button>
+                                    <button onClick={() => setPagination(p => ({ ...p, page: 1 }))} disabled={pagination.page === 1} className="p-1 rounded hover:bg-slate-100 disabled:opacity-30 disabled:hover:bg-transparent"><ChevronsLeft size={18} /></button>
+                                    <button onClick={() => setPagination(p => ({ ...p, page: Math.max(1, p.page - 1) }))} disabled={pagination.page === 1} className="p-1 rounded hover:bg-slate-100 disabled:opacity-30 disabled:hover:bg-transparent"><ChevronLeft size={18} /></button>
+                                    <button onClick={() => setPagination(p => ({ ...p, page: Math.min(totalPages, p.page + 1) }))} disabled={pagination.page >= totalPages} className="p-1 rounded hover:bg-slate-100 disabled:opacity-30 disabled:hover:bg-transparent"><ChevronRight size={18} /></button>
+                                    <button onClick={() => setPagination(p => ({ ...p, page: totalPages }))} disabled={pagination.page >= totalPages} className="p-1 rounded hover:bg-slate-100 disabled:opacity-30 disabled:hover:bg-transparent"><ChevronsRight size={18} /></button>
                                 </div>
                             </div>
                         </div>
@@ -478,12 +455,14 @@ export default function Transactions() {
                 </div>
             )}
 
+            {/* MODAL ADD - NON MODIFICATO NELLA STRUTTURA VISIVA, SOLO NELLE FUNZIONI DI SUBMIT GIA' AGGIORNATE SOPRA */}
             {isModalOpen && (
                 <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
                     <div className="bg-white rounded-xl w-full max-w-2xl p-6 relative">
                         <button onClick={() => setIsModalOpen(false)} className="absolute top-4 right-4"><X size={24} /></button>
                         <h2 className="text-xl font-bold mb-4">Add Transaction</h2>
                         <div className="grid gap-4">
+                            {/* ... FORM IDENTICO A PRIMA, SOLO LOGICA SUBMIT AGGIORNATA ... */}
                             <div className="flex gap-2">
                                 <button onClick={() => setFormData(p => ({ ...p, type: 'Buy' }))} className={`flex-1 py-2 rounded border ${formData.type === 'Buy' ? 'bg-green-100 border-green-500 text-green-700' : ''}`}>Buy</button>
                                 <button onClick={() => setFormData(p => ({ ...p, type: 'Sell' }))} className={`flex-1 py-2 rounded border ${formData.type === 'Sell' ? 'bg-red-100 border-red-500 text-red-700' : ''}`}>Sell</button>
@@ -494,7 +473,21 @@ export default function Transactions() {
                                 ))}
                             </div>
                             <input placeholder="Ticker (e.g. AAPL)" className="p-2 border rounded" name="security" value={formData.security} onChange={handleInputChange} />
-                            <input type="number" placeholder="Price" className="p-2 border rounded" name="price" value={formData.price} onChange={handleInputChange} />
+                            <div className="flex gap-2">
+                                <input type="number" placeholder="Price" className="flex-1 p-2 border rounded" name="price" value={formData.price} onChange={handleInputChange} />
+                                <select className="p-2 border rounded w-24" name="currency" value={formData.currency} onChange={handleInputChange}>
+                                    <option value="EUR">EUR</option>
+                                    <option value="USD">USD</option>
+                                    <option value="GBP">GBP</option>
+                                </select>
+                            </div>
+                            {/* SE LA VALUTA NON È QUELLA DELL'UTENTE, MOSTRA IL CAMPO CAMBIO */}
+                            {formData.currency !== userCurrency && (
+                                <div className="flex flex-col gap-1">
+                                    <label className="text-xs text-gray-500">Exchange Rate (1 {userCurrency} = ? {formData.currency})</label>
+                                    <input type="number" placeholder="Exchange Rate" className="p-2 border rounded" name="exchange_rate" value={formData.exchange_rate} onChange={handleInputChange} />
+                                </div>
+                            )}
                             <input type="date" className="p-2 border rounded" name="date" value={formData.date} onChange={handleInputChange} />
                             <button onClick={handleSubmit} className="bg-blue-600 text-white py-2 rounded">Submit</button>
                         </div>
