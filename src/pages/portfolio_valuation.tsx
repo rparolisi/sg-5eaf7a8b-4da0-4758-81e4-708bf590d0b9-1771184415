@@ -141,6 +141,9 @@ export default function PortfolioValuation() {
                 const { data: userProfile } = await supabase.from('users').select('alias').eq('user_id', user.id).maybeSingle();
                 if (userProfile?.alias) setFilters(prev => ({ ...prev, person: [userProfile.alias] }));
             }
+
+            const { data: { session } } = await supabase.auth.getSession();
+            if (session) setUserId(session.user.id);
         } catch (e) { console.error(e); } finally { setLoadingData(false); }
     }, []);
 
@@ -253,11 +256,12 @@ export default function PortfolioValuation() {
     // --- ACTIONS ---
     // [MODIFICA] Avvolto in useCallback per poterlo usare come dipendenza
     const handleSearch = useCallback(async () => {
+        if (!userId) return; // Sicurezza
         setLoadingPrices(true);
         setPricesError("");
         try {
             const url = new URL(`${PYTHON_API_BASE_URL}/api/portfolio`);
-            url.searchParams.append("user_id", "SEARCH_REQ");
+            url.searchParams.append("user_id", userId);
             if (filters.endDate) url.searchParams.append("target_date", filters.endDate);
             filters.person.forEach(p => url.searchParams.append("people", p));
             const response = await fetch(url.toString());
