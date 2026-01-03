@@ -82,7 +82,7 @@ const INITIAL_COLUMNS: ColumnDef[] = [
     { id: 'gross_value', label: 'Gross Value', visible: true, width: 110, type: 'number', align: 'right' },
     { id: 'avg_date', label: 'Avg Date', visible: true, width: 100, type: 'date', align: 'center' },
     { id: 'total_dividends', label: 'Dividends', visible: true, width: 100, type: 'number', align: 'right' },
-    { id: 'profit_loss', label: 'P/L (€)', visible: true, width: 100, type: 'number', align: 'right' },
+    { id: 'profit_loss', label: 'P/L', visible: true, width: 100, type: 'number', align: 'right' },
     { id: 'performance_perc', label: 'Return %', visible: true, width: 100, type: 'number', align: 'right' },
     { id: 'person', label: 'Person', visible: false, width: 100, type: 'text', align: 'left' },
 ];
@@ -97,7 +97,10 @@ export default function PortfolioValuation() {
     const [loadingPrices, setLoadingPrices] = useState(false);
     const [pricesError, setPricesError] = useState("");
     const [isUpdatingMarket, setIsUpdatingMarket] = useState(false);
-    const [userId, setUserId] = useState < string | null > (null); // STATO USER ID
+
+    // NUOVI STATI: User ID e Valuta
+    const [userId, setUserId] = useState < string | null > (null);
+    const [userCurrency, setUserCurrency] = useState('EUR'); // Default
 
     // Filtri Sidebar
     const [filters, setFilters] = useState({ person: [] as string[], ticker: [] as string[], startDate: '', endDate: '' });
@@ -125,6 +128,7 @@ export default function PortfolioValuation() {
     const initData = useCallback(async () => {
         setLoadingData(true);
         try {
+            // RLS filters automatically by session
             const { data, error } = await supabase.from('transactions').select('*').order('operation_date', { ascending: true });
             if (error) throw error;
             setRawTransactions(data || []);
@@ -137,16 +141,17 @@ export default function PortfolioValuation() {
                 setFilters(prev => ({ ...prev, startDate: min, endDate: today > max ? today : max }));
             }
 
-            const { data: { user } } = await supabase.auth.getUser();
-            if (user) {
-                const { data: userProfile } = await supabase.from('users').select('alias').eq('user_id', user.id).maybeSingle();
-                if (userProfile?.alias) setFilters(prev => ({ ...prev, person: [userProfile.alias] }));
-            }
-
-            // RECUPERA SESSIONE UTENTE
+            // Fetch User Details (Alias + Currency)
             const { data: { session } } = await supabase.auth.getSession();
-            if (session) setUserId(session.user.id);
+            if (session) {
+                setUserId(session.user.id);
+                const { data: uData } = await supabase.from('users').select('alias, currency').eq('user_id', session.user.id).single();
 
+                if (uData) {
+                    if (uData.alias) setFilters(prev => ({ ...prev, person: [uData.alias] }));
+                    if (uData.currency) setUserCurrency(uData.currency);
+                }
+            }
         } catch (e) { console.error(e); } finally { setLoadingData(false); }
     }, []);
 
@@ -159,7 +164,7 @@ export default function PortfolioValuation() {
         return { people: getU('person'), tickers: getU('ticker') };
     }, [rawTransactions]);
 
-    // --- AGGREGAZIONE DATI ---
+    // --- AGGREGAZIONE DATI (PORTAFOGLIO CALCOLATO IN MEMORIA) ---
     const basePortfolioData = useMemo(() => {
         if (rawTransactions.length === 0) return [];
 
@@ -179,16 +184,20 @@ export default function PortfolioValuation() {
 
             const qty = Number(t.shares_count || 0);
             const sign = Number(t.operation_sign || 0);
-            const price = Number(t.price_per_share_eur || 0);
-            const outlay = t.total_outlay_eur !== null ? Number(t.total_outlay_eur) : (price * qty);
+            // 🛑 MODIFICA CRUCIALE: Usiamo il costo già convertito in valuta utente dal DB
+            // Se la colonna total_outlay_user_curr è null (vecchi dati), usa total_outlay_eur come fallback (o 0)
+            const outlay = t.total_outlay_user_curr !== null ? Number(t.total_outlay_user_curr) : 0;
 
             if (Number(t.buy_or_sell) === 1) {
                 if (sign === 1) {
-                    groups[key].qty += qty; groups[key].cost += outlay;
-                    groups[key].dates.push(new Date(t.operation_date).getTime()); groups[key].weights.push(outlay);
+                    groups[key].qty += qty;
+                    groups[key].cost += outlay;
+                    groups[key].dates.push(new Date(t.operation_date).getTime());
+                    groups[key].weights.push(outlay);
                 } else {
                     const avg = groups[key].qty > 0 ? groups[key].cost / groups[key].qty : 0;
-                    groups[key].qty -= qty; groups[key].cost -= (avg * qty);
+                    groups[key].qty -= qty;
+                    groups[key].cost -= (avg * qty);
                 }
             }
         });
@@ -257,26 +266,33 @@ export default function PortfolioValuation() {
     const totalReturnPerc = totals.exposure !== 0 ? (totals.profit_loss / totals.exposure) * 100 : 0;
 
     // --- ACTIONS ---
-    // [MODIFICA] Avvolto in useCallback e usa userId vero
     const handleSearch = useCallback(async () => {
-        if (!userId) return; // Se userId non è pronto, non fare nulla (o gestisci errore)
+        if (!userId) return; // 🛑 SECURITY CHECK
 
         setLoadingPrices(true);
         setPricesError("");
         try {
             const url = new URL(`${PYTHON_API_BASE_URL}/api/portfolio`);
-            url.searchParams.append("user_id", userId); // <--- ORA PASSA L'ID VERO!
+            url.searchParams.append("user_id", userId); // 🛑 PASS REAL ID FOR RLS
             if (filters.endDate) url.searchParams.append("target_date", filters.endDate);
             filters.person.forEach(p => url.searchParams.append("people", p));
             const response = await fetch(url.toString());
             const result = await response.json();
             const dataMap: Record<string, any> = {};
             if (Array.isArray(result)) {
-                result.forEach((p: any) => { if (p.ticker) dataMap[p.ticker] = { price: p.current_price || 0, dividends: p.total_dividends || 0, is_live: p.is_live_price ?? false }; });
+                result.forEach((p: any) => {
+                    if (p.ticker) {
+                        dataMap[p.ticker] = {
+                            price: p.current_price || 0, // Prezzo già convertito dal backend
+                            dividends: p.total_dividends || 0,
+                            is_live: p.is_live_price ?? false
+                        };
+                    }
+                });
             }
             setPythonData(dataMap);
         } catch (e: any) { setPricesError("Failed to fetch data."); } finally { setLoadingPrices(false); }
-    }, [filters, userId]); // <--- Aggiunto userId alle dipendenze
+    }, [filters, userId]);
 
     // --- TRIGGER AGGIORNAMENTO MERCATO ---
     const triggerUpdateMarketData = useCallback(async () => {
@@ -302,11 +318,10 @@ export default function PortfolioValuation() {
         }
     }, [initData, handleSearch, pythonData]);
 
-    // --- [NUOVO] EFFETTO PER IL LINK ?update=true ---
+    // --- EFFETTO PER IL LINK ?update=true ---
     useEffect(() => {
         if (router.isReady && router.query.update === 'true') {
             triggerUpdateMarketData();
-            // Pulisce l'URL rimuovendo la query string
             router.replace('/portfolio_valuation', undefined, { shallow: true });
         }
     }, [router.isReady, router.query.update, triggerUpdateMarketData, router]);
@@ -326,7 +341,11 @@ export default function PortfolioValuation() {
         setIsDownloadOpen(false);
     };
 
-    const fmt = (num: number | null) => num !== null ? new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' }).format(num) : '-';
+    // Helper formattazione valuta dinamica
+    const fmt = (num: number | null) => num !== null
+        ? new Intl.NumberFormat('it-IT', { style: 'currency', currency: userCurrency }).format(num)
+        : '-';
+
     const fmtPerc = (num: number | null) => num !== null ? `${num > 0 ? '+' : ''}${num.toFixed(2)}%` : '-';
     const hasEstimatedPrices = basePortfolioData.some(p => p.current_price !== null && !p.is_live_price);
 
