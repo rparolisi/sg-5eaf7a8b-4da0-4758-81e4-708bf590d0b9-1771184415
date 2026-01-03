@@ -80,6 +80,7 @@ const HeaderCell = ({
 export default function Transactions() {
     const router = useRouter();
     const [supabase, setSupabase] = useState < any > (null);
+    const [userId, setUserId] = useState < string | null > (null); // STATO USER ID
     const [rawTransactions, setRawTransactions] = useState < any[] > ([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState < string | null > (null);
@@ -112,6 +113,13 @@ export default function Transactions() {
         const client = createClient(SUPABASE_URL, SUPABASE_KEY);
         setSupabase(client);
 
+        // RECUPERA UTENTE LOGGATO
+        const getUser = async () => {
+            const { data: { session } } = await client.auth.getSession();
+            if (session) setUserId(session.user.id);
+        };
+        getUser();
+
         if (!(window as any).XLSX) {
             const script = document.createElement('script');
             script.src = "https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js";
@@ -133,6 +141,7 @@ export default function Transactions() {
         if (!supabase) return;
         setLoading(true);
         try {
+            // SE RLS È ATTIVA, QUESTA QUERY RESTITUISCE AUTOMATICAMENTE SOLO I DATI DELL'UTENTE
             const { data, error } = await supabase.from('transactions').select('*').order('operation_date', { ascending: false });
             if (error) throw error;
             setRawTransactions(data || []);
@@ -158,7 +167,7 @@ export default function Transactions() {
         setViewSettings,
         paginatedRows,
         allFilteredRows,
-        exportableRows, // <--- 1. DEVI ESTRARRE QUESTA VARIABILE QUI
+        exportableRows,
         visibleColumns,
         pagination,
         setPagination,
@@ -233,10 +242,23 @@ export default function Transactions() {
         if (formData.people.length === 0 || !formData.security || !formData.price) {
             alert("Please fill required fields."); return;
         }
+
+        // CONTROLLO LOGIN
+        if (!userId) {
+            alert("You must be logged in to add a transaction.");
+            return;
+        }
+
         setLoading(true);
         try {
+            // INVIO DATI AL BACKEND CON USER_ID AGGIUNTO
             const response = await fetch(`${PYTHON_API_URL}/process_transaction`, {
-                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(formData)
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    ...formData,
+                    user_id: userId // PASSAGGIO ID UTENTE
+                })
             });
             const result = await response.json();
             if (!response.ok) throw new Error(result.detail || "Error");
@@ -249,7 +271,6 @@ export default function Transactions() {
 
     // --- EXPORT ---
     const exportData = (format: 'csv' | 'xlsx') => {
-        // 2. ORA exportableRows È DEFINITA PERCHÉ ESTRATTA DALL'HOOK
         const ws = XLSX.utils.json_to_sheet(exportableRows);
         const fname = `transactions_${new Date().toISOString().split('T')[0]}`;
 
@@ -426,60 +447,60 @@ export default function Transactions() {
                         </div>
                     </div>
                 </div>
-
-                <TableSettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} settings={viewSettings} onUpdate={setViewSettings} allColumns={ALL_COLUMNS} />
-
-                {isPlotModalOpen && (
-                    <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4 backdrop-blur-sm">
-                        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl p-6">
-                            <div className="flex justify-between mb-4">
-                                <h2 className="text-xl font-bold">Plot Data</h2>
-                                <button onClick={() => setIsPlotModalOpen(false)}><X size={24} className="text-gray-400 hover:text-gray-600" /></button>
-                            </div>
-                            <div className="grid grid-cols-2 gap-4 mb-4">
-                                <select className="p-2 border rounded" value={plotConfig.x} onChange={e => setPlotConfig(p => ({ ...p, x: e.target.value }))}>{ALL_COLUMNS.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}</select>
-                                <select className="p-2 border rounded" value={plotConfig.y} onChange={e => setPlotConfig(p => ({ ...p, y: e.target.value }))}>{ALL_COLUMNS.filter(c => c.type === 'number').map(c => <option key={c.id} value={c.id}>{c.label}</option>)}</select>
-                            </div>
-                            <div className="h-[400px]">
-                                <ResponsiveContainer width="100%" height="100%">
-                                    <LineChart data={chartData}>
-                                        <CartesianGrid strokeDasharray="3 3" />
-                                        <XAxis dataKey="displayX" />
-                                        <YAxis />
-                                        <Tooltip />
-                                        <Legend />
-                                        <Line type="monotone" dataKey="valY" stroke="#8884d8" name={ALL_COLUMNS.find(c => c.id === plotConfig.y)?.label} />
-                                    </LineChart>
-                                </ResponsiveContainer>
-                            </div>
-                        </div>
-                    </div>
-                )}
-
-                {isModalOpen && (
-                    <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-                        <div className="bg-white rounded-xl w-full max-w-2xl p-6 relative">
-                            <button onClick={() => setIsModalOpen(false)} className="absolute top-4 right-4"><X size={24} /></button>
-                            <h2 className="text-xl font-bold mb-4">Add Transaction</h2>
-                            <div className="grid gap-4">
-                                <div className="flex gap-2">
-                                    <button onClick={() => setFormData(p => ({ ...p, type: 'Buy' }))} className={`flex-1 py-2 rounded border ${formData.type === 'Buy' ? 'bg-green-100 border-green-500 text-green-700' : ''}`}>Buy</button>
-                                    <button onClick={() => setFormData(p => ({ ...p, type: 'Sell' }))} className={`flex-1 py-2 rounded border ${formData.type === 'Sell' ? 'bg-red-100 border-red-500 text-red-700' : ''}`}>Sell</button>
-                                </div>
-                                <div className="flex gap-2 flex-wrap">
-                                    {PEOPLE_OPTIONS.map(p => (
-                                        <button key={p} onClick={() => togglePerson(p)} className={`px-3 py-1 rounded border ${formData.people.includes(p) ? 'bg-blue-600 text-white' : ''}`}>{p}</button>
-                                    ))}
-                                </div>
-                                <input placeholder="Ticker (e.g. AAPL)" className="p-2 border rounded" name="security" value={formData.security} onChange={handleInputChange} />
-                                <input type="number" placeholder="Price" className="p-2 border rounded" name="price" value={formData.price} onChange={handleInputChange} />
-                                <input type="date" className="p-2 border rounded" name="date" value={formData.date} onChange={handleInputChange} />
-                                <button onClick={handleSubmit} className="bg-blue-600 text-white py-2 rounded">Submit</button>
-                            </div>
-                        </div>
-                    </div>
-                )}
             </div>
+
+            <TableSettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} settings={viewSettings} onUpdate={setViewSettings} allColumns={ALL_COLUMNS} />
+
+            {isPlotModalOpen && (
+                <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4 backdrop-blur-sm">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl p-6">
+                        <div className="flex justify-between mb-4">
+                            <h2 className="text-xl font-bold">Plot Data</h2>
+                            <button onClick={() => setIsPlotModalOpen(false)}><X size={24} className="text-gray-400 hover:text-gray-600" /></button>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4 mb-4">
+                            <select className="p-2 border rounded" value={plotConfig.x} onChange={e => setPlotConfig(p => ({ ...p, x: e.target.value }))}>{ALL_COLUMNS.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}</select>
+                            <select className="p-2 border rounded" value={plotConfig.y} onChange={e => setPlotConfig(p => ({ ...p, y: e.target.value }))}>{ALL_COLUMNS.filter(c => c.type === 'number').map(c => <option key={c.id} value={c.id}>{c.label}</option>)}</select>
+                        </div>
+                        <div className="h-[400px]">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <LineChart data={chartData}>
+                                    <CartesianGrid strokeDasharray="3 3" />
+                                    <XAxis dataKey="displayX" />
+                                    <YAxis />
+                                    <Tooltip />
+                                    <Legend />
+                                    <Line type="monotone" dataKey="valY" stroke="#8884d8" name={ALL_COLUMNS.find(c => c.id === plotConfig.y)?.label} />
+                                </LineChart>
+                            </ResponsiveContainer>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {isModalOpen && (
+                <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-xl w-full max-w-2xl p-6 relative">
+                        <button onClick={() => setIsModalOpen(false)} className="absolute top-4 right-4"><X size={24} /></button>
+                        <h2 className="text-xl font-bold mb-4">Add Transaction</h2>
+                        <div className="grid gap-4">
+                            <div className="flex gap-2">
+                                <button onClick={() => setFormData(p => ({ ...p, type: 'Buy' }))} className={`flex-1 py-2 rounded border ${formData.type === 'Buy' ? 'bg-green-100 border-green-500 text-green-700' : ''}`}>Buy</button>
+                                <button onClick={() => setFormData(p => ({ ...p, type: 'Sell' }))} className={`flex-1 py-2 rounded border ${formData.type === 'Sell' ? 'bg-red-100 border-red-500 text-red-700' : ''}`}>Sell</button>
+                            </div>
+                            <div className="flex gap-2 flex-wrap">
+                                {PEOPLE_OPTIONS.map(p => (
+                                    <button key={p} onClick={() => togglePerson(p)} className={`px-3 py-1 rounded border ${formData.people.includes(p) ? 'bg-blue-600 text-white' : ''}`}>{p}</button>
+                                ))}
+                            </div>
+                            <input placeholder="Ticker (e.g. AAPL)" className="p-2 border rounded" name="security" value={formData.security} onChange={handleInputChange} />
+                            <input type="number" placeholder="Price" className="p-2 border rounded" name="price" value={formData.price} onChange={handleInputChange} />
+                            <input type="date" className="p-2 border rounded" name="date" value={formData.date} onChange={handleInputChange} />
+                            <button onClick={handleSubmit} className="bg-blue-600 text-white py-2 rounded">Submit</button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </main>
     );
 }
