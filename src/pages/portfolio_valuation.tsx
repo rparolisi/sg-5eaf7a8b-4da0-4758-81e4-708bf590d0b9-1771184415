@@ -97,6 +97,7 @@ export default function PortfolioValuation() {
     const [loadingPrices, setLoadingPrices] = useState(false);
     const [pricesError, setPricesError] = useState("");
     const [isUpdatingMarket, setIsUpdatingMarket] = useState(false);
+    const [userId, setUserId] = useState < string | null > (null); // STATO USER ID
 
     // Filtri Sidebar
     const [filters, setFilters] = useState({ person: [] as string[], ticker: [] as string[], startDate: '', endDate: '' });
@@ -142,8 +143,10 @@ export default function PortfolioValuation() {
                 if (userProfile?.alias) setFilters(prev => ({ ...prev, person: [userProfile.alias] }));
             }
 
+            // RECUPERA SESSIONE UTENTE
             const { data: { session } } = await supabase.auth.getSession();
             if (session) setUserId(session.user.id);
+
         } catch (e) { console.error(e); } finally { setLoadingData(false); }
     }, []);
 
@@ -254,14 +257,15 @@ export default function PortfolioValuation() {
     const totalReturnPerc = totals.exposure !== 0 ? (totals.profit_loss / totals.exposure) * 100 : 0;
 
     // --- ACTIONS ---
-    // [MODIFICA] Avvolto in useCallback per poterlo usare come dipendenza
+    // [MODIFICA] Avvolto in useCallback e usa userId vero
     const handleSearch = useCallback(async () => {
-        if (!userId) return; // Sicurezza
+        if (!userId) return; // Se userId non è pronto, non fare nulla (o gestisci errore)
+
         setLoadingPrices(true);
         setPricesError("");
         try {
             const url = new URL(`${PYTHON_API_BASE_URL}/api/portfolio`);
-            url.searchParams.append("user_id", userId);
+            url.searchParams.append("user_id", userId); // <--- ORA PASSA L'ID VERO!
             if (filters.endDate) url.searchParams.append("target_date", filters.endDate);
             filters.person.forEach(p => url.searchParams.append("people", p));
             const response = await fetch(url.toString());
@@ -272,10 +276,9 @@ export default function PortfolioValuation() {
             }
             setPythonData(dataMap);
         } catch (e: any) { setPricesError("Failed to fetch data."); } finally { setLoadingPrices(false); }
-    }, [filters]);
+    }, [filters, userId]); // <--- Aggiunto userId alle dipendenze
 
     // --- TRIGGER AGGIORNAMENTO MERCATO ---
-    // [MODIFICA] Avvolto in useCallback per poterlo usare come dipendenza
     const triggerUpdateMarketData = useCallback(async () => {
         setIsUpdatingMarket(true);
         try {
