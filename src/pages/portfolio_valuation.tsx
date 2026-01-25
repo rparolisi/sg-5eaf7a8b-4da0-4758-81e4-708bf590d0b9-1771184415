@@ -1,593 +1,679 @@
-import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
-import { createClient } from '@supabase/supabase-js';
-import {
-    ArrowUpRight, ArrowDownRight, Wallet, Loader2, Search, Filter,
-    ChevronDown, Calendar, XCircle, TrendingUp, Settings, Download,
-    FileText, FileSpreadsheet, Check, ArrowUp, ArrowDown, ChevronRight,
-    AlertCircle, ChevronLeft, ChevronsLeft, ChevronsRight, RefreshCw
-} from 'lucide-react';
-import { useRouter } from 'next/router';
-import Link from 'next/link';
-import * as XLSX from 'xlsx';
-
-// IMPORT NUOVI MODULI
-import { TableSettingsModal } from '../components/TableSettingsModal';
-import { useTableLogic } from '../hooks/useTableLogic';
-import { ColumnDef } from '../types/table';
-
-// --- CONFIGURAZIONE ---
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
-const SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
-const PYTHON_API_BASE_URL = "https://invest-monitor-api.onrender.com";
-
-const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
-
-// --- COMPONENTE MULTI-SELECT (Locale per Sidebar filtri) ---
-const MultiSelect = ({ label, options, selected, onChange }: { label: string, options: string[], selected: string[], onChange: (val: string[]) => void }) => {
-    const [isOpen, setIsOpen] = useState(false);
-    const [searchTerm, setSearchTerm] = useState("");
-    const dropdownRef = useRef < HTMLDivElement > (null);
-
-    useEffect(() => {
-        const handleClickOutside = (event: MouseEvent) => {
-            if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-                setIsOpen(false);
-                setSearchTerm("");
-            }
-        };
-        document.addEventListener("mousedown", handleClickOutside);
-        return () => document.removeEventListener("mousedown", handleClickOutside);
-    }, []);
-
-    const toggleOption = (option: string) => {
-        if (selected.includes(option)) onChange(selected.filter(item => item !== option));
-        else onChange([...selected, option]);
-    };
-
-    const filteredOptions = options.filter(opt => opt.toLowerCase().includes(searchTerm.toLowerCase()));
-
-    return (
-        <div className="relative" ref={dropdownRef}>
-            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">{label}</label>
-            <button onClick={() => setIsOpen(!isOpen)} className="w-full p-2 border border-slate-300 rounded-lg text-sm bg-slate-50 flex justify-between items-center outline-none focus:ring-2 focus:ring-blue-500 hover:bg-white transition-colors">
-                <span className={`truncate ${selected.length === 0 ? 'text-slate-400' : 'text-slate-800'}`}>{selected.length === 0 ? `Select ${label}...` : `${selected.length} selected`}</span>
-                <ChevronDown size={16} className={`text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
-            </button>
-            {isOpen && (
-                <div className="absolute top-full left-0 w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-xl z-50 overflow-hidden flex flex-col max-h-60">
-                    <div className="p-2 border-b border-slate-100 bg-white sticky top-0 z-10">
-                        <div className="relative"><Search size={14} className="absolute left-2.5 top-2.5 text-slate-400" /><input type="text" autoFocus className="w-full pl-8 pr-3 py-1.5 text-sm border border-slate-200 rounded-md focus:ring-2 focus:ring-blue-500 outline-none bg-slate-50" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} /></div>
-                    </div>
-                    <div className="overflow-y-auto flex-1 custom-scrollbar">
-                        {filteredOptions.length > 0 ? filteredOptions.map(o => (
-                            <div key={o} onClick={() => toggleOption(o)} className="px-3 py-2 flex items-center gap-2 cursor-pointer hover:bg-blue-50 transition-colors text-sm text-slate-700 border-l-2 border-transparent hover:border-blue-500">
-                                <div className={`w-4 h-4 border rounded flex items-center justify-center flex-shrink-0 ${selected.includes(o) ? 'bg-blue-600 border-blue-600' : 'border-slate-300'}`}>{selected.includes(o) && <Check size={12} className="text-white" />}</div><span className="truncate">{o}</span>
-                            </div>
-                        )) : <div className="px-4 py-3 text-xs text-slate-400 italic text-center">No results found</div>}
-                    </div>
-                </div>
-            )}
-        </div>
-    );
-};
-
-// --- DEFINIZIONE COLONNE ---
-const INITIAL_COLUMNS: ColumnDef[] = [
-    { id: 'ticker', label: 'Ticker', visible: true, width: 120, type: 'text', align: 'left' },
-    { id: 'quantity', label: 'Qty', visible: true, width: 80, type: 'number', align: 'right' },
-    { id: 'avg_price', label: 'Avg Price', visible: true, width: 100, type: 'number', align: 'right' },
-    { id: 'current_price', label: 'Mkt Price', visible: true, width: 100, type: 'number', align: 'right' },
-    { id: 'total_exposure', label: 'Exposure', visible: true, width: 110, type: 'number', align: 'right' },
-    { id: 'market_value', label: 'Mkt Value', visible: true, width: 110, type: 'number', align: 'right' },
-    { id: 'gross_value', label: 'Gross Value', visible: true, width: 110, type: 'number', align: 'right' },
-    { id: 'avg_date', label: 'Avg Date', visible: true, width: 100, type: 'date', align: 'center' },
-    { id: 'total_dividends', label: 'Dividends', visible: true, width: 100, type: 'number', align: 'right' },
-    { id: 'profit_loss', label: 'P/L (€)', visible: true, width: 100, type: 'number', align: 'right' },
-    { id: 'performance_perc', label: 'Return %', visible: true, width: 100, type: 'number', align: 'right' },
-    { id: 'person', label: 'Person', visible: false, width: 100, type: 'text', align: 'left' },
-];
-
-export default function PortfolioValuation() {
-    const router = useRouter();
-
-    // Dati Base
-    const [rawTransactions, setRawTransactions] = useState < any[] > ([]);
-    const [loadingData, setLoadingData] = useState(true);
-    const [pythonData, setPythonData] = useState < Record < string, { price: number, dividends: number, is_live: boolean }>> ({});
-    const [loadingPrices, setLoadingPrices] = useState(false);
-    const [pricesError, setPricesError] = useState("");
-    const [isUpdatingMarket, setIsUpdatingMarket] = useState(false);
-
-    // NUOVI STATI PER RLS E VALUTA
-    const [userId, setUserId] = useState < string | null > (null);
-    const [userCurrency, setUserCurrency] = useState('EUR');
-
-    // Filtri Sidebar
-    const [filters, setFilters] = useState({ person: [] as string[], ticker: [] as string[], startDate: '', endDate: '' });
-
-    const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-    const [isDownloadOpen, setIsDownloadOpen] = useState(false);
-    const downloadRef = useRef < HTMLDivElement > (null);
-
-    // Filtri Rapidi Header
-    const [columnFilters, setColumnFilters] = useState < Record < string, string[]>> ({});
-    const [activeFilterCol, setActiveFilterCol] = useState < string | null > (null);
-    const [filterSearchTerm, setFilterSearchTerm] = useState("");
-    const headerFilterRef = useRef < HTMLDivElement > (null);
-
-    useEffect(() => {
-        const handleClickOutside = (event: MouseEvent) => {
-            if (downloadRef.current && !downloadRef.current.contains(event.target as Node)) setIsDownloadOpen(false);
-            if (headerFilterRef.current && !headerFilterRef.current.contains(event.target as Node)) setActiveFilterCol(null);
-        };
-        document.addEventListener("mousedown", handleClickOutside);
-        return () => document.removeEventListener("mousedown", handleClickOutside);
-    }, []);
-
-    // --- INIT DATA ---
-    const initData = useCallback(async () => {
-        setLoadingData(true);
-        try {
-            const { data, error } = await supabase.from('transactions').select('*').order('operation_date', { ascending: true });
-            if (error) throw error;
-            setRawTransactions(data || []);
-
-            if (data && data.length > 0) {
-                const dates = data.map((t: any) => new Date(t.operation_date).getTime());
-                const min = new Date(Math.min(...dates)).toISOString().split('T')[0];
-                const max = new Date(Math.max(...dates)).toISOString().split('T')[0];
-                const today = new Date().toISOString().split('T')[0];
-                setFilters(prev => ({ ...prev, startDate: min, endDate: today > max ? today : max }));
-            }
-
-            // RECUPERA SESSIONE E PREFERENZE UTENTE
-            const { data: { session } } = await supabase.auth.getSession();
-            if (session) {
-                setUserId(session.user.id);
-                const { data: uData } = await supabase.from('users').select('alias, currency').eq('user_id', session.user.id).maybeSingle();
-                if (uData) {
-                    if (uData.alias) setFilters(prev => ({ ...prev, person: [uData.alias] }));
-                    if (uData.currency) setUserCurrency(uData.currency);
-                }
-            }
-        } catch (e) { console.error(e); } finally { setLoadingData(false); }
-    }, []);
-
-    useEffect(() => {
-        initData();
-    }, [initData]);
-
-    const uniqueOptions = useMemo(() => {
-        const getU = (key: string) => Array.from(new Set(rawTransactions.map(t => t[key]).filter(Boolean))).sort();
-        return { people: getU('person'), tickers: getU('ticker') };
-    }, [rawTransactions]);
-
-    // --- AGGREGAZIONE DATI ---
-    const basePortfolioData = useMemo(() => {
-        if (rawTransactions.length === 0) return [];
-
-        const filtered = rawTransactions.filter(t => {
-            if (filters.person.length && !filters.person.includes(t.person)) return false;
-            if (filters.ticker.length && !filters.ticker.includes(t.ticker)) return false;
-            const tDate = t.operation_date ? String(t.operation_date).split('T')[0] : '';
-            if (filters.startDate && tDate < filters.startDate) return false;
-            if (filters.endDate && tDate > filters.endDate) return false;
-            return true;
-        });
-
-        const groups: Record<string, any> = {};
-        filtered.forEach(t => {
-            const key = `${t.ticker}|${t.person}`;
-            if (!groups[key]) groups[key] = { ticker: t.ticker, person: t.person, qty: 0, cost: 0, dates: [], weights: [] };
-
-            const qty = Number(t.shares_count || 0);
-            const sign = Number(t.operation_sign || 0);
-
-            // 🛑 MODIFICA: Uso il costo in valuta utente (nuova colonna)
-            const outlay = t.total_outlay_user_curr !== null ? Number(t.total_outlay_user_curr) : 0;
-
-            if (Number(t.buy_or_sell) === 1) {
-                if (sign === 1) {
-                    groups[key].qty += qty;
-                    groups[key].cost += outlay;
-                    groups[key].dates.push(new Date(t.operation_date).getTime());
-                    groups[key].weights.push(outlay);
-                } else {
-                    const avg = groups[key].qty > 0 ? groups[key].cost / groups[key].qty : 0;
-                    groups[key].qty -= qty;
-                    groups[key].cost -= (avg * qty);
-                }
-            }
-        });
-
-        return Object.values(groups).map(g => {
-            if (Math.abs(g.qty) < 0.001) return null;
-            const quantity = g.qty;
-            const total_exposure = g.cost;
-            const avg_price = quantity !== 0 ? total_exposure / quantity : 0;
-            let avg_date = null;
-            if (g.dates.length > 0) {
-                const totalWeight = g.weights.reduce((a: number, b: number) => a + b, 0);
-                if (totalWeight > 0) {
-                    const wSum = g.weights.reduce((acc: number, w: number, i: number) => acc + (g.dates[i] * w), 0);
-                    avg_date = new Date(wSum / totalWeight).toISOString().split('T')[0];
-                }
-            }
-
-            const pyData = pythonData[g.ticker] || null;
-            let current_price = pyData ? pyData.price : null; // Prezzo già convertito dal backend
-            const total_dividends = pyData ? pyData.dividends : null;
-            let is_live_price = pyData ? pyData.is_live : false;
-
-            if (current_price === null || current_price === 0) { current_price = avg_price; is_live_price = false; }
-
-            const market_value = current_price * quantity;
-            const gross_value = market_value + (total_dividends || 0);
-            const profit_loss = gross_value - total_exposure;
-            const performance_perc = total_exposure !== 0 ? (profit_loss / total_exposure) * 100 : 0;
-
-            return {
-                id: `${g.ticker}-${g.person}`,
-                ticker: g.ticker, y_ticker: g.ticker, person: g.person,
-                quantity, avg_price, avg_date, total_exposure, current_price,
-                market_value, gross_value, profit_loss, performance_perc, total_dividends, is_live_price
-            };
-        }).filter(Boolean);
-    }, [rawTransactions, filters, pythonData]);
-
-    // --- USO CUSTOM HOOK ---
-    const {
-        viewSettings,
-        setViewSettings,
-        paginatedRows,
-        allFilteredRows,
-        exportableRows,
-        visibleColumns,
-        pagination,
-        setPagination,
-        totalRows,
-        totalPages
-    } = useTableLogic(basePortfolioData, INITIAL_COLUMNS, 25);
-
-    // --- CALCOLO TOTALI ---
-    const totals = useMemo(() => {
-        const dataRows = allFilteredRows.filter(r => r.type === 'data').map(r => (r as any).data);
-        return dataRows.reduce((acc, item) => ({
-            exposure: acc.exposure + item.total_exposure,
-            market_value: acc.market_value + item.market_value,
-            gross_value: acc.gross_value + item.gross_value,
-            dividends: acc.dividends + (item.total_dividends || 0),
-            profit_loss: acc.profit_loss + (item.profit_loss || 0)
-        }), { exposure: 0, market_value: 0, gross_value: 0, dividends: 0, profit_loss: 0 });
-    }, [allFilteredRows]);
-
-    const totalReturnPerc = totals.exposure !== 0 ? (totals.profit_loss / totals.exposure) * 100 : 0;
-
-    // --- ACTIONS ---
-    const handleSearch = useCallback(async () => {
-        if (!userId) return; // 🛑 Security check
-        setLoadingPrices(true);
-        setPricesError("");
-        try {
-            const url = new URL(`${PYTHON_API_BASE_URL}/api/portfolio`);
-            url.searchParams.append("user_id", userId); // 🛑 Passa ID Utente
-            if (filters.endDate) url.searchParams.append("target_date", filters.endDate);
-            filters.person.forEach(p => url.searchParams.append("people", p));
-
-            const response = await fetch(url.toString());
-            const result = await response.json();
-            const dataMap: Record<string, any> = {};
-            if (Array.isArray(result)) {
-                result.forEach((p: any) => { if (p.ticker) dataMap[p.ticker] = { price: p.current_price || 0, dividends: p.total_dividends || 0, is_live: p.is_live_price ?? false }; });
-            }
-            setPythonData(dataMap);
-        } catch (e: any) { setPricesError("Failed to fetch data."); } finally { setLoadingPrices(false); }
-    }, [filters, userId]); // userId tra le dipendenze
-
-    // --- TRIGGER AGGIORNAMENTO MERCATO ---
-    const triggerUpdateMarketData = useCallback(async () => {
-        setIsUpdatingMarket(true);
-        try {
-            const response = await fetch(`${PYTHON_API_BASE_URL}/api/cron/update_market_data`);
-            const data = await response.json();
-
-            if (response.ok) {
-                alert(`Update successful! Updated ${data.tickers_updated || 0} tickers.`);
-                initData();
-                if (Object.keys(pythonData).length > 0) {
-                    handleSearch();
-                }
-            } else {
-                alert(`Update failed: ${data.error || "Unknown error"}`);
-            }
-        } catch (error) {
-            console.error("Failed to update market data", error);
-            alert("Network error while trying to update market data.");
-        } finally {
-            setIsUpdatingMarket(false);
-        }
-    }, [initData, handleSearch, pythonData]);
-
-    // --- EFFETTO PER IL LINK ?update=true ---
-    useEffect(() => {
-        if (router.isReady && router.query.update === 'true') {
-            triggerUpdateMarketData();
-            router.replace('/portfolio_valuation', undefined, { shallow: true });
-        }
-    }, [router.isReady, router.query.update, triggerUpdateMarketData, router]);
-
-
-    const exportData = (format: 'csv' | 'xlsx') => {
-        const ws = XLSX.utils.json_to_sheet(exportableRows);
-        const filename = `portfolio_valuation_${new Date().toISOString().split('T')[0]}`;
-        if (format === 'csv') {
-            const csv = XLSX.utils.sheet_to_csv(ws);
-            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-            const url = URL.createObjectURL(blob);
-            const link = document.createElement('a'); link.href = url; link.download = `${filename}.csv`; link.click();
-        } else {
-            const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Valuation"); XLSX.writeFile(wb, `${filename}.xlsx`);
-        }
-        setIsDownloadOpen(false);
-    };
-
-    // Helper valuta dinamica
-    const fmt = (num: number | null) => num !== null
-        ? new Intl.NumberFormat('it-IT', { style: 'currency', currency: userCurrency }).format(num)
-        : '-';
-
-    const fmtPerc = (num: number | null) => num !== null ? `${num > 0 ? '+' : ''}${num.toFixed(2)}%` : '-';
-    const hasEstimatedPrices = basePortfolioData.some(p => p.current_price !== null && !p.is_live_price);
-
-    // --- HEADER CELL COMPONENT (con sostituzione simbolo) ---
-    const HeaderCell = ({ col, index, moveColumn, resizeColumn }: any) => {
-        const [w, setW] = useState(col.width);
-        useEffect(() => setW(col.width), [col.width]);
-
-        const uniqueVals = useMemo(() => Array.from(new Set(basePortfolioData.map(item => String((item as any)[col.id])))).sort(), [col.id]);
-        const filteredVals = uniqueVals.filter(v => v.toLowerCase().includes(filterSearchTerm.toLowerCase()));
-
-        const handleDragStart = (e: React.DragEvent) => { e.dataTransfer.setData("colIndex", index.toString()); e.dataTransfer.effectAllowed = "move"; };
-        const handleDrop = (e: React.DragEvent) => { e.preventDefault(); const fromIndex = parseInt(e.dataTransfer.getData("colIndex")); moveColumn(fromIndex, index); };
-
-        const onMouseDown = (e: React.MouseEvent) => {
-            e.preventDefault(); e.stopPropagation();
-            const startX = e.pageX; const startW = w;
-            const onMouseMove = (e: MouseEvent) => setW(Math.max(50, startW + (e.pageX - startX)));
-            const onMouseUp = (e: MouseEvent) => { resizeColumn(index, Math.max(50, startW + (e.pageX - startX))); document.removeEventListener('mousemove', onMouseMove); document.removeEventListener('mouseup', onMouseUp); };
-            document.addEventListener('mousemove', onMouseMove); document.addEventListener('mouseup', onMouseUp);
-        };
-
-        const activeSort = viewSettings.sorts.find(s => s.columnId === col.id);
-
-        // Sostituzione dinamica del simbolo valuta (es. € -> $) se presente nel titolo colonna
-        // Qui lo facciamo hardcoded per sostituire (€) con (SimboloUtente)
-        const symbol = (0).toLocaleString('en-US', { style: 'currency', currency: userCurrency, minimumFractionDigits: 0, maximumFractionDigits: 0 }).replace(/\d/g, '').trim();
-        const displayLabel = col.label.replace('(€)', `(${symbol})`);
-
-        return (
-            <th style={{ width: w }} draggable onDragStart={handleDragStart} onDragOver={e => e.preventDefault()} onDrop={handleDrop} className={`px-4 py-3 relative group cursor-grab active:cursor-grabbing select-none hover:bg-slate-100 ${col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left'}`}>
-                <div className={`flex items-center gap-2 ${col.align === 'right' ? 'justify-end' : col.align === 'center' ? 'justify-center' : 'justify-start'}`}>
-                    <span onClick={() => setViewSettings(prev => ({ ...prev, sorts: [{ id: 'quick', columnId: col.id, direction: activeSort?.direction === 'asc' ? 'desc' : 'asc' }] }))} className="cursor-pointer font-bold flex items-center gap-1 hover:text-blue-600 text-xs uppercase tracking-wider text-gray-600">
-                        {displayLabel} {activeSort && (activeSort.direction === 'asc' ? <ArrowUp size={12} /> : <ArrowDown size={12} />)}
-                    </span>
-                    <button onClick={(e) => { e.stopPropagation(); setActiveFilterCol(activeFilterCol === col.id ? null : col.id); setFilterSearchTerm(""); }} className={`p-1 rounded hover:bg-slate-200 transition-opacity ${activeFilterCol === col.id || columnFilters[col.id]?.length ? 'opacity-100 text-blue-600' : 'opacity-0 group-hover:opacity-100 text-slate-400'}`}><Filter size={12} fill={columnFilters[col.id]?.length ? "currentColor" : "none"} /></button>
-                </div>
-                {activeFilterCol === col.id && (
-                    <div ref={headerFilterRef} className="absolute top-full left-0 mt-2 w-56 bg-white rounded-lg shadow-xl border border-slate-200 z-50 p-2 cursor-default text-left font-normal" onClick={e => e.stopPropagation()}>
-                        <div className="relative mb-2"><Search size={12} className="absolute left-2 top-2.5 text-slate-400" /><input autoFocus type="text" placeholder="Search..." className="w-full pl-7 pr-2 py-1.5 text-xs border border-slate-200 rounded focus:ring-1 focus:ring-blue-500 outline-none" value={filterSearchTerm} onChange={e => setFilterSearchTerm(e.target.value)} /></div>
-                        <div className="max-h-40 overflow-y-auto space-y-1 custom-scrollbar">
-                            {filteredVals.map(val => {
-                                const isSel = columnFilters[col.id]?.includes(val);
-                                return (<label key={val} className="flex items-center gap-2 px-2 py-1 hover:bg-slate-50 rounded cursor-pointer text-xs"><div className={`w-3 h-3 border rounded flex items-center justify-center ${isSel ? 'bg-blue-600 border-blue-600' : 'border-slate-300'}`}>{isSel && <Check size={10} className="text-white" />}</div><span className="truncate">{val || '(Empty)'}</span><input type="checkbox" className="hidden" checked={!!isSel} onChange={() => setColumnFilters(prev => { const cur = prev[col.id] || []; return { ...prev, [col.id]: cur.includes(val) ? cur.filter(v => v !== val) : [...cur, val] }; })} /></label>)
-                            })}
-                        </div>
-                        <div className="pt-2 mt-2 border-t border-slate-100 flex justify-between"><button onClick={() => setColumnFilters(prev => ({ ...prev, [col.id]: [] }))} className="text-xs text-slate-500 hover:text-slate-800">Clear</button><button onClick={() => setActiveFilterCol(null)} className="text-xs text-blue-600 font-medium">Done</button></div>
-                    </div>
-                )}
-                <div onMouseDown={onMouseDown} onClick={e => e.stopPropagation()} className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-blue-400 group-hover:bg-slate-300 transition-colors z-10" />
-            </th>
-        );
-    };
-
-    const moveColumn = useCallback((from: number, to: number) => {
-        setViewSettings(prev => {
-            const cols = [...prev.columns];
-            const [moved] = cols.splice(from, 1);
-            cols.splice(to, 0, moved);
-            return { ...prev, columns: cols };
-        });
-    }, []);
-
-    const resizeColumn = useCallback((idx: number, w: number) => {
-        setViewSettings(prev => {
-            const cols = [...prev.columns];
-            cols[idx] = { ...cols[idx], width: w };
-            return { ...prev, columns: cols };
-        });
-    }, []);
-
-    return (
-        <div className="min-h-screen bg-slate-50 font-sans text-slate-900 p-6 pb-20">
-            <div className="max-w-[1920px] mx-auto">
-
-                {/* --- HEADER (Tasti a Destra) --- */}
-                <div className="flex flex-col md:flex-row flex-wrap gap-4 justify-between items-center mb-6">
-
-                    {/* SINISTRA: Titolo */}
-                    <div className="flex items-center gap-2">
-                        <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
-                            <Wallet className="text-blue-600" /> Portfolio Valuation
-                        </h1>
-                    </div>
-
-                    {/* DESTRA: Tutti i pulsanti raggruppati */}
-                    <div className="flex items-center gap-3">
-
-                        {/* Tasto Update Prices */}
-                        <button
-                            onClick={triggerUpdateMarketData}
-                            disabled={isUpdatingMarket}
-                            className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-full font-medium shadow-sm transition-transform hover:-translate-y-0.5 disabled:opacity-50 disabled:hover:transform-none text-sm"
-                        >
-                            {isUpdatingMarket ? <Loader2 size={16} className="animate-spin text-white" /> : <RefreshCw size={16} className="text-white" />}
-                            <span>Update</span>
-                        </button>
-
-                        {/* Tasto Plot History */}
-                        <Link href="/portfolio_valuation/plot" className="flex items-center gap-2 px-4 py-2 bg-white border border-purple-200 text-purple-600 hover:bg-purple-50 rounded-full font-medium shadow-sm transition-transform hover:-translate-y-0.5 text-sm">
-                            <TrendingUp size={16} />
-                            <span>Plot</span>
-                        </Link>
-
-                        {/* Separatore verticale opzionale per pulizia visiva */}
-                        <div className="h-6 w-px bg-slate-300 mx-1"></div>
-
-                        {/* Tasto Settings */}
-                        <button onClick={() => setIsSettingsOpen(true)} className="p-2 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 text-slate-600 shadow-sm transition-colors" title="View Settings">
-                            <Settings size={18} />
-                        </button>
-
-                        {/* Tasto Download */}
-                        <div className="relative" ref={downloadRef}>
-                            <button onClick={() => setIsDownloadOpen(!isDownloadOpen)} className="p-2 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 text-slate-600 shadow-sm transition-colors">
-                                <Download size={18} />
-                            </button>
-                            {isDownloadOpen && (
-                                <div className="absolute right-0 top-full mt-2 w-48 bg-white rounded-xl shadow-xl border border-slate-200 z-50 p-2 animate-in fade-in zoom-in-95 duration-100">
-                                    <button onClick={() => exportData('csv')} className="w-full flex items-center gap-3 px-3 py-2 hover:bg-slate-50 rounded text-sm text-slate-700 transition-colors">
-                                        <FileText size={16} className="text-green-500" /> Export CSV
-                                    </button>
-                                    <button onClick={() => exportData('xlsx')} className="w-full flex items-center gap-3 px-3 py-2 hover:bg-slate-50 rounded text-sm text-slate-700 transition-colors">
-                                        <FileSpreadsheet size={16} className="text-emerald-600" /> Export XLSX
-                                    </button>
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                </div>
-
-                <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 mb-8">
-                    {/* FILTRI SIDEBAR */}
-                    <div className="lg:col-span-1 space-y-4">
-                        <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
-                            <div className="flex items-center justify-between mb-4 border-b border-slate-100 pb-2"><div className="flex items-center gap-2 text-slate-800 font-semibold"><Filter size={18} /> Filters</div><button onClick={() => setFilters({ person: [], ticker: [], startDate: '', endDate: '' })} className="text-xs text-red-500 hover:underline flex items-center gap-1"><XCircle size={12} /> Clear</button></div>
-                            <div className="space-y-4">
-                                <MultiSelect label="Person" options={uniqueOptions.people} selected={filters.person} onChange={(val) => setFilters(p => ({ ...p, person: val }))} />
-                                <MultiSelect label="Ticker" options={uniqueOptions.tickers} selected={filters.ticker} onChange={(val) => setFilters(p => ({ ...p, ticker: val }))} />
-                                <div className="pt-2 border-t border-slate-100">
-                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-2"><Calendar size={12} className="inline mr-1" /> Date Range</label>
-                                    <div className="grid grid-cols-2 gap-2"><input type="date" className="w-full p-2 border border-slate-300 rounded text-xs" value={filters.startDate} onChange={(e) => setFilters(p => ({ ...p, startDate: e.target.value }))} /><input type="date" className="w-full p-2 border border-slate-300 rounded text-xs" value={filters.endDate} onChange={(e) => setFilters(p => ({ ...p, endDate: e.target.value }))} /></div>
-                                </div>
-                                <button onClick={handleSearch} disabled={loadingPrices || loadingData} className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-lg font-bold shadow-md transition-all active:scale-95 disabled:opacity-50 mt-4">{loadingPrices ? <Loader2 size={18} className="animate-spin" /> : <Search size={18} />} Search Prices</button>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* TABLE AREA */}
-                    <div className="lg:col-span-4 flex flex-col gap-4">
-                        {pricesError && <div className="bg-red-50 border border-red-200 text-red-700 p-3 rounded-lg text-sm flex items-center gap-2"><AlertCircle size={16} /> {pricesError}</div>}
-                        <div className="bg-white rounded-xl shadow-lg border border-slate-200 overflow-hidden relative min-h-[400px]">
-                            {loadingData && <div className="absolute inset-0 bg-white/80 z-20 flex flex-col items-center justify-center text-slate-500"><Loader2 size={32} className="animate-spin text-blue-600 mb-2" /> <p>Loading...</p></div>}
-                            <div className="overflow-x-auto min-h-[400px]">
-                                <table className="w-full text-sm text-left border-collapse">
-                                    <thead className="bg-slate-50 text-slate-500 font-semibold uppercase text-[11px] tracking-wider border-b border-slate-200">
-                                        <tr>
-                                            {viewSettings.columns.map((col, i) => (
-                                                col.visible && <HeaderCell key={col.id} col={col} index={i} moveColumn={moveColumn} resizeColumn={resizeColumn} />
-                                            ))}
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-slate-100">
-                                        {/* Usa paginatedRows qui */}
-                                        {paginatedRows.length === 0 && !loadingData ? (<tr><td colSpan={visibleColumns.length} className="px-6 py-12 text-center text-slate-400">No positions found.</td></tr>) : (
-                                            paginatedRows.map((row: any, idx: number) => {
-                                                if (row.type === 'group_header') {
-                                                    return (<tr key={`group-${row.key}-${idx}`} className="bg-gray-100 border-t border-gray-300"><td colSpan={visibleColumns.length} className="px-4 py-2 font-bold text-gray-700"><div className="flex items-center gap-2" style={{ paddingLeft: `${row.level * 20}px` }}><ChevronRight size={16} className="text-gray-500" /><span className="text-xs uppercase text-gray-500">{row.field}:</span>{row.value}</div></td></tr>);
-                                                }
-                                                const item = row.data;
-                                                const isProfitable = (item.profit_loss || 0) >= 0;
-                                                const isEstimated = !item.is_live_price;
-                                                return (
-                                                    <tr key={item.id} className="hover:bg-slate-50/50 transition-colors">
-                                                        {visibleColumns.map(col => {
-                                                            const alignClass = col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left';
-                                                            let content: React.ReactNode = '-';
-                                                            let cellClass = `px-4 py-3 ${alignClass}`;
-                                                            if (col.id === 'ticker') content = <span className="font-bold text-slate-800">{item.ticker}</span>;
-                                                            else if (col.id === 'person') content = <span className="text-slate-600 bg-slate-100 px-2 py-0.5 rounded-full text-xs">{item.person}</span>;
-                                                            else if (col.id === 'quantity') content = item.quantity.toFixed(2);
-                                                            else if (col.id === 'avg_price') content = fmt(item.avg_price);
-                                                            else if (col.id === 'current_price') { cellClass += ` bg-blue-50/30 ${isEstimated ? 'text-orange-500' : 'text-slate-800'}`; content = <>{fmt(item.current_price)}{isEstimated && <span className="ml-1 text-[10px] align-top">*</span>}</>; }
-                                                            else if (col.id === 'avg_date') content = <span className="text-xs text-slate-400">{item.avg_date}</span>;
-                                                            else if (col.id === 'profit_loss') { cellClass += ` font-bold ${isProfitable ? 'text-emerald-600' : 'text-red-600'}`; content = fmt(item.profit_loss); }
-                                                            else if (col.id === 'performance_perc') { content = (<div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold ${isProfitable ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>{isProfitable ? <ArrowUpRight size={12} /> : <ArrowDownRight size={12} />}{fmtPerc(item.performance_perc)}</div>); }
-                                                            else { const val = item[col.id]; if (typeof val === 'number') { if (col.id === 'total_dividends') cellClass += " text-blue-700 font-medium bg-yellow-50/30"; content = fmt(val); } else if (val) content = String(val); }
-                                                            return <td key={col.id} className={cellClass}>{content}</td>;
-                                                        })}
-                                                    </tr>
-                                                );
-                                            })
-                                        )}
-                                    </tbody>
-                                    {/* Footer totali: usa allFilteredRows */}
-                                    {allFilteredRows.some((r: any) => r.type === 'data') && (
-                                        <tfoot className="bg-slate-50 border-t-2 border-slate-200 font-bold text-slate-800 sticky bottom-0">
-                                            <tr>{visibleColumns.map(col => {
-                                                const alignClass = col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left';
-                                                let content: React.ReactNode = '';
-                                                if (col.id === 'ticker') content = "TOTAL";
-                                                else if (col.id === 'total_exposure') content = fmt(totals.exposure);
-                                                else if (col.id === 'market_value') content = fmt(totals.market_value);
-                                                else if (col.id === 'gross_value') content = fmt(totals.gross_value);
-                                                else if (col.id === 'total_dividends') content = <span className="text-blue-700">{fmt(totals.dividends)}</span>;
-                                                else if (col.id === 'profit_loss') content = <span className={totals.profit_loss >= 0 ? 'text-emerald-600' : 'text-red-600'}>{fmt(totals.profit_loss)}</span>;
-                                                else if (col.id === 'performance_perc') content = <span className={totals.profit_loss >= 0 ? 'text-emerald-600' : 'text-red-600'}>{fmtPerc(totalReturnPerc)}</span>;
-                                                return <td key={col.id} className={`px-4 py-3 ${alignClass}`}>{content}</td>;
-                                            })}</tr>
-                                        </tfoot>
-                                    )}
-                                </table>
-                            </div>
-                            {/* Pagination Controls */}
-                            <div className="border-t border-slate-200 bg-white p-3 flex flex-wrap items-center justify-between gap-4 select-none">
-                                <div className="flex items-center gap-2 text-sm text-slate-600">
-                                    <span>Rows per page:</span>
-                                    <select
-                                        className="border border-slate-300 rounded p-1 outline-none bg-white font-medium text-slate-700 focus:border-blue-500"
-                                        value={pagination.pageSize}
-                                        onChange={(e) => setPagination(p => ({ ...p, pageSize: Number(e.target.value), page: 1 }))}
-                                    >
-                                        {[10, 25, 50, 100, 500].map(size => (
-                                            <option key={size} value={size}>{size}</option>
-                                        ))}
-                                        <option value={totalRows}>All ({totalRows})</option>
-                                    </select>
-                                </div>
-                                <div className="flex items-center gap-4">
-                                    <span className="text-sm text-slate-500">
-                                        Page <b>{pagination.page}</b> of <b>{totalPages || 1}</b>
-                                        <span className="mx-2 text-slate-300">|</span>
-                                        Total: <b>{totalRows}</b> rows
-                                    </span>
-                                    <div className="flex items-center gap-1">
-                                        <button onClick={() => setPagination(p => ({ ...p, page: 1 }))} disabled={pagination.page === 1} className="p-1 rounded hover:bg-slate-100 disabled:opacity-30 disabled:hover:bg-transparent"><ChevronsLeft size={18} /></button>
-                                        <button onClick={() => setPagination(p => ({ ...p, page: Math.max(1, p.page - 1) }))} disabled={pagination.page === 1} className="p-1 rounded hover:bg-slate-100 disabled:opacity-30 disabled:hover:bg-transparent"><ChevronLeft size={18} /></button>
-                                        <button onClick={() => setPagination(p => ({ ...p, page: Math.min(totalPages, p.page + 1) }))} disabled={pagination.page >= totalPages} className="p-1 rounded hover:bg-slate-100 disabled:opacity-30 disabled:hover:bg-transparent"><ChevronRight size={18} /></button>
-                                        <button onClick={() => setPagination(p => ({ ...p, page: totalPages }))} disabled={pagination.page >= totalPages} className="p-1 rounded hover:bg-slate-100 disabled:opacity-30 disabled:hover:bg-transparent"><ChevronsRight size={18} /></button>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        <div className="flex justify-between items-start mt-1">
-                            <p className="text-slate-400 text-xs italic">Based on {allFilteredRows.filter((r: any) => r.type === 'data').length} open positions.</p>
-                            {hasEstimatedPrices && (<div className="text-right"><p className="text-xs text-orange-500 italic">* Estimated price (Historical Cost used).</p></div>)}
-                        </div>
-                    </div>
-                </div>
-
-                <TableSettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} settings={viewSettings} onUpdate={setViewSettings} allColumns={INITIAL_COLUMNS} />
-            </div>
-        </div>
-    );
+import os
+import uvicorn
+    from fastapi import FastAPI, HTTPException, Request, Query, Header
+from fastapi.middleware.cors import CORSMiddleware
+    from pydantic import BaseModel
+    from supabase import create_client, Client
+from typing import List, Dict, Optional, Any
+import pandas as pd
+import numpy as np
+import yfinance as yf
+from datetime import datetime, timedelta
+
+# -- - CONFIGURAZIONE-- -
+    SUPABASE_URL = os.environ.get("SUPABASE_URL")
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY") # Service Role Key
+
+if not SUPABASE_URL or not SUPABASE_KEY:
+    raise ValueError("Le credenziali Supabase non sono impostate!")
+
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+# -- - MODELLI DATI INPUT-- -
+    class TransactionInput(BaseModel):
+user_id: str
+people: List[str]
+security: str
+date: str
+price: str
+currency: str # Asset Currency(es.USD)
+exchange_rate: str
+shares_single: Optional[str] = ""
+shares_multi: Optional[Dict[str, str]] = {}
+platform: str
+account_owner: str
+regulated: str
+expenses: str
+taxes: str
+type: str
+
+class PortfolioHistoryInput(BaseModel):
+user_id: str
+tickers: List[str]
+people: Optional[List[str]] = None
+categories: Optional[List[str]] = None
+start_date: str
+end_date: str
+
+app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins = ["*"],
+    allow_credentials = True,
+    allow_methods = ["*"],
+    allow_headers = ["*"],
+)
+
+# -- - HELPER: RECUPERA VALUTA UTENTE-- -
+    def get_user_currency(user_id: str) -> str:
+try:
+res = supabase.table('users').select('currency').eq('user_id', user_id).single().execute()
+if res.data and res.data.get('currency'):
+return res.data['currency']
+    except Exception as e:
+print(f"Warning fetching user currency for {user_id}: {e}")
+return 'EUR' # Default
+
+# -- - HELPER: WAC AT DATE-- -
+    def get_wac_at_date(all_data: List[dict], target_date_str: str) -> float:
+if not all_data: return 0.0
+df = pd.DataFrame(all_data)
+df['operation_date'] = pd.to_datetime(df['operation_date'])
+target_date = pd.to_datetime(target_date_str)
+
+df = df[df['operation_date'] <= target_date].copy()
+if df.empty: return 0.0
+
+df = df.sort_values(by = ['operation_date', 'buy_or_sell'], ascending = [True, False])
+
+if 'average_price_user_curr' in df.columns:
+    last_row = df.iloc[-1]
+val = last_row['average_price_user_curr']
+return float(val) if val and not pd.isna(val) else 0.0
+return 0.0
+
+# -- - HELPER: RICALCOLO TOTALE STORICO(WAC)-- -
+    def recalculate_full_history(all_data: List[dict]) -> List[dict]:
+if not all_data: return []
+
+df = pd.DataFrame(all_data)
+df['operation_date'] = pd.to_datetime(df['operation_date'])
+
+cols_to_numeric = ['shares_count', 'price_per_share_user_curr', 'effective_price_per_share_user_curr', 'operation_sign', 'buy_or_sell']
+for c in cols_to_numeric:
+    if c in df.columns: df[c] = pd.to_numeric(df[c], errors = 'coerce').fillna(0)
+
+if 'transaction_id' in df.columns:
+    df['transaction_id'] = pd.to_numeric(df['transaction_id'], errors = 'coerce')
+
+df = df.sort_values(by = ['operation_date', 'buy_or_sell'], ascending = [True, False]).reset_index(drop = True)
+
+df['signed_shares'] = df['shares_count'] * df['operation_sign']
+df['cumulative_shares_count'] = df['signed_shares'].cumsum()
+
+df['average_price_user_curr'] = 0.0
+df['effective_average_price_user_curr'] = 0.0
+
+state = { 'shares': 0.0, 'cost': 0.0, 'eff_cost': 0.0, 'avg': 0.0, 'eff_avg': 0.0 }
+
+for idx, row in df.iterrows():
+    qty = row['shares_count']
+sign = row['operation_sign']
+is_real_transaction = (row['buy_or_sell'] == 1)
+
+if is_real_transaction:
+    price_user = row['price_per_share_user_curr']
+eff_price_user = row['effective_price_per_share_user_curr']
+
+if sign == 1: # ACQUISTO
+new_cost = state['cost'] + (price_user * qty)
+new_eff = state['eff_cost'] + (eff_price_user * qty)
+new_shares = state['shares'] + qty
+
+state['shares'] = new_shares
+state['cost'] = new_cost
+state['eff_cost'] = new_eff
+
+if new_shares > 0:
+    state['avg'] = new_cost / new_shares
+state['eff_avg'] = new_eff / new_shares
+                else:
+state['avg'] = 0.0; state['eff_avg'] = 0.0
+                    
+            elif sign == -1: # VENDITA
+shares_rm = qty
+cost_rm = state['avg'] * shares_rm
+eff_rm = state['eff_avg'] * shares_rm
+
+state['shares'] -= shares_rm
+state['cost'] -= cost_rm
+state['eff_cost'] -= eff_rm
+
+if state['shares'] <= 1e-6:
+    state = { 'shares': 0.0, 'cost': 0.0, 'eff_cost': 0.0, 'avg': 0.0, 'eff_avg': 0.0 }
+
+df.at[idx, 'average_price_user_curr'] = state['avg']
+df.at[idx, 'effective_average_price_user_curr'] = state['eff_avg']
+
+    # FIFO Date logic
+df['historical_fifo_avg_date'] = pd.NaT
+inv = []
+for idx, row in df.iterrows():
+    if row['buy_or_sell'] == 0: continue
+sign = row['operation_sign']; qty = round(row['shares_count'], 6); date_op = row['operation_date']
+
+if sign == 1:
+    if qty > 0: inv.append({ 'd': date_op, 'q': qty })
+        elif sign == -1:
+q_sell = qty
+while q_sell > 1e-6 and inv:
+if inv[0]['q'] > q_sell:
+    inv[0]['q'] -= q_sell; q_sell = 0
+                else:
+q_sell -= inv[0]['q']; inv.pop(0)
+
+rem_qty = sum(i['q'] for i in inv)
+    if rem_qty > 1e-6:
+        w_sum = sum(i['d'].timestamp() * i['q'] for i in inv)
+    df.at[idx, 'historical_fifo_avg_date'] = datetime.fromtimestamp(w_sum / rem_qty)
+        else:
+df.at[idx, 'historical_fifo_avg_date'] = None
+
+    # Clean
+df['historical_fifo_avg_date'] = df['historical_fifo_avg_date'].apply(lambda x: x.isoformat() if pd.notnull(x) else None)
+df['operation_date'] = df['operation_date'].apply(lambda x: x.strftime('%Y-%m-%d') if pd.notnull(x) else x)
+df = df.replace({ np.nan: None })
+if 'signed_shares' in df.columns: df.drop(columns = ['signed_shares'], inplace = True)
+return df.to_dict(orient = 'records')
+
+@app.get("/")
+def read_root():
+return { "status": "active", "message": "Invest API V5.4 (Ticker Auto-Discovery)" }
+
+# -- - PROCESS TRANSACTION-- -
+    @app.post("/process_transaction")
+    async def process_transaction(data: TransactionInput):
+print(f"Processing {data.type}: {data.security} User: {data.user_id}")
+
+try:
+try:
+res = supabase.table("transactions").select("transaction_id").execute()
+curr_max = 0
+if res.data:
+    ids = [int(r['transaction_id']) for r in res.data if r.get('transaction_id') is not None]
+if ids: curr_max = max(ids)
+new_id = curr_max + 1
+except:
+new_id = 1
+
+user_curr = get_user_currency(data.user_id)
+
+price_asset = float(data.price)
+exchange_rate = float(data.exchange_rate)
+
+if data.currency == user_curr:
+    exchange_rate = 1.0
+
+price_user = price_asset / exchange_rate if exchange_rate != 0 else 0
+
+expenses = float(data.expenses)
+taxes = float(data.taxes)
+
+tot_shares = 0.0
+shares_map = {}
+for p in data.people:
+    s = float(data.shares_single) if len(data.people) == 1 else float(data.shares_multi.get(p, 0))
+shares_map[p] = s
+tot_shares += s
+
+if tot_shares == 0: raise ValueError("Shares cannot be 0")
+
+for p in data.people:
+    s_ind = shares_map[p]
+if s_ind <= 0: continue
+
+h_res = supabase.table("transactions").select("*").eq("ticker", data.security.upper()).eq("person", p).eq("user_id", data.user_id).execute()
+h_data = h_res.data if h_res.data else[]
+
+ratio = s_ind / tot_shares
+f_ind = expenses * ratio
+t_ind = taxes * ratio
+
+val_base = price_user * s_ind
+cost_basis = val_base + f_ind + t_ind
+eff_price = cost_basis / s_ind if s_ind > 0 else 0
+
+rows = []
+t_type = "Buy" if data.type in ["Acquisto", "Buy"] else "Sell"
+
+base_row = {
+    "ticker": data.security.upper(),
+    "operation_date": data.date,
+    "asset_currency": data.currency,
+    "price_per_share_asset_curr": price_asset,
+    "user_id": data.user_id,
+    "exchange_rate_at_purchase": exchange_rate,
+    "total_shares_num": tot_shares,
+    "platform": data.platform,
+    "account_owner": data.account_owner,
+    "regulated_market_or_mtf": data.regulated,
+    "transaction_fees_user_curr": f_ind,
+    "transaction_taxes_user_curr": t_ind,
+    "person": p,
+    "shares_count": s_ind,
+    "transaction_id": new_id,
+    "average_price_user_curr": 0,
+    "effective_average_price_user_curr": 0
 }
+
+if t_type == "Buy":
+    rows.append({
+                    ** base_row,
+        "category": "Buy",
+        "price_per_share_user_curr": price_user,
+        "operation_sign": 1,
+        "buy_or_sell": 1,
+        "total_outlay_user_curr": cost_basis,
+        "effective_price_per_share_user_curr": eff_price
+                })
+            elif t_type == "Sell":
+curr_wac = get_wac_at_date(h_data, data.date)
+net_proceeds = val_base - f_ind - t_ind
+
+rows.append({
+                    ** base_row,
+    "category": "Sell",
+    "price_per_share_user_curr": price_user,
+    "operation_sign": -1,
+    "buy_or_sell": 1,
+    "total_outlay_user_curr": (price_user * s_ind * -1) + f_ind + t_ind,
+    "effective_price_per_share_user_curr": 0
+                })
+
+cost_sold = curr_wac * s_ind
+pnl = net_proceeds - cost_sold
+pnl_cat = "Profit" if pnl >= 0 else "Loss"
+pnl_sgn = 1 if pnl >= 0 else -1
+
+rows.append({
+                    ** base_row,
+    "category": pnl_cat,
+    "price_per_share_asset_curr": 0,
+    "price_per_share_user_curr": abs(pnl),
+    "operation_sign": pnl_sgn,
+    "buy_or_sell": 0,
+    "total_outlay_user_curr": pnl,
+    "effective_price_per_share_user_curr": abs(pnl),
+    "shares_count": shares_individual 
+                })
+
+if rows:
+    supabase.table("transactions").insert(rows).execute()
+
+h_res = supabase.table("transactions").select("*").eq("ticker", data.security.upper()).eq("person", p).eq("user_id", data.user_id).order("operation_date", desc = False).execute()
+full_ds = h_res.data if h_res.data else[]
+recalc = recalculate_full_history(full_ds)
+if recalc: supabase.table("transactions").upsert(recalc).execute()
+
+return { "status": "success", "message": f"ID {new_id}"}
+    except Exception as e:
+print(f"Error: {e}")
+        raise HTTPException(status_code = 500, detail = str(e))
+
+# -- - GET PORTFOLIO(SNAPSHOT)-- -
+    @app.get("/api/portfolio")
+def get_portfolio(
+        user_id: str = Query(..., description = "User ID"),
+        target_date: Optional[str] = None,
+        people: Optional[List[str]] = Query(None)
+    ):
+user_curr = get_user_currency(user_id)
+
+try:
+        # Filtra per User ID
+q = supabase.table('transactions').select("*").eq('user_id', user_id)
+res = q.execute()
+data = res.data
+    except Exception as e:
+return { "error": str(e) }, 500
+
+if not data: return []
+
+df = pd.DataFrame(data)
+num_map = {
+    'shares_count': 'shares_count',
+    'average_price_user_curr': 'avg_price',
+    'total_outlay_user_curr': 'total_outlay',
+    'operation_sign': 'operation_sign',
+    'buy_or_sell': 'buy_or_sell'
+}
+for db_col, df_col in num_map.items():
+    if db_col in df.columns:
+        df[df_col] = pd.to_numeric(df[db_col], errors = 'coerce').fillna(0)
+    else:
+    df[df_col] = 0.0
+
+df['ticker'] = df['ticker'].astype(str)
+df['operation_date'] = pd.to_datetime(df['operation_date'])
+
+if people: df = df[df['person'].isin(people)]
+if df.empty: return []
+    
+    # Map Tickers & Currencies
+u_tickers = df['ticker'].unique().tolist()
+t_map = {}
+asset_currs = {}
+
+try:
+s_res = supabase.table('securities_info').select('ticker, ticker_yfinance, currency').in_('ticker', u_tickers).execute()
+if s_res.data:
+    for r in s_res.data:
+        ti = r['ticker']
+ty = r['ticker_yfinance']
+tc = r.get('currency', 'EUR')
+t_map[ti] = str(ty).strip() if (ty and str(ty).strip()) else ti
+asset_currs[ti] = tc
+except:
+for t in u_tickers: t_map[t] = t; asset_currs[t] = 'EUR'
+        
+    # Market Data
+fetch_list = list(set([v for v in t_map.values() if v]))
+    # Forex Pairs
+for ti in u_tickers:
+    ac = asset_currs.get(ti, user_curr)
+if ac != user_curr:
+    fetch_list.append(f"{user_curr}{ac}=X")
+
+market_prices = {}
+if fetch_list:
+    try:
+d_start = (datetime.now() - timedelta(days = 7)).strftime('%Y-%m-%d')
+if target_date: d_start = (datetime.strptime(target_date, "%Y-%m-%d") - timedelta(days = 7)).strftime('%Y-%m-%d')
+
+m_res = supabase.table('market_data').select('ticker, date, close').in_('ticker', fetch_list).gte('date', d_start).order('date', desc = True).execute()
+if m_res.data:
+    m_df = pd.DataFrame(m_res.data)
+                # Last price
+last_p = m_df.sort_values('date').groupby('ticker').tail(1)
+market_prices = last_p.set_index('ticker')['close'].to_dict()
+        except Exception as e:
+print(f"Mkt fetch err: {e}")
+
+portfolio = []
+
+for t in u_tickers:
+    yt = t_map.get(t)
+ac = asset_currs.get(t, user_curr)
+t_trans = df[df['ticker'] == t]
+
+curr_qty = 0.0
+curr_cost = 0.0
+
+for _, row in t_trans.iterrows():
+    if target_date and row['operation_date'] > pd.to_datetime(target_date): break
+qty = row['shares_count']
+sign = row['operation_sign']
+bs = row['buy_or_sell']
+out = row['total_outlay']
+
+if bs == 1:
+    if sign == 1:
+        curr_qty += qty
+curr_cost += out
+                elif sign == -1:
+if curr_qty > 0:
+    avg = curr_cost / curr_qty
+curr_qty = max(0, curr_qty - qty)
+curr_cost = max(0, curr_cost - (avg * qty))
+
+if curr_qty < 0.001 and len(t_trans) == 0: continue
+
+avg_price = curr_cost / curr_qty if curr_qty > 0 else 0
+price_asset = market_prices.get(yt, 0.0)
+        
+        # FX Logic
+if ac == user_curr:
+    fx = 1.0
+else:
+fx_tick = f"{user_curr}{ac}=X"
+fx = market_prices.get(fx_tick, 1.0)
+if fx == 0: fx = 1.0
+
+price_user = price_asset / fx
+is_live = (price_asset > 0)
+
+if price_user == 0:
+    price_user = avg_price
+is_live = False
+
+mkt_val = price_user * curr_qty
+pnl = mkt_val - curr_cost
+perf = (pnl / curr_cost * 100) if curr_cost != 0 else 0
+last_dt = t_trans['operation_date'].max()
+
+portfolio.append({
+    "ticker": t,
+    "y_ticker": yt,
+    "quantity": round(curr_qty, 2),
+    "avg_price": round(avg_price, 2),
+    "avg_date": last_dt.strftime('%Y-%m-%d') if last_dt else None,
+    "total_exposure": round(curr_cost, 2),
+    "current_price": round(price_user, 2),
+    "profit_loss": round(pnl, 2),
+    "performance_perc": round(perf, 2),
+    "total_dividends": 0, # TODO
+            "is_live_price": is_live,
+    "currency_display": user_curr
+})
+
+portfolio.sort(key = lambda x: x['total_exposure'], reverse = True)
+return portfolio
+
+# -- - GET HISTORY(PLOT)-- -
+    @app.post("/api/portfolio_history")
+def get_portfolio_history(payload: PortfolioHistoryInput):
+user_curr = get_user_currency(payload.user_id)
+print(f"History for {payload.user_id} in {user_curr}")
+
+try:
+q = supabase.table('transactions').select("*").eq('user_id', payload.user_id)
+if payload.people: q = q.in_('person', payload.people)
+q = q.lte('operation_date', payload.end_date).limit(50000)
+data = q.execute().data
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+if not data: return []
+
+df = pd.DataFrame(data)
+df['operation_date'] = pd.to_datetime(df['operation_date'])
+df['shares_count'] = pd.to_numeric(df['shares_count']).fillna(0)
+df['total_outlay'] = pd.to_numeric(df['total_outlay_user_curr']).fillna(0)
+df['operation_sign'] = pd.to_numeric(df['operation_sign']).fillna(0)
+df['buy_or_sell'] = pd.to_numeric(df['buy_or_sell']).fillna(0)
+
+if payload.tickers: df = df[df['ticker'].isin(payload.tickers)]
+if df.empty: return []
+    
+    # Maps
+u_tick = df['ticker'].unique().tolist()
+t_map = {}; a_currs = {}
+try:
+s_res = supabase.table('securities_info').select('ticker, ticker_yfinance, currency').in_('ticker', u_tick).execute()
+for r in s_res.data:
+    t = r['ticker']
+t_map[t] = r.get('ticker_yfinance') or t
+a_currs[t] = r.get('currency', 'EUR')
+except:
+for t in u_tick: t_map[t] = t; a_currs[t] = 'EUR'
+        
+    # Fetch History
+dates = pd.date_range(start = payload.start_date, end = payload.end_date)
+fetch_l = set([t_map[t] for t in u_tick])
+forex_l = set()
+for t in u_tick:
+    ac = a_currs.get(t, user_curr)
+if ac != user_curr:
+    forex_l.add(f"{user_curr}{ac}=X")
+
+all_fetch = list(fetch_l.union(forex_l))
+mkt_df = pd.DataFrame(index = dates)
+fx_df = pd.DataFrame(index = dates)
+
+if all_fetch:
+    try:
+d_start = (pd.to_datetime(payload.start_date) - timedelta(days = 10)).strftime('%Y-%m-%d')
+res = supabase.table('market_data').select('ticker, date, close').in_('ticker', all_fetch).gte('date', d_start).lte('date', payload.end_date).execute()
+if res.data:
+    raw = pd.DataFrame(res.data)
+raw['date'] = pd.to_datetime(raw['date'])
+raw['close'] = pd.to_numeric(raw['close'])
+piv = raw.pivot(index = 'date', columns = 'ticker', values = 'close')
+piv = piv.groupby(level = 0).last().reindex(dates).ffill()
+
+for c in piv.columns:
+    if c in forex_l: fx_df[c] = piv[c].fillna(1.0)
+    else: mkt_df[c] = piv[c]
+        except Exception as e:
+print(f"Hist err: {e}")
+            
+    # Reconstruct
+df = df.sort_values(['operation_date', 'transaction_id'])
+
+curr_s = { t: 0.0 for t in u_tick }
+curr_c = { t: 0.0 for t in u_tick }
+    
+    # Pre - period
+pre = df[df['operation_date'] < dates[0]]
+in_p = df[df['operation_date'] >= dates[0]]
+
+for _, row in pre.iterrows():
+    t = row['ticker']; qty = row['shares_count']; sgn = row['operation_sign']; out = row['total_outlay']
+if row['buy_or_sell'] == 1:
+    if sgn == 1:
+        curr_s[t] += qty; curr_c[t] += out
+            elif sgn == -1:
+if curr_s[t] > 0:
+    avg = curr_c[t] / curr_s[t]
+curr_c[t] = max(0, curr_c[t] - avg * qty)
+curr_s[t] = max(0, curr_s[t] - qty)
+                    
+    # In - period
+gr = in_p.groupby('operation_date')
+shares_dict = {}; cost_dict = {}
+
+for d in dates:
+    if d in gr.groups:
+        for _, row in gr.get_group(d).iterrows():
+            t = row['ticker']; qty = row['shares_count']; sgn = row['operation_sign']; out = row['total_outlay']
+if row['buy_or_sell'] == 1:
+    if sgn == 1:
+        curr_s[t] += qty; curr_c[t] += out
+                    elif sgn == -1:
+if curr_s[t] > 0:
+    avg = curr_c[t] / curr_s[t]
+curr_c[t] = max(0, curr_c[t] - avg * qty)
+curr_s[t] = max(0, curr_s[t] - qty)
+shares_dict[d] = curr_s.copy()
+cost_dict[d] = curr_c.copy()
+
+ds = pd.DataFrame.from_dict(shares_dict, orient = 'index')
+dc = pd.DataFrame.from_dict(cost_dict, orient = 'index')
+
+tot_val = pd.Series(0.0, index = dates)
+
+for t in u_tick:
+    yt = t_map[t]
+ac = a_currs.get(t, user_curr)
+
+if t in ds.columns:
+    qs = ds[t]
+cs = dc[t]
+ps = mkt_df[yt] if yt in mkt_df.columns else pd.Series(np.nan, index = dates)
+
+if ac == user_curr: fx = 1.0
+else:
+ft = f"{user_curr}{ac}=X"
+fx = fx_df[ft] if ft in fx_df.columns else 1.0
+
+p_user = ps / fx
+val = qs * p_user
+            
+            # Fallback
+mask = (p_user.isna()) | (p_user == 0)
+fin = val.where(~mask, cs).fillna(0)
+tot_val += fin
+
+tot_exp = dc.sum(axis = 1)
+
+res = []
+for d in dates:
+    exp = tot_exp.loc[d]
+mkt = tot_val.loc[d]
+res.append({
+    "date": d.strftime('%Y-%m-%d'),
+    "exposure": round(exp, 2),
+    "market_value": round(mkt, 2),
+    "profit_loss": round(mkt - exp, 2),
+    "dividends": 0
+})
+
+return res
+
+# -- - CRON JOB-- -
+    @app.get("/api/cron/update_market_data")
+def update_market_data_daily(authorization: str = Header(None)):
+sec = os.environ.get("CRON_SECRET")
+if sec and authorization != f"Bearer {sec}": raise HTTPException(401, "Auth failed")
+
+print("⏰ Cron Update...")
+t_map = {}
+try:
+r = supabase.table('securities_info').select('ticker, ticker_yfinance, currency').execute()
+if r.data:
+    for row in r.data:
+        eff = str(row['ticker_yfinance']).strip() if row['ticker_yfinance'] else row['ticker']
+t_map[eff] = row['currency']
+except: return { "err": "DB Error" }
+    
+    # 1. Recupera Ticker anche dalle Transazioni(FIX "0 Updates")
+try:
+trans_r = supabase.table('transactions').select('ticker').execute()
+if trans_r.data:
+    trans_tickers = set([r['ticker'] for r in trans_r.data])
+for t in trans_tickers:
+    if t not in t_map:
+t_map[t] = 'N/A' # Default
+    except Exception as e: print(f"Trans tickers fetch err: {e}")
+
+u_ticks = list(t_map.keys())
+maj = ['USD', 'EUR', 'GBP', 'CHF']
+for b in maj:
+    for q in maj:
+        if b != q: u_ticks.append(f"{b}{q}=X")
+
+cnt = 0
+for t in set(u_ticks):
+    try:
+last = supabase.table('market_data').select('date').eq('ticker', t).order('date', desc = True).limit(1).execute()
+s_dt = datetime.now() - timedelta(days = 5 * 365)
+if last.data:
+    s_dt = datetime.strptime(last.data[0]['date'], '%Y-%m-%d') + timedelta(days = 1)
+
+if s_dt >= datetime.now() + timedelta(days = 1): continue
+
+print(f"Upd {t}")
+dat = yf.Ticker(t).history(start = s_dt.strftime('%Y-%m-%d'), auto_adjust = True)
+if dat.empty: continue
+
+recs = []
+cur = t_map.get(t, 'FOREX' if '=X' in t else 'N/A')
+
+for idx, row in dat.iterrows():
+    recs.append({
+        "ticker": t,
+        "date": idx.strftime('%Y-%m-%d'),
+        "close": round(float(row['Close']), 4),
+        "dividend": round(float(row.get('Dividends', 0)), 4),
+        "currency": cur
+    })
+if recs:
+    supabase.table('market_data').upsert(recs, on_conflict = 'ticker, date').execute()
+cnt += 1
+except: pass
+
+return { "status": "ok", "updated": cnt }
+
+if __name__ == '__main__':
+    uvicorn.run(app, host = "0.0.0.0", port = 8000)
