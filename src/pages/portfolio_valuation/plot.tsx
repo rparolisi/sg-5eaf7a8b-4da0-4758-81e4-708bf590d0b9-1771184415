@@ -15,7 +15,7 @@ import * as XLSX from 'xlsx';
 // --- CONFIGURAZIONE ---
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
 const SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
-const PYTHON_API_BASE_URL = "https://invest-monitor-api.onrender.com"; // VERIFICA IL TUO URL
+const PYTHON_API_BASE_URL = "https://invest-monitor-api.onrender.com";
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
@@ -32,7 +32,7 @@ const COLORS = {
 const MultiSelect = ({ label, options, selected, onChange }: { label: string, options: string[], selected: string[], onChange: (val: string[]) => void }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [searchTerm, setSearchTerm] = useState("");
-    const dropdownRef = useRef < HTMLDivElement > (null);
+    const dropdownRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
@@ -128,7 +128,10 @@ export default function PortfolioPlotPage() {
     const router = useRouter();
     const [loading, setLoading] = useState(true);
     const [calculating, setCalculating] = useState(false);
-    const [transactions, setTransactions] = useState < any[] > ([]);
+    const [transactions, setTransactions] = useState<any[]>([]);
+    
+    // NUOVI STATI: User ID e Valuta
+    const [userId, setUserId] = useState<string | null>(null);
 
     // Configurazione Visualizzazione
     const [visibleSeries, setVisibleSeries] = useState({
@@ -140,14 +143,14 @@ export default function PortfolioPlotPage() {
     });
 
     // Filtri
-    const [filters, setFilters] = useState < { person: string[], ticker: string[], startDate: string, endDate: string } > ({
+    const [filters, setFilters] = useState<{ person: string[], ticker: string[], startDate: string, endDate: string }>({
         person: [], ticker: [], startDate: '', endDate: ''
     });
 
-    const [chartData, setChartData] = useState < any[] > ([]);
-    const chartContainerRef = useRef < HTMLDivElement > (null);
+    const [chartData, setChartData] = useState<any[]>([]);
+    const chartContainerRef = useRef<HTMLDivElement>(null);
     const [isDownloadOpen, setIsDownloadOpen] = useState(false);
-    const downloadMenuRef = useRef < HTMLDivElement > (null);
+    const downloadMenuRef = useRef<HTMLDivElement>(null);
 
     // 1. Fetch Iniziale Transazioni
     useEffect(() => {
@@ -174,6 +177,10 @@ export default function PortfolioPlotPage() {
                         const { data: userProfile } = await supabase.from('users').select('alias').eq('user_id', user.id).maybeSingle();
                         if (userProfile?.alias) setFilters(prev => ({ ...prev, person: [userProfile.alias] }));
                     }
+                    
+                    // RECUPERA SESSIONE UTENTE
+                    const { data: { session } } = await supabase.auth.getSession();
+                    if (session) setUserId(session.user.id);
                 }
             } catch (e) {
                 console.error("Error loading initial data", e);
@@ -215,6 +222,11 @@ export default function PortfolioPlotPage() {
 
     // 3. Calcolo e Fetch Dati Storici
     const handlePlot = async () => {
+        if (!userId) {
+            alert("User ID mancante. Assicurati di essere loggato.");
+            return;
+        }
+        
         setCalculating(true);
         try {
             // A. (Opzionale) Alert locale se non troviamo nulla nel subset caricato,
@@ -236,6 +248,7 @@ export default function PortfolioPlotPage() {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
+                    user_id: userId, // <--- CAMPO OBBLIGATORIO AGGIUNTO
                     tickers: filters.ticker, // Usa direttamente il filtro (o vuoto per tutti)
                     people: filters.person.length > 0 ? filters.person : null,
                     start_date: filters.startDate,
@@ -361,222 +374,222 @@ export default function PortfolioPlotPage() {
                                     <input type="date" className="w-full p-2 border border-slate-300 rounded text-xs focus:ring-2 focus:ring-blue-500 outline-none" value={filters.startDate} onChange={e => setFilters({ ...filters, startDate: e.target.value })} />
                                     <input type="date" className="w-full p-2 border border-slate-300 rounded text-xs focus:ring-2 focus:ring-blue-500 outline-none" value={filters.endDate} onChange={e => setFilters({ ...filters, endDate: e.target.value })} />
                                 </div>
-
-                                {/* NUOVA SEZIONE STATISTICHE CALCOLATE */}
-                                <div className="mt-3 p-2 bg-slate-50 rounded border border-slate-200 text-xs space-y-1">
-                                    <div className="flex justify-between">
-                                        <span className="text-slate-500">Days:</span>
-                                        <span className="font-semibold text-slate-700">{stats.days}</span>
-                                    </div>
-                                    <div className="flex justify-between border-t border-slate-200 pt-1 mt-1">
-                                        <span className="text-slate-500 flex items-center gap-1" title="People * Tickers * Days">
-                                            Total Points <Info size={10} />:
-                                        </span>
-                                        <span className="font-bold text-blue-600">{stats.totalPoints.toLocaleString()}</span>
-                                    </div>
-                                </div>
                             </div>
 
-                            <button
-                                onClick={handlePlot}
-                                disabled={calculating || loading}
-                                className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold shadow-md flex justify-center items-center gap-2 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                                {calculating ? <Loader2 className="animate-spin" size={18} /> : <TrendingUp size={18} />}
-                                {calculating ? "Calculating..." : "Plot History"}
-                            </button>
-                        </div>
-                    </div>
-                </div>
-
-                {/* --- GRAFICO (Centro) --- */}
-                <div className="lg:col-span-3">
-                    <div className="bg-white p-6 rounded-xl shadow-lg border border-slate-200 min-h-[600px] flex flex-col relative">
-                        <div ref={chartContainerRef} className="w-full h-[550px] bg-white p-2">
-                            {chartData.length > 0 ? (
-                                <ResponsiveContainer width="100%" height="100%">
-                                    <ComposedChart data={chartData} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
-                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                                        <XAxis
-                                            dataKey="date"
-                                            tick={{ fontSize: 11, fill: '#64748b' }}
-                                            minTickGap={30}
-                                            axisLine={{ stroke: '#e2e8f0' }}
-                                            tickLine={false}
-                                        />
-                                        <YAxis
-                                            tickFormatter={(v) => v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v}
-                                            tick={{ fontSize: 11, fill: '#64748b' }}
-                                            axisLine={{ stroke: '#e2e8f0' }}
-                                            tickLine={false}
-                                        />
-                                        <Tooltip
-                                            contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)', padding: '12px' }}
-                                            formatter={(v: number, name: string) => {
-                                                if (name.includes('Area')) return [null, null];
-                                                return [v.toLocaleString('it-IT', { style: 'currency', currency: 'EUR' }), name];
-                                            }}
-                                            labelStyle={{ color: '#1e293b', fontWeight: 'bold', marginBottom: '8px' }}
-                                            filterNull={true}
-                                        />
-                                        <Legend wrapperStyle={{ paddingTop: '20px' }} iconType="circle" />
-                                        <ReferenceLine y={0} stroke="#cbd5e1" />
-
-                                        {/* AREE P&L (SOTTOSTANTI LE LINEE) */}
-                                        {visibleSeries.plArea && (
-                                            <>
-                                                <Area
-                                                    type="monotone"
-                                                    dataKey="profit_area"
-                                                    name="Profit Area"
-                                                    stroke="none"
-                                                    fill={COLORS.plAreaPos}
-                                                    fillOpacity={0.3}
-                                                    activeDot={false}
-                                                    isAnimationActive={false}
-                                                />
-                                                <Area
-                                                    type="monotone"
-                                                    dataKey="loss_area"
-                                                    name="Loss Area"
-                                                    stroke="none"
-                                                    fill={COLORS.plAreaNeg}
-                                                    fillOpacity={0.3}
-                                                    activeDot={false}
-                                                    isAnimationActive={false}
-                                                />
-                                            </>
-                                        )}
-
-                                        {/* EXPOSURE (Linea Solida) */}
-                                        {visibleSeries.exposure && (
-                                            <Line
-                                                type="monotone"
-                                                dataKey="exposure"
-                                                name="Exposure (Cost)"
-                                                stroke={COLORS.exposure}
-                                                strokeWidth={2}
-                                                dot={false}
-                                                activeDot={{ r: 6 }}
-                                            />
-                                        )}
-
-                                        {/* GROSS VALUE (Linea Solida Viola) */}
-                                        {visibleSeries.grossValue && (
-                                            <Line
-                                                type="monotone"
-                                                dataKey="gross_value"
-                                                name="Gross Value"
-                                                stroke={COLORS.grossValue}
-                                                strokeWidth={3}
-                                                dot={false}
-                                                activeDot={{ r: 6 }}
-                                            />
-                                        )}
-
-                                        {/* MARKET VALUE (Tratteggiata Blu) */}
-                                        {visibleSeries.marketValue && (
-                                            <Line
-                                                type="monotone"
-                                                dataKey="market_value"
-                                                name="Market Value"
-                                                stroke={COLORS.marketValue}
-                                                strokeWidth={2}
-                                                strokeDasharray="5 5"
-                                                dot={false}
-                                                activeDot={{ r: 6 }}
-                                            />
-                                        )}
-
-                                        {/* DIVIDENDS (Tratteggiata Arancione) */}
-                                        {visibleSeries.dividends && (
-                                            <Line
-                                                type="step"
-                                                dataKey="dividends"
-                                                name="Cumul. Dividends"
-                                                stroke={COLORS.dividends}
-                                                strokeWidth={2}
-                                                strokeDasharray="5 5"
-                                                dot={false}
-                                                activeDot={{ r: 6 }}
-                                            />
-                                        )}
-
-                                    </ComposedChart>
-                                </ResponsiveContainer>
-                            ) : (
-                                <div className="h-full flex flex-col items-center justify-center text-slate-400">
-                                    <BarChart3 size={64} className="opacity-20 mb-4" />
-                                    <p className="font-medium text-lg">Ready to analyze</p>
-                                    <p className="text-sm">Select filters on the left and click "Plot History" to start.</p>
+                            {/* NUOVA SEZIONE STATISTICHE CALCOLATE */}
+                            <div className="mt-3 p-2 bg-slate-50 rounded border border-slate-200 text-xs space-y-1">
+                                <div className="flex justify-between">
+                                    <span className="text-slate-500">Days:</span>
+                                    <span className="font-semibold text-slate-700">{stats.days}</span>
                                 </div>
-                            )}
-                        </div>
-                    </div>
-                    {/* Stats Footer - Pulito come richiesto */}
-                    {chartData.length > 0 && (
-                        <div className="flex justify-end text-xs text-slate-400 px-2 mt-2">
-                            <span>Source: Yahoo Finance & Internal DB</span>
-                        </div>
-                    )}
-                </div>
-
-                {/* --- CONFIGURAZIONE (Destra) --- */}
-                <div className="lg:col-span-1 space-y-6">
-                    <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
-                        <div className="flex items-center gap-2 mb-4 font-semibold border-b pb-2 text-slate-700">
-                            <Settings size={18} /> Visible Metrics
-                        </div>
-                        <div className="space-y-3">
-                            {Object.keys(visibleSeries).map(k => (
-                                <label key={k} className="flex items-center gap-3 cursor-pointer p-2 hover:bg-slate-50 rounded transition-colors group">
-                                    <div className="relative flex items-center">
-                                        <input
-                                            type="checkbox"
-                                            checked={visibleSeries[k as keyof typeof visibleSeries]}
-                                            onChange={() => setVisibleSeries({ ...visibleSeries, [k]: !visibleSeries[k as keyof typeof visibleSeries] })}
-                                            className="peer h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
-                                        />
-                                    </div>
-                                    <span className="capitalize text-sm font-medium text-slate-600 group-hover:text-slate-900 transition-colors">
-                                        {k.replace(/([A-Z])/g, ' $1').replace('plArea', 'Profit/Loss Area').trim()}
+                                <div className="flex justify-between border-t border-slate-200 pt-1 mt-1">
+                                    <span className="text-slate-500 flex items-center gap-1" title="People * Tickers * Days">
+                                        Total Points <Info size={10} />:
                                     </span>
-                                    <div className="ml-auto w-2 h-2 rounded-full" style={{
-                                        backgroundColor: k === 'plArea' ? COLORS.plAreaPos : COLORS[k as keyof typeof COLORS],
-                                        background: k === 'plArea' ? `linear-gradient(90deg, ${COLORS.plAreaPos} 50%, ${COLORS.plAreaNeg} 50%)` : undefined
-                                    }}></div>
-                                </label>
-                            ))}
-                        </div>
-                    </div>
-
-                    <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
-                        <div className="flex items-center gap-2 mb-4 font-semibold border-b pb-2 text-slate-700">
-                            <Download size={18} /> Export
-                        </div>
-                        <div className="relative" ref={downloadMenuRef}>
-                            <button onClick={() => setIsDownloadOpen(!isDownloadOpen)} className="w-full flex items-center justify-center gap-2 px-4 py-2.5 border border-slate-300 rounded-lg hover:bg-slate-50 text-sm font-medium text-slate-700 transition-colors">
-                                <Download size={16} /> Download Options...
-                            </button>
-                            {isDownloadOpen && (
-                                <div className="absolute top-full left-0 w-full mt-2 bg-white rounded-xl shadow-2xl border border-slate-100 z-50 p-2 animate-in fade-in slide-in-from-top-2">
-                                    <button onClick={exportImage} className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-slate-50 rounded-lg text-sm text-slate-700 transition-colors">
-                                        <ImageIcon size={16} className="text-blue-500" /> Download PNG Image
-                                    </button>
-                                    <div className="h-px bg-slate-100 my-1"></div>
-                                    <button onClick={() => exportData('csv')} className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-slate-50 rounded-lg text-sm text-slate-700 transition-colors">
-                                        <FileText size={16} className="text-green-500" /> Export Data (CSV)
-                                    </button>
-                                    <button onClick={() => exportData('xlsx')} className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-slate-50 rounded-lg text-sm text-slate-700 transition-colors">
-                                        <FileSpreadsheet size={16} className="text-emerald-600" /> Export Data (XLSX)
-                                    </button>
+                                    <span className="font-bold text-blue-600">{stats.totalPoints.toLocaleString()}</span>
                                 </div>
-                            )}
+                            </div>
                         </div>
+
+                        <button
+                            onClick={handlePlot}
+                            disabled={calculating || loading}
+                            className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold shadow-md flex justify-center items-center gap-2 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            {calculating ? <Loader2 className="animate-spin" size={18} /> : <TrendingUp size={18} />}
+                            {calculating ? "Calculating..." : "Plot History"}
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            {/* --- GRAFICO (Centro) --- */}
+            <div className="lg:col-span-3">
+                <div className="bg-white p-6 rounded-xl shadow-lg border border-slate-200 min-h-[600px] flex flex-col relative">
+                    <div ref={chartContainerRef} className="w-full h-[550px] bg-white p-2">
+                        {chartData.length > 0 ? (
+                            <ResponsiveContainer width="100%" height="100%">
+                                <ComposedChart data={chartData} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
+                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                                    <XAxis
+                                        dataKey="date"
+                                        tick={{ fontSize: 11, fill: '#64748b' }}
+                                        minTickGap={30}
+                                        axisLine={{ stroke: '#e2e8f0' }}
+                                        tickLine={false}
+                                    />
+                                    <YAxis
+                                        tickFormatter={(v) => v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v}
+                                        tick={{ fontSize: 11, fill: '#64748b' }}
+                                        axisLine={{ stroke: '#e2e8f0' }}
+                                        tickLine={false}
+                                    />
+                                    <Tooltip
+                                        contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)', padding: '12px' }}
+                                        formatter={(v: number, name: string) => {
+                                            if (name.includes('Area')) return [null, null];
+                                            return [v.toLocaleString('it-IT', { style: 'currency', currency: 'EUR' }), name];
+                                        }}
+                                        labelStyle={{ color: '#1e293b', fontWeight: 'bold', marginBottom: '8px' }}
+                                        filterNull={true}
+                                    />
+                                    <Legend wrapperStyle={{ paddingTop: '20px' }} iconType="circle" />
+                                    <ReferenceLine y={0} stroke="#cbd5e1" />
+
+                                    {/* AREE P&L (SOTTOSTANTI LE LINEE) */}
+                                    {visibleSeries.plArea && (
+                                        <>
+                                            <Area
+                                                type="monotone"
+                                                dataKey="profit_area"
+                                                name="Profit Area"
+                                                stroke="none"
+                                                fill={COLORS.plAreaPos}
+                                                fillOpacity={0.3}
+                                                activeDot={false}
+                                                isAnimationActive={false}
+                                            />
+                                            <Area
+                                                type="monotone"
+                                                dataKey="loss_area"
+                                                name="Loss Area"
+                                                stroke="none"
+                                                fill={COLORS.plAreaNeg}
+                                                fillOpacity={0.3}
+                                                activeDot={false}
+                                                isAnimationActive={false}
+                                            />
+                                        </>
+                                    )}
+
+                                    {/* EXPOSURE (Linea Solida) */}
+                                    {visibleSeries.exposure && (
+                                        <Line
+                                            type="monotone"
+                                            dataKey="exposure"
+                                            name="Exposure (Cost)"
+                                            stroke={COLORS.exposure}
+                                            strokeWidth={2}
+                                            dot={false}
+                                            activeDot={{ r: 6 }}
+                                        />
+                                    )}
+
+                                    {/* GROSS VALUE (Linea Solida Viola) */}
+                                    {visibleSeries.grossValue && (
+                                        <Line
+                                            type="monotone"
+                                            dataKey="gross_value"
+                                            name="Gross Value"
+                                            stroke={COLORS.grossValue}
+                                            strokeWidth={3}
+                                            dot={false}
+                                            activeDot={{ r: 6 }}
+                                        />
+                                    )}
+
+                                    {/* MARKET VALUE (Tratteggiata Blu) */}
+                                    {visibleSeries.marketValue && (
+                                        <Line
+                                            type="monotone"
+                                            dataKey="market_value"
+                                            name="Market Value"
+                                            stroke={COLORS.marketValue}
+                                            strokeWidth={2}
+                                            strokeDasharray="5 5"
+                                            dot={false}
+                                            activeDot={{ r: 6 }}
+                                        />
+                                    )}
+
+                                    {/* DIVIDENDS (Tratteggiata Arancione) */}
+                                    {visibleSeries.dividends && (
+                                        <Line
+                                            type="step"
+                                            dataKey="dividends"
+                                            name="Cumul. Dividends"
+                                            stroke={COLORS.dividends}
+                                            strokeWidth={2}
+                                            strokeDasharray="5 5"
+                                            dot={false}
+                                            activeDot={{ r: 6 }}
+                                        />
+                                    )}
+
+                                </ComposedChart>
+                            </ResponsiveContainer>
+                        ) : (
+                            <div className="h-full flex flex-col items-center justify-center text-slate-400">
+                                <BarChart3 size={64} className="opacity-20 mb-4" />
+                                <p className="font-medium text-lg">Ready to analyze</p>
+                                <p className="text-sm">Select filters on the left and click "Plot History" to start.</p>
+                            </div>
+                        )}
+                    </div>
+                </div>
+                {/* Stats Footer - Pulito come richiesto */}
+                {chartData.length > 0 && (
+                    <div className="flex justify-end text-xs text-slate-400 px-2 mt-2">
+                        <span>Source: Yahoo Finance & Internal DB</span>
+                    </div>
+                )}
+            </div>
+
+            {/* --- CONFIGURAZIONE (Destra) --- */}
+            <div className="lg:col-span-1 space-y-6">
+                <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+                    <div className="flex items-center gap-2 mb-4 font-semibold border-b pb-2 text-slate-700">
+                        <Settings size={18} /> Visible Metrics
+                    </div>
+                    <div className="space-y-3">
+                        {Object.keys(visibleSeries).map(k => (
+                            <label key={k} className="flex items-center gap-3 cursor-pointer p-2 hover:bg-slate-50 rounded transition-colors group">
+                                <div className="relative flex items-center">
+                                    <input
+                                        type="checkbox"
+                                        checked={visibleSeries[k as keyof typeof visibleSeries]}
+                                        onChange={() => setVisibleSeries({ ...visibleSeries, [k]: !visibleSeries[k as keyof typeof visibleSeries] })}
+                                        className="peer h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                                    />
+                                </div>
+                                <span className="capitalize text-sm font-medium text-slate-600 group-hover:text-slate-900 transition-colors">
+                                    {k.replace(/([A-Z])/g, ' $1').replace('plArea', 'Profit/Loss Area').trim()}
+                                </span>
+                                <div className="ml-auto w-2 h-2 rounded-full" style={{
+                                    backgroundColor: k === 'plArea' ? COLORS.plAreaPos : COLORS[k as keyof typeof COLORS],
+                                    background: k === 'plArea' ? `linear-gradient(90deg, ${COLORS.plAreaPos} 50%, ${COLORS.plAreaNeg} 50%)` : undefined
+                                }}></div>
+                            </label>
+                        ))}
                     </div>
                 </div>
 
+                <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+                    <div className="flex items-center gap-2 mb-4 font-semibold border-b pb-2 text-slate-700">
+                        <Download size={18} /> Export
+                    </div>
+                    <div className="relative" ref={downloadMenuRef}>
+                        <button onClick={() => setIsDownloadOpen(!isDownloadOpen)} className="w-full flex items-center justify-center gap-2 px-4 py-2.5 border border-slate-300 rounded-lg hover:bg-slate-50 text-sm font-medium text-slate-700 transition-colors">
+                            <Download size={16} /> Download Options...
+                        </button>
+                        {isDownloadOpen && (
+                            <div className="absolute top-full left-0 w-full mt-2 bg-white rounded-xl shadow-2xl border border-slate-100 z-50 p-2 animate-in fade-in slide-in-from-top-2">
+                                <button onClick={exportImage} className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-slate-50 rounded-lg text-sm text-slate-700 transition-colors">
+                                    <ImageIcon size={16} className="text-blue-500" /> Download PNG Image
+                                </button>
+                                <div className="h-px bg-slate-100 my-1"></div>
+                                <button onClick={() => exportData('csv')} className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-slate-50 rounded-lg text-sm text-slate-700 transition-colors">
+                                    <FileText size={16} className="text-green-500" /> Export Data (CSV)
+                                </button>
+                                <button onClick={() => exportData('xlsx')} className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-slate-50 rounded-lg text-sm text-slate-700 transition-colors">
+                                    <FileSpreadsheet size={16} className="text-emerald-600" /> Export Data (XLSX)
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                </div>
             </div>
+
         </div>
     );
 }
