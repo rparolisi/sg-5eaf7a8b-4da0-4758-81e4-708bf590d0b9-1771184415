@@ -82,7 +82,7 @@ const INITIAL_COLUMNS: ColumnDef[] = [
     { id: 'gross_value', label: 'Gross Value', visible: true, width: 110, type: 'number', align: 'right' },
     { id: 'avg_date', label: 'Avg Date', visible: true, width: 100, type: 'date', align: 'center' },
     { id: 'total_dividends', label: 'Dividends', visible: true, width: 100, type: 'number', align: 'right' },
-    { id: 'profit_loss', label: 'P/L', visible: true, width: 100, type: 'number', align: 'right' },
+    { id: 'profit_loss', label: 'P/L (€)', visible: true, width: 100, type: 'number', align: 'right' },
     { id: 'performance_perc', label: 'Return %', visible: true, width: 100, type: 'number', align: 'right' },
     { id: 'person', label: 'Person', visible: false, width: 100, type: 'text', align: 'left' },
 ];
@@ -98,9 +98,9 @@ export default function PortfolioValuation() {
     const [pricesError, setPricesError] = useState("");
     const [isUpdatingMarket, setIsUpdatingMarket] = useState(false);
 
-    // NUOVI STATI: User ID e Valuta
+    // NUOVI STATI PER RLS E VALUTA
     const [userId, setUserId] = useState < string | null > (null);
-    const [userCurrency, setUserCurrency] = useState('EUR'); // Default
+    const [userCurrency, setUserCurrency] = useState('EUR');
 
     // Filtri Sidebar
     const [filters, setFilters] = useState({ person: [] as string[], ticker: [] as string[], startDate: '', endDate: '' });
@@ -128,7 +128,6 @@ export default function PortfolioValuation() {
     const initData = useCallback(async () => {
         setLoadingData(true);
         try {
-            // RLS filters automatically by session
             const { data, error } = await supabase.from('transactions').select('*').order('operation_date', { ascending: true });
             if (error) throw error;
             setRawTransactions(data || []);
@@ -141,12 +140,11 @@ export default function PortfolioValuation() {
                 setFilters(prev => ({ ...prev, startDate: min, endDate: today > max ? today : max }));
             }
 
-            // Fetch User Details (Alias + Currency)
+            // RECUPERA SESSIONE E PREFERENZE UTENTE
             const { data: { session } } = await supabase.auth.getSession();
             if (session) {
                 setUserId(session.user.id);
-                const { data: uData } = await supabase.from('users').select('alias, currency').eq('user_id', session.user.id).single();
-
+                const { data: uData } = await supabase.from('users').select('alias, currency').eq('user_id', session.user.id).maybeSingle();
                 if (uData) {
                     if (uData.alias) setFilters(prev => ({ ...prev, person: [uData.alias] }));
                     if (uData.currency) setUserCurrency(uData.currency);
@@ -164,7 +162,7 @@ export default function PortfolioValuation() {
         return { people: getU('person'), tickers: getU('ticker') };
     }, [rawTransactions]);
 
-    // --- AGGREGAZIONE DATI (PORTAFOGLIO CALCOLATO IN MEMORIA) ---
+    // --- AGGREGAZIONE DATI ---
     const basePortfolioData = useMemo(() => {
         if (rawTransactions.length === 0) return [];
 
@@ -184,8 +182,8 @@ export default function PortfolioValuation() {
 
             const qty = Number(t.shares_count || 0);
             const sign = Number(t.operation_sign || 0);
-            // 🛑 MODIFICA CRUCIALE: Usiamo il costo già convertito in valuta utente dal DB
-            // Se la colonna total_outlay_user_curr è null (vecchi dati), usa total_outlay_eur come fallback (o 0)
+
+            // 🛑 MODIFICA: Uso il costo in valuta utente (nuova colonna)
             const outlay = t.total_outlay_user_curr !== null ? Number(t.total_outlay_user_curr) : 0;
 
             if (Number(t.buy_or_sell) === 1) {
@@ -217,7 +215,7 @@ export default function PortfolioValuation() {
             }
 
             const pyData = pythonData[g.ticker] || null;
-            let current_price = pyData ? pyData.price : null;
+            let current_price = pyData ? pyData.price : null; // Prezzo già convertito dal backend
             const total_dividends = pyData ? pyData.dividends : null;
             let is_live_price = pyData ? pyData.is_live : false;
 
@@ -267,32 +265,24 @@ export default function PortfolioValuation() {
 
     // --- ACTIONS ---
     const handleSearch = useCallback(async () => {
-        if (!userId) return; // 🛑 SECURITY CHECK
-
+        if (!userId) return; // 🛑 Security check
         setLoadingPrices(true);
         setPricesError("");
         try {
             const url = new URL(`${PYTHON_API_BASE_URL}/api/portfolio`);
-            url.searchParams.append("user_id", userId); // 🛑 PASS REAL ID FOR RLS
+            url.searchParams.append("user_id", userId); // 🛑 Passa ID Utente
             if (filters.endDate) url.searchParams.append("target_date", filters.endDate);
             filters.person.forEach(p => url.searchParams.append("people", p));
+
             const response = await fetch(url.toString());
             const result = await response.json();
             const dataMap: Record<string, any> = {};
             if (Array.isArray(result)) {
-                result.forEach((p: any) => {
-                    if (p.ticker) {
-                        dataMap[p.ticker] = {
-                            price: p.current_price || 0, // Prezzo già convertito dal backend
-                            dividends: p.total_dividends || 0,
-                            is_live: p.is_live_price ?? false
-                        };
-                    }
-                });
+                result.forEach((p: any) => { if (p.ticker) dataMap[p.ticker] = { price: p.current_price || 0, dividends: p.total_dividends || 0, is_live: p.is_live_price ?? false }; });
             }
             setPythonData(dataMap);
         } catch (e: any) { setPricesError("Failed to fetch data."); } finally { setLoadingPrices(false); }
-    }, [filters, userId]);
+    }, [filters, userId]); // userId tra le dipendenze
 
     // --- TRIGGER AGGIORNAMENTO MERCATO ---
     const triggerUpdateMarketData = useCallback(async () => {
@@ -341,7 +331,7 @@ export default function PortfolioValuation() {
         setIsDownloadOpen(false);
     };
 
-    // Helper formattazione valuta dinamica
+    // Helper valuta dinamica
     const fmt = (num: number | null) => num !== null
         ? new Intl.NumberFormat('it-IT', { style: 'currency', currency: userCurrency }).format(num)
         : '-';
@@ -349,7 +339,7 @@ export default function PortfolioValuation() {
     const fmtPerc = (num: number | null) => num !== null ? `${num > 0 ? '+' : ''}${num.toFixed(2)}%` : '-';
     const hasEstimatedPrices = basePortfolioData.some(p => p.current_price !== null && !p.is_live_price);
 
-    // --- HEADER CELL COMPONENT ---
+    // --- HEADER CELL COMPONENT (con sostituzione simbolo) ---
     const HeaderCell = ({ col, index, moveColumn, resizeColumn }: any) => {
         const [w, setW] = useState(col.width);
         useEffect(() => setW(col.width), [col.width]);
@@ -370,11 +360,16 @@ export default function PortfolioValuation() {
 
         const activeSort = viewSettings.sorts.find(s => s.columnId === col.id);
 
+        // Sostituzione dinamica del simbolo valuta (es. € -> $) se presente nel titolo colonna
+        // Qui lo facciamo hardcoded per sostituire (€) con (SimboloUtente)
+        const symbol = (0).toLocaleString('en-US', { style: 'currency', currency: userCurrency, minimumFractionDigits: 0, maximumFractionDigits: 0 }).replace(/\d/g, '').trim();
+        const displayLabel = col.label.replace('(€)', `(${symbol})`);
+
         return (
             <th style={{ width: w }} draggable onDragStart={handleDragStart} onDragOver={e => e.preventDefault()} onDrop={handleDrop} className={`px-4 py-3 relative group cursor-grab active:cursor-grabbing select-none hover:bg-slate-100 ${col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left'}`}>
                 <div className={`flex items-center gap-2 ${col.align === 'right' ? 'justify-end' : col.align === 'center' ? 'justify-center' : 'justify-start'}`}>
                     <span onClick={() => setViewSettings(prev => ({ ...prev, sorts: [{ id: 'quick', columnId: col.id, direction: activeSort?.direction === 'asc' ? 'desc' : 'asc' }] }))} className="cursor-pointer font-bold flex items-center gap-1 hover:text-blue-600 text-xs uppercase tracking-wider text-gray-600">
-                        {col.label} {activeSort && (activeSort.direction === 'asc' ? <ArrowUp size={12} /> : <ArrowDown size={12} />)}
+                        {displayLabel} {activeSort && (activeSort.direction === 'asc' ? <ArrowUp size={12} /> : <ArrowDown size={12} />)}
                     </span>
                     <button onClick={(e) => { e.stopPropagation(); setActiveFilterCol(activeFilterCol === col.id ? null : col.id); setFilterSearchTerm(""); }} className={`p-1 rounded hover:bg-slate-200 transition-opacity ${activeFilterCol === col.id || columnFilters[col.id]?.length ? 'opacity-100 text-blue-600' : 'opacity-0 group-hover:opacity-100 text-slate-400'}`}><Filter size={12} fill={columnFilters[col.id]?.length ? "currentColor" : "none"} /></button>
                 </div>
