@@ -297,15 +297,21 @@ export default function PortfolioValuation() {
     const triggerUpdateMarketData = useCallback(async () => {
         setIsUpdatingMarket(true);
         try {
+            // Chiamata all'endpoint pubblico (senza password ora)
             const response = await fetch(`${PYTHON_API_BASE_URL}/api/cron/update_market_data`);
             const data = await response.json();
 
             if (response.ok) {
-                alert(`Update successful! Updated ${data.tickers_updated || 0} tickers.`);
+                alert(`Update successful! Updated ${data.updated || 0} tickers.`);
+
+                // 1. Ricarica le transazioni (in caso siano cambiate)
                 initData();
-                if (Object.keys(pythonData).length > 0) {
-                    handleSearch();
-                }
+
+                // 2. MODIFICA FONDAMENTALE: 
+                // Chiamiamo SEMPRE handleSearch() per forzare il ricalcolo dei prezzi
+                // indipendentemente se avevamo dati prima o no.
+                handleSearch();
+
             } else {
                 alert(`Update failed: ${data.error || "Unknown error"}`);
             }
@@ -315,7 +321,7 @@ export default function PortfolioValuation() {
         } finally {
             setIsUpdatingMarket(false);
         }
-    }, [initData, handleSearch, pythonData]);
+    }, [initData, handleSearch]); // rimosso pythonData dalle dipendenze
 
     // --- EFFETTO PER IL LINK ?update=true ---
     useEffect(() => {
