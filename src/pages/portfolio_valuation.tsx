@@ -98,7 +98,7 @@ export default function PortfolioValuation() {
     const [pricesError, setPricesError] = useState("");
     const [isUpdatingMarket, setIsUpdatingMarket] = useState(false);
 
-    // NUOVI STATI PER RLS E VALUTA
+    // NUOVI STATI: User ID e Valuta
     const [userId, setUserId] = useState < string | null > (null);
     const [userCurrency, setUserCurrency] = useState('EUR');
 
@@ -183,7 +183,8 @@ export default function PortfolioValuation() {
             const qty = Number(t.shares_count || 0);
             const sign = Number(t.operation_sign || 0);
 
-            // 🛑 MODIFICA: Uso il costo in valuta utente (nuova colonna)
+            // 🛑 MODIFICA CRUCIALE: Usiamo il costo già convertito in valuta utente
+            // Se la colonna total_outlay_user_curr è null (vecchi dati), usa 0 come fallback
             const outlay = t.total_outlay_user_curr !== null ? Number(t.total_outlay_user_curr) : 0;
 
             if (Number(t.buy_or_sell) === 1) {
@@ -278,11 +279,19 @@ export default function PortfolioValuation() {
             const result = await response.json();
             const dataMap: Record<string, any> = {};
             if (Array.isArray(result)) {
-                result.forEach((p: any) => { if (p.ticker) dataMap[p.ticker] = { price: p.current_price || 0, dividends: p.total_dividends || 0, is_live: p.is_live_price ?? false }; });
+                result.forEach((p: any) => {
+                    if (p.ticker) {
+                        dataMap[p.ticker] = {
+                            price: p.current_price || 0, // Prezzo già convertito dal backend
+                            dividends: p.total_dividends || 0,
+                            is_live: p.is_live_price ?? false
+                        };
+                    }
+                });
             }
             setPythonData(dataMap);
         } catch (e: any) { setPricesError("Failed to fetch data."); } finally { setLoadingPrices(false); }
-    }, [filters, userId]); // userId tra le dipendenze
+    }, [filters, userId]);
 
     // --- TRIGGER AGGIORNAMENTO MERCATO ---
     const triggerUpdateMarketData = useCallback(async () => {
