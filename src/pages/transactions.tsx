@@ -20,6 +20,8 @@ import {
 import { Plus, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { authService } from "@/services/authService";
+// IMPORT FONDAMENTALE MANCANTE PRIMA
+import { supabase } from "@/integrations/supabase/client";
 import { Label } from "@/components/ui/label";
 import {
     Select,
@@ -33,13 +35,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 // --- INTERFACCIA BASATA SUL TUO SCHEMA DB ---
 interface Transaction {
     id: string;
-    operation_date: string;        // Era: date
+    operation_date: string;
     ticker: string;
-    buy_or_sell: string;           // Era: type
-    shares_count: number;          // Era: quantity
-    price_per_share_asset_curr: number; // Era: price
-    asset_currency: string;        // Era: currency
-    total_outlay_user_curr: number; // Totale calcolato in € dal backend
+    buy_or_sell: string;
+    shares_count: number;
+    price_per_share_asset_curr: number;
+    asset_currency: string;
+    total_outlay_user_curr: number;
 }
 
 export default function Transactions() {
@@ -47,7 +49,7 @@ export default function Transactions() {
     const [isOpen, setIsOpen] = useState(false);
     const { toast } = useToast();
 
-    // Stato per il form di AGGIUNTA (questo deve rimanere compatibile con il Backend Python)
+    // Stato per il form di AGGIUNTA
     const [newTransaction, setNewTransaction] = useState({
         date: new Date().toISOString().split('T')[0],
         ticker: "",
@@ -69,11 +71,11 @@ export default function Transactions() {
         try {
             setIsLoading(true);
 
-            // Selezioniamo le colonne esatte dal tuo schema DB
-            const { data, error } = await authService.supabase
+            // FIX: Usiamo 'supabase' direttamente, non 'authService.supabase'
+            const { data, error } = await supabase
                 .from('transactions')
                 .select('*')
-                .order('operation_date', { ascending: false }); // Ordina per operation_date
+                .order('operation_date', { ascending: false });
 
             if (error) {
                 console.error("Supabase Error:", error);
@@ -86,7 +88,7 @@ export default function Transactions() {
             console.error('Error fetching transactions:', error);
             toast({
                 title: "Errore",
-                description: "Impossibile caricare le transazioni. Verifica la connessione.",
+                description: "Impossibile caricare le transazioni.",
                 variant: "destructive",
             });
         } finally {
@@ -146,7 +148,6 @@ export default function Transactions() {
             toast({ title: "Successo", description: "Transazione registrata!" });
             setIsOpen(false);
 
-            // Piccola attesa per dare tempo al DB di aggiornarsi prima di ricaricare
             setTimeout(() => fetchTransactions(), 1000);
 
             // Reset Form
@@ -179,7 +180,8 @@ export default function Transactions() {
         if (!confirm("Sei sicuro di voler eliminare questa transazione?")) return;
 
         try {
-            const { error } = await authService.supabase
+            // FIX: Usiamo 'supabase' direttamente
+            const { error } = await supabase
                 .from('transactions')
                 .delete()
                 .eq('id', id);
